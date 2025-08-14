@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { PlusIcon, TrashIcon, LinkIcon } from "lucide-svelte";
+    import { PlusIcon, TrashIcon, LinkIcon, ChevronDownIcon, ChevronUpIcon } from "lucide-svelte";
     import { language } from "src/lang";
     import { alertConfirm } from "src/ts/alert";
 
@@ -9,6 +9,8 @@
     import NumberInput from "src/lib/UI/GUI/NumberInput.svelte";
     import SelectInput from "src/lib/UI/GUI/SelectInput.svelte";
     import OptionInput from "src/lib/UI/GUI/OptionInput.svelte";
+
+    let collapsed = {};
 </script>
 
 <h2 class="mb-2 text-2xl font-bold mt-2">{language.plugin}</h2>
@@ -67,6 +69,18 @@
                 <TrashIcon />
             </button>
         </div>
+        {#if Object.keys(plugin.arguments).filter((i) => !i.startsWith("hidden_")).length > 0}
+        <div class="flex items-center mt-2">
+            <span class="text-textcolor2 mr-2">variables</span>
+            <button class="textcolor2 hover:gray-200 cursor-pointer" onclick={() => collapsed[i] = !collapsed[i]}>
+                {#if collapsed[i]}
+                <ChevronUpIcon />
+                {:else}
+                <ChevronDownIcon />
+                {/if}
+            </button>
+        </div>
+        {/if}
         {#if plugin.version !== 2}
             <span class="text-draculared text-xs">
                 {language.pluginVersionWarn
@@ -74,7 +88,7 @@
                     .replace("{{required_version}}", "API V2")}
             </span>
             <!--List up args-->
-        {:else if Object.keys(plugin.arguments).filter((i) => !i.startsWith("hidden_")).length > 0}
+        {:else if collapsed[i] && Object.keys(plugin.arguments).filter((i) => !i.startsWith("hidden_")).length > 0}
             <div class="flex flex-col mt-2 bg-dark-900 bg-opacity-50 p-3">
                 {#each Object.keys(plugin.arguments) as arg}
                     {#if !arg.startsWith("hidden_")}
@@ -87,7 +101,7 @@
                                 }
                             >
                                 {#each plugin.arguments[arg] as a}
-                                    <OptionInput value={a}>a</OptionInput>
+                                    <OptionInput value={a}>{a}</OptionInput>
                                 {/each}
                             </SelectInput>
                         {:else if plugin.arguments[arg] === "string"}
