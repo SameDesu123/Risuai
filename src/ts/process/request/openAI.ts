@@ -559,6 +559,61 @@ export async function requestOpenAI(arg:RequestDataArgumentExtended):Promise<req
         body.n = db.genTime
     }
     let throughProxi = (!isTauri) && (!isNodeServer) && (!db.usePlainFetch) && (!Capacitor.isNativePlatform())
+
+    if(aiModel === 'reverse_proxy' || aiModel.startsWith('xcustom:::')){
+        let additionalParams = aiModel === 'reverse_proxy' ? db.additionalParams : []
+
+        if(aiModel.startsWith('xcustom:::')){
+            const found = db.customModels.find(m => m.id === aiModel)
+            const params = found?.params
+            if(params){
+                const lines = params.split('\n')
+                for(const line of lines){
+                    const split = line.split('=')
+                    if(split.length >= 2){
+                        additionalParams.push([split[0], split.slice(1).join('=')])
+                    }
+                }
+            }
+        }
+
+        for(let i=0;i<additionalParams.length;i++){
+            let key = additionalParams[i][0]
+            let value = additionalParams[i][1]
+
+            if(!key || !value){
+                continue
+            }
+
+            if(value === '{{none}}'){
+                if(key.startsWith('header::')){
+                    key = key.replace('header::', '')
+                    delete headers[key]
+                }
+                else{
+                    delete body[key]
+                }
+                continue
+            }
+
+            if(key.startsWith('header::')){
+                key = key.replace('header::', '')
+                headers[key] = value
+            }
+            else if(value.startsWith('json::')){
+                value = value.replace('json::', '')
+                try {
+                    body[key] = JSON.parse(value)                            
+                } catch (error) {}
+            }
+            else if(isNaN(parseFloat(value))){
+                body = setObjectValue(body, key, value)
+            }
+            else{
+                body = setObjectValue(body, key, parseFloat(value))
+            }
+        }
+    }
     if(arg.useStreaming){
         body.stream = true
         let urlHost = new URL(replacerURL).host
@@ -620,60 +675,7 @@ export async function requestOpenAI(arg:RequestDataArgumentExtended):Promise<req
         }
     }
 
-    if(aiModel === 'reverse_proxy' || aiModel.startsWith('xcustom:::')){
-        let additionalParams = aiModel === 'reverse_proxy' ? db.additionalParams : []
 
-        if(aiModel.startsWith('xcustom:::')){
-            const found = db.customModels.find(m => m.id === aiModel)
-            const params = found?.params
-            if(params){
-                const lines = params.split('\n')
-                for(const line of lines){
-                    const split = line.split('=')
-                    if(split.length >= 2){
-                        additionalParams.push([split[0], split.slice(1).join('=')])
-                    }
-                }
-            }
-        }
-
-        for(let i=0;i<additionalParams.length;i++){
-            let key = additionalParams[i][0]
-            let value = additionalParams[i][1]
-
-            if(!key || !value){
-                continue
-            }
-
-            if(value === '{{none}}'){
-                if(key.startsWith('header::')){
-                    key = key.replace('header::', '')
-                    delete headers[key]
-                }
-                else{
-                    delete body[key]
-                }
-                continue
-            }
-
-            if(key.startsWith('header::')){
-                key = key.replace('header::', '')
-                headers[key] = value
-            }
-            else if(value.startsWith('json::')){
-                value = value.replace('json::', '')
-                try {
-                    body[key] = JSON.parse(value)                            
-                } catch (error) {}
-            }
-            else if(isNaN(parseFloat(value))){
-                body = setObjectValue(body, key, value)
-            }
-            else{
-                body = setObjectValue(body, key, parseFloat(value))
-            }
-        }
-    }
 
     if(arg.previewBody){
         return {
@@ -1112,13 +1114,13 @@ export async function requestOpenAIResponseAPI(arg:RequestDataArgumentExtended):
 
 function getTranStream(arg:RequestDataArgumentExtended):TransformStream<Uint8Array, StreamResponseChunk> {
     let dataUint:Uint8Array|Buffer = new Uint8Array([])
-    let reasoningContent = ""
     const db = getDatabase()
 
     return new TransformStream<Uint8Array, StreamResponseChunk>({
         async transform(chunk, control) {
             dataUint = Buffer.from(new Uint8Array([...dataUint, ...chunk]))
             let JSONreaded:{[key:string]:string} = {}
+            let reasoningContent = ""
                         try {
                 const datas = dataUint.toString().split('\n')
                 let readed:{[key:string]:string} = {}
