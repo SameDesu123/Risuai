@@ -252,6 +252,35 @@ export class RisuSaveEncoder {
         buf.set(databuf, 7 + nameBuf.length);
         return buf;
     }
+
+    /**
+     * Get encoded data for specific blocks only (for delta sync)
+     * @param blockNames Array of block names to retrieve
+     * @returns Block name -> encoded block data map
+     */
+    getBlocksForSync(blockNames: string[]): Map<string, Uint8Array> {
+        const result = new Map<string, Uint8Array>();
+        for (const name of blockNames) {
+            if (this.blocks[name]) {
+                result.set(name, this.blocks[name]);
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Return all block names
+     */
+    getAllBlockNames(): string[] {
+        return Object.keys(this.blocks);
+    }
+
+    /**
+     * Check if a specific block exists
+     */
+    hasBlock(name: string): boolean {
+        return !!this.blocks[name];
+    }
 }
 
 export class RisuSaveDecoder {

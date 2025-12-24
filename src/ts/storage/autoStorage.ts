@@ -38,6 +38,25 @@ export class AutoStorage{
         return await this.realStorage.removeItem(key)
     }
 
+    /**
+     * Sync only changed blocks to server (only works on Node server)
+     * @returns {Promise<{success: boolean, size?: number} | null>} - Result or null (if not Node server)
+     */
+    async syncBlocks(changedBlocks: Map<string, Uint8Array>, deletedBlocks: string[]): Promise<{success: boolean, size?: number} | null> {
+        await this.Init()
+        if (this.realStorage instanceof NodeStorage) {
+            return await this.realStorage.syncBlocks(changedBlocks, deletedBlocks)
+        }
+        return null
+    }
+
+    /**
+     * Check if using Node server
+     */
+    isNodeStorage(): boolean {
+        return this.realStorage instanceof NodeStorage
+    }
+
     async checkAccountSync(){
         let db = getDatabase()
         if(this.isAccount){

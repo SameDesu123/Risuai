@@ -14,6 +14,7 @@ const https = require('https');
 const sslPath = path.join(process.cwd(), 'server/node/ssl/certificate');
 const hubURL = 'https://sv.risuai.xyz'; 
 const openid = require('openid-client');
+const { mergeBlocks, listBlockNames } = require('./risuSaveServer.cjs');
 
 let password = ''
 
@@ -401,6 +402,66 @@ app.post('/api/write', async (req, res, next) => {
             success: true
         });
     } catch (error) {
+        next(error);
+    }
+});
+
+// Sync blocks endpoint - receives changed blocks and merges with existing database.bin
+// database.bin path (hex encoded)
+const databaseBinPath = Buffer.from('database/database.bin', 'utf-8').toString('hex');
+
+app.post('/api/sync-blocks', async (req, res, next) => {
+    if(!req.headers['risu-auth'] || req.headers['risu-auth'].trim() !== password.trim()){
+        console.log('incorrect')
+        res.status(400).send({
+            error:'Password Incorrect'
+        });
+        return
+    }
+
+    const { blocks, deleted } = req.body;
+    
+    if (!blocks || typeof blocks !== 'object') {
+        res.status(400).send({
+            error: 'blocks object required'
+        });
+        return;
+    }
+
+    try {
+        const dbFilePath = path.join(savePath, databaseBinPath);
+        
+        // Read existing database.bin
+        if (!existsSync(dbFilePath)) {
+            res.status(400).send({
+                error: 'database.bin does not exist. Use full sync first.'
+            });
+            return;
+        }
+        
+        const existingData = await fs.readFile(dbFilePath);
+        
+        // Merge blocks
+        const mergedData = await mergeBlocks(
+            existingData,
+            blocks,
+            deleted || [],
+            false // compression option
+        );
+        
+        // Save
+        await fs.writeFile(dbFilePath, mergedData);
+        
+        console.log(`[sync-blocks] Saved merged database.bin (${mergedData.length} bytes)`);
+        
+        res.send({
+            success: true,
+            size: mergedData.length,
+            blocksUpdated: Object.keys(blocks).length,
+            blocksDeleted: (deleted || []).length
+        });
+    } catch (error) {
+        console.error('[sync-blocks] Error:', error);
         next(error);
     }
 });

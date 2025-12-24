@@ -12,6 +12,7 @@ import { translateHTML } from "./translator/translator";
 import { doingChat } from "./process/index.svelte";
 import { importCharacter } from "./characterCards";
 import { PngChunk } from "./pngChunk";
+import { markCharacterDeleted } from "./storage/dirtyTracker";
 
 export function createNewCharacter() {
     let db = getDatabase()
@@ -821,10 +822,15 @@ export async function removeChar(index:number,name:string, type:'normal'|'perman
         }
     }
     let chars = db.characters
+    const chaIdToDelete = chars[index]?.chaId  // Get chaId before deletion
     if(type === 'normal'){
         chars[index].trashTime = Date.now()
     }
     else{
+        // Mark character as deleted for delta sync
+        if(chaIdToDelete){
+            markCharacterDeleted(chaIdToDelete)
+        }
         chars.splice(index, 1)
     }
     checkCharOrder()

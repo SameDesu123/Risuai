@@ -25,6 +25,18 @@ import { characterURLImport, hubURL } from "./characterCards";
 import { defaultJailbreak, defaultMainPrompt, oldJailbreak, oldMainPrompt } from "./storage/defaultPrompts";
 import { loadRisuAccountData } from "./drive/accounter";
 import { decodeRisuSave, encodeRisuSaveCompressionStream, encodeRisuSaveLegacy, RisuSaveEncoder, type toSaveType } from "./storage/risuSave";
+import { 
+    getDirtyBlocks, 
+    getDeletedBlocks, 
+    clearDirtyState, 
+    enableSync, 
+    isSyncEnabled,
+    hasPendingChanges,
+    markCharacterDirty,
+    markCharacterDeleted,
+    markPresetDirty,
+    markModulesDirty
+} from "./storage/dirtyTracker";
 import { AutoStorage } from "./storage/autoStorage";
 import { updateAnimationSpeed } from "./gui/animation";
 import { updateColorScheme, updateTextThemeAndCSS } from "./gui/colorscheme";
@@ -384,11 +396,13 @@ export async function saveDb(){
             DBState.db.botPresetsId
             DBState.db.botPresets.length
             changeTracker.botPreset = true
+            markPresetDirty()  // Delta sync tracking
             saveTimeoutExecute()
         })
         $effect(() => {
             $state.snapshot(DBState.db.modules)
             changeTracker.modules = true
+            markModulesDirty()  // Delta sync tracking
             saveTimeoutExecute()
         })
         $effect(() => {
@@ -406,6 +420,11 @@ export async function saveDb(){
                 $state.snapshot(DBState.db.characters[selIdState].chats)
                 if(changeTracker.character[0] !== DBState.db.characters[selIdState]?.chaId){
                     changeTracker.character.unshift(DBState.db.characters[selIdState]?.chaId)
+                }
+                // Delta sync tracking - mark current character as dirty
+                const currentChaId = DBState.db.characters[selIdState]?.chaId
+                if(currentChaId){
+                    markCharacterDirty(currentChaId)
                 }
                 if(
                     changeTracker.chat[0]?.[0] !== DBState.db.characters[selIdState]?.chaId ||
@@ -470,11 +489,66 @@ export async function saveDb(){
                 await writeFile(`database/dbbackup-${(Date.now()/100).toFixed()}.bin`, dbData, {baseDir: BaseDirectory.AppData});
             }
             else{
+                // Try delta sync for Node server
+                const syncEnabled = isSyncEnabled()
+                const pendingChanges = hasPendingChanges()
+                console.log(`[Delta Sync] isNodeServer=${isNodeServer}, syncEnabled=${syncEnabled}, pendingChanges=${pendingChanges}`)
                 
-                await forageStorage.setItem('database/database.bin', dbData)
-                if(!forageStorage.isAccount){
-                    await forageStorage.setItem(`database/dbbackup-${(Date.now()/100).toFixed()}.bin`, dbData)
+                if(isNodeServer && syncEnabled){
+                    if(pendingChanges){
+                        try {
+                            const dirtyBlockNames = getDirtyBlocks()
+                            const deletedBlockNames = getDeletedBlocks()
+                            
+                            console.log(`[Delta Sync] Dirty blocks: ${dirtyBlockNames.join(', ')}`)
+                            console.log(`[Delta Sync] Deleted blocks: ${deletedBlockNames.join(', ')}`)
+                            
+                            // Get only changed blocks
+                            const changedBlocks = encoder.getBlocksForSync(dirtyBlockNames)
+                            
+                            if(changedBlocks.size > 0 || deletedBlockNames.length > 0){
+                                console.log(`[Delta Sync] Syncing ${changedBlocks.size} changed blocks, ${deletedBlockNames.length} deleted blocks`)
+                                
+                                // Calculate transfer block size
+                                let totalSize = 0
+                                for(const [name, data] of changedBlocks){
+                                    totalSize += data.length
+                                }
+                                console.log(`[Delta Sync] Total transfer size: ${(totalSize / 1024).toFixed(2)} KB`)
+                                
+                                const result = await forageStorage.syncBlocks(changedBlocks, deletedBlockNames)
+                                
+                                if(result?.success){
+                                    console.log(`[Delta Sync] Success! Server saved ${result.size} bytes`)
+                                } else {
+                                    // Fallback to full save if delta sync fails
+                                    console.warn('[Delta Sync] Failed, falling back to full save')
+                                    await forageStorage.setItem('database/database.bin', dbData)
+                                }
+                            } else {
+                                // Warn if dirtyBlockNames exist but encoder doesn't have them
+                                console.warn(`[Delta Sync] No blocks to sync despite pending changes. Dirty: ${dirtyBlockNames.length}, Found: ${changedBlocks.size}`)
+                            }
+                            
+                            clearDirtyState()
+                        } catch (syncError) {
+                            console.error('[Delta Sync] Error:', syncError)
+                            // Fallback to full save on error
+                            await forageStorage.setItem('database/database.bin', dbData)
+                            clearDirtyState()
+                        }
+                    } else {
+                        // No changes - skip save
+                        console.log('[Delta Sync] No pending changes, skipping save')
+                    }
+                } else {
+                    // Normal save (browser, isAccount, etc.)
+                    await forageStorage.setItem('database/database.bin', dbData)
+                    if(!forageStorage.isAccount){
+                        await forageStorage.setItem(`database/dbbackup-${(Date.now()/100).toFixed()}.bin`, dbData)
+                    }
                 }
+                
                 if(forageStorage.isAccount){
                     await sleep(3000)
                 }
@@ -742,6 +816,11 @@ export async function loadData() {
             startObserveDom()
             assignIds()
             makeColdData()
+            // Enable delta sync for Node server after initial load
+            if(isNodeServer){
+                enableSync()
+                console.log('[Delta Sync] Enabled')
+            }
             saveDb()
             moduleUpdate()
             if(import.meta.env.VITE_RISU_TOS === 'TRUE'){

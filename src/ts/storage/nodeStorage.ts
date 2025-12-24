@@ -126,6 +126,52 @@ export class NodeStorage{
         }
     }
 
+    /**
+     * Sync only changed blocks to server
+     * @param changedBlocks Changed block map (blockName -> encoded block data)
+     * @param deletedBlocks Array of deleted block names
+     */
+    async syncBlocks(changedBlocks: Map<string, Uint8Array>, deletedBlocks: string[]): Promise<{success: boolean, size?: number}> {
+        await this.checkAuth()
+        
+        // Convert Uint8Array to base64
+        const blocksObject: Record<string, string> = {}
+        for (const [name, data] of changedBlocks) {
+            // Encode Uint8Array to base64
+            let binary = ''
+            const bytes = new Uint8Array(data)
+            for (let i = 0; i < bytes.byteLength; i++) {
+                binary += String.fromCharCode(bytes[i])
+            }
+            blocksObject[name] = btoa(binary)
+        }
+
+        const response = await fetch('/api/sync-blocks', {
+            method: 'POST',
+            headers: {
+                'content-type': 'application/json',
+                'risu-auth': auth
+            },
+            body: JSON.stringify({
+                blocks: blocksObject,
+                deleted: deletedBlocks
+            })
+        })
+
+        if (response.status < 200 || response.status >= 300) {
+            throw new Error('syncBlocks failed')
+        }
+
+        const data = await response.json()
+        if (data.error) {
+            throw new Error(data.error)
+        }
+
+        return {
+            success: data.success,
+            size: data.size
+        }
+    }
 
     listItem = this.keys
 }
