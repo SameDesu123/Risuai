@@ -84,6 +84,31 @@
             (DBState.db as any)[item.bindKey] = newValue;
         }
     }
+
+    /**
+     * Get custom text for slider - handles both static strings and dynamic functions
+     */
+    function getCustomText(item: SettingItem): string | undefined {
+        const customText = item.options?.customText;
+        if (!customText) return undefined;
+        if (typeof customText === 'function') {
+            const value = (DBState.db as any)[item.bindKey!];
+            return customText(value);
+        }
+        return customText;
+    }
+
+    /**
+     * Get select options - handles both static arrays and dynamic functions
+     */
+    function getSelectOptions(item: SettingItem): { value: string; label: string }[] {
+        const options = item.options?.selectOptions;
+        if (!options) return [];
+        if (typeof options === 'function') {
+            return options();
+        }
+        return options;
+    }
 </script>
 
 {#each items as item (item.id)}
@@ -98,7 +123,7 @@
             {/if}
         {:else if item.type === 'check'}
             <div class="flex items-center {item.classes ?? 'mt-2'}">
-                <Check bind:check={(DBState.db as any)[item.bindKey]} name={getLabel(item)}>
+                <Check bind:check={(DBState.db as any)[item.bindKey]} name={getLabel(item)} onChange={item.options?.onchange}>
                     {#if item.showExperimental}<Help key="experimental"/>{/if}
                     {#if item.helpKey}<Help key={item.helpKey as any} unrecommended={item.helpUnrecommended ?? false}/>{/if}
                 </Check>
@@ -113,6 +138,7 @@
                 bind:value={(DBState.db as any)[item.bindKey]}
                 placeholder={item.options?.placeholder}
                 hideText={item.options?.hideText}
+                onchange={item.options?.onchange}
             />
         {:else if item.type === 'number'}
             <span class="text-textcolor {item.classes ?? ''}">{getLabel(item)}
@@ -132,6 +158,7 @@
             <TextAreaInput
                 bind:value={(DBState.db as any)[item.bindKey]}
                 placeholder={item.options?.placeholder}
+                onInput={item.options?.oninput}
             />
         {:else if item.type === 'slider'}
             <span class="text-textcolor {item.classes ?? ''}">{getLabel(item)}
@@ -145,21 +172,26 @@
                 fixed={item.options?.fixed}
                 multiple={item.options?.multiple}
                 disableable={item.options?.disableable}
-                customText={item.options?.customText}
+                customText={getCustomText(item)}
                 bind:value={(DBState.db as any)[item.bindKey]}
+                onchange={item.options?.onchange}
             />
         {:else if item.type === 'select'}
             <span class="text-textcolor {item.classes ?? 'mt-4'}">{getLabel(item)}
                 {#if item.helpKey}<Help key={item.helpKey as any}/>{/if}
             </span>
-            <SelectInput bind:value={(DBState.db as any)[item.bindKey]}>
-                {#each item.options?.selectOptions ?? [] as opt}
+            <SelectInput bind:value={(DBState.db as any)[item.bindKey]} onchange={item.options?.onchange}>
+                {#each getSelectOptions(item) as opt}
                     <OptionInput value={opt.value}>{opt.label}</OptionInput>
                 {/each}
             </SelectInput>
         {:else if item.type === 'color'}
             <div class="flex items-center {item.classes ?? 'mt-2'}">
-                <ColorInput bind:value={(DBState.db as any)[item.bindKey]} />
+                <ColorInput 
+                    bind:value={(DBState.db as any)[item.bindKey]} 
+                    nullable={item.options?.nullable}
+                    oninput={item.options?.oninput}
+                />
                 <span class="ml-2">{getLabel(item)}</span>
             </div>
         {:else if item.type === 'button'}

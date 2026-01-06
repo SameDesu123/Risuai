@@ -52,11 +52,13 @@ export interface SettingOptions {
     step?: number;
     fixed?: number;         // Decimal places for slider
     disableable?: boolean;  // Allow -1 to disable
-    customText?: string;    // Custom display text for slider
+    /** Custom display text for slider. Can be a static string or a function that receives the current value */
+    customText?: string | ((value: number) => string);
     multiple?: number;      // Multiplier for display value
     
     // select
-    selectOptions?: SelectOption[];
+    /** Options for select dropdown. Can be a static array or a function that returns options dynamically */
+    selectOptions?: SelectOption[] | (() => SelectOption[]);
     
     // text, textarea
     placeholder?: string;
@@ -71,6 +73,16 @@ export interface SettingOptions {
     // accordion
     styled?: boolean;        // Use styled accordion
     children?: SettingItem[]; // Nested items inside accordion
+    
+    // Common callbacks for input types
+    /** Called when the value changes (for slider, select, text, number, check) */
+    onchange?: () => void | Promise<void>;
+    /** Called on input event (for textarea, color) */
+    oninput?: () => void | Promise<void>;
+    
+    // color
+    /** If true, the color picker allows null/undefined values */
+    nullable?: boolean;
 }
 
 /**
