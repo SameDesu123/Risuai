@@ -21,6 +21,13 @@ import CustomModelsSettings from 'src/lib/Setting/Pages/Advanced/CustomModelsSet
 import StorageInvestigationSettings from 'src/lib/Setting/Pages/Advanced/StorageInvestigationSettings.svelte';
 import SettingsExportButtons from 'src/lib/Setting/Pages/Advanced/SettingsExportButtons.svelte';
 
+// Display Settings custom components
+import ColorSchemeEditor from 'src/lib/Setting/Pages/Display/ColorSchemeEditor.svelte';
+import TextThemeEditor from 'src/lib/Setting/Pages/Display/TextThemeEditor.svelte';
+import CustomBackgroundCheck from 'src/lib/Setting/Pages/Display/CustomBackgroundCheck.svelte';
+import NotificationCheck from 'src/lib/Setting/Pages/Display/NotificationCheck.svelte';
+import ColorToggleCheck from 'src/lib/Setting/Pages/Display/ColorToggleCheck.svelte';
+
 /**
  * Registry of custom components.
  * Add new components here as needed.
@@ -31,7 +38,12 @@ export const customComponents: Record<string, Component<any>> = {
     'CustomModelsSettings': CustomModelsSettings,
     'StorageInvestigationSettings': StorageInvestigationSettings,
     'SettingsExportButtons': SettingsExportButtons,
-    // Add more as we migrate complex settings
+    // Display Settings
+    'ColorSchemeEditor': ColorSchemeEditor,
+    'TextThemeEditor': TextThemeEditor,
+    'CustomBackgroundCheck': CustomBackgroundCheck,
+    'NotificationCheck': NotificationCheck,
+    'ColorToggleCheck': ColorToggleCheck,
 } as const;
 
 /**
