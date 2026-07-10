@@ -95,7 +95,7 @@ describe('Google/Gemini stream parser', () => {
         mocks.v4.mockReset()
     })
 
-    it('keeps only partial line text buffered and parses each completed SSE line once', async () => {
+    it('keeps only unfinished event text buffered and parses each completed SSE event once', async () => {
         const stream = __testGoogleRequestsAPI.getTranStream({
             modelInfo,
             saveSignature: false,
@@ -138,6 +138,22 @@ describe('Google/Gemini stream parser', () => {
 
         const chunks = await chunksPromise
         expect(chunks.at(-1)?.['0']).toBe('Hi 😀')
+    })
+
+    it('joins multiple data lines in one SSE event', async () => {
+        const stream = __testGoogleRequestsAPI.getTranStream({
+            modelInfo,
+            saveSignature: false,
+        })
+        const chunksPromise = collectStream(stream.readable)
+        const writer = stream.writable.getWriter()
+        const encoder = new TextEncoder()
+
+        await writer.write(encoder.encode('data: {"candidates":\ndata: [{"content":{"parts":[{"text":"Hi"}]}}]}\n\n'))
+        await writer.close()
+
+        const chunks = await chunksPromise
+        expect(chunks.at(-1)?.['0']).toBe('Hi')
     })
 
     it('parses split lines and runs signature side effects only once per new event', async () => {

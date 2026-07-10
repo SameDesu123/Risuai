@@ -183,7 +183,7 @@ describe('OpenAI chat completions stream parser', () => {
         mocks.db.jsonSchemaEnabled = false
     })
 
-    it('keeps only partial line text buffered and parses each completed SSE line once', async () => {
+    it('keeps only unfinished event text buffered and parses each completed SSE event once', async () => {
         const stream = __testOpenAIRequestsAPI.getTranStream(baseArg({
             modelInfo: {
                 ...baseArg().modelInfo,
@@ -230,6 +230,24 @@ describe('OpenAI chat completions stream parser', () => {
 
         const chunks = await chunksPromise
         expect(chunks.at(-1)?.['0']).toBe('Hi 😀')
+    })
+
+    it('joins multiple data lines in one SSE event', async () => {
+        const stream = __testOpenAIRequestsAPI.getTranStream(baseArg({
+            modelInfo: {
+                ...baseArg().modelInfo,
+                flags: [],
+            },
+        }))
+        const chunksPromise = collectStream(stream.readable)
+        const writer = stream.writable.getWriter()
+        const encoder = new TextEncoder()
+
+        await writer.write(encoder.encode('data: {"choices":\ndata: [{"delta":{"content":"Hi"},"index":0}]}\n\n'))
+        await writer.close()
+
+        const chunks = await chunksPromise
+        expect(chunks.at(-1)?.['0']).toBe('Hi')
     })
 
     it('waits for split JSON lines and accumulates tool call deltas', async () => {

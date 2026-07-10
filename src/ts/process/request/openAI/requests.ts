@@ -1099,21 +1099,25 @@ function getTranStream(arg:RequestDataArgumentExtended):TransformStream<Uint8Arr
         return false
     }
 
-    const processBufferedLines = (control:TransformStreamDefaultController<StreamResponseChunk>, final = false) => {
-        const lines = buffer.split(/\r?\n/)
-        buffer = lines.pop() ?? ''
+    const processBufferedEvents = (control:TransformStreamDefaultController<StreamResponseChunk>, final = false) => {
+        const events = buffer.split(/\r\n\r\n|\n\n|\r\r/)
+        buffer = events.pop() ?? ''
 
-        if(final && buffer){
-            lines.push(buffer)
+        if(final && buffer.trim()){
+            events.push(buffer)
             buffer = ''
         }
 
         let updated = false
-        for(const line of lines){
-            if(!line.startsWith("data:")){
+        for(const rawEvent of events){
+            const dataLines = rawEvent
+                .split(/\r\n|\r|\n/)
+                .filter((line) => line.startsWith("data:"))
+                .map((line) => line.replace(/^data:\s?/, ''))
+            if(dataLines.length === 0){
                 continue
             }
-            updated = applyStreamData(line.replace(/^data:\s?/, '')) || updated
+            updated = applyStreamData(dataLines.join('\n')) || updated
             if(streamDone){
                 emit(control)
                 return true
@@ -1132,14 +1136,14 @@ function getTranStream(arg:RequestDataArgumentExtended):TransformStream<Uint8Arr
                 return
             }
             buffer += decoder.decode(chunk, { stream: true })
-            processBufferedLines(control)
+            processBufferedEvents(control)
         },
         flush(control) {
             if(streamDone){
                 return
             }
             buffer += decoder.decode()
-            processBufferedLines(control, true)
+            processBufferedEvents(control, true)
         }
     })
 }
