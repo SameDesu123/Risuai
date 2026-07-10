@@ -279,6 +279,69 @@ describe('OpenAI chat completions stream parser', () => {
             },
         })
     })
+
+    it('accumulates structured reasoning and content across events', async () => {
+        const stream = __testOpenAIRequestsAPI.getTranStream(baseArg({
+            modelInfo: {
+                ...baseArg().modelInfo,
+                flags: [],
+            },
+        }))
+        const chunksPromise = collectStream(stream.readable)
+        const writer = stream.writable.getWriter()
+        const encoder = new TextEncoder()
+
+        await writer.write(encoder.encode('data: {"choices":[{"delta":{"reasoning_content":"Think "},"index":0}]}\n\n'))
+        await writer.write(encoder.encode('data: {"choices":[{"delta":{"reasoning_content":"step"},"index":0}]}\n\n'))
+        await writer.write(encoder.encode('data: {"choices":[{"delta":{"content":"Answer"},"index":0}]}\n\n'))
+        await writer.close()
+
+        const chunks = await chunksPromise
+        expect(chunks.at(-1)?.['0']).toBe('<Thoughts>\nThink step\n</Thoughts>\nAnswer')
+    })
+
+    it('extracts tagged reasoning after the closing tag arrives', async () => {
+        const stream = __testOpenAIRequestsAPI.getTranStream(baseArg({
+            modelInfo: {
+                ...baseArg().modelInfo,
+                flags: [LLMFlags.deepSeekThinkingOutput],
+            },
+        }))
+        const chunksPromise = collectStream(stream.readable)
+        const writer = stream.writable.getWriter()
+        const encoder = new TextEncoder()
+
+        await writer.write(encoder.encode('data: {"choices":[{"delta":{"content":"<think>Plan"},"index":0}]}\n\n'))
+        await writer.write(encoder.encode('data: {"choices":[{"delta":{"content":" more"},"index":0}]}\n\n'))
+        await writer.write(encoder.encode('data: {"choices":[{"delta":{"content":"</think>Answer"},"index":0}]}\n\n'))
+        await writer.close()
+
+        const chunks = await chunksPromise
+        expect(chunks.at(-1)?.['0']).toBe('<Thoughts>\nPlan more\n</Thoughts>\nAnswer')
+    })
+
+    it('keeps multi-generation choices separate across events', async () => {
+        const stream = __testOpenAIRequestsAPI.getTranStream(baseArg({
+            modelInfo: {
+                ...baseArg().modelInfo,
+                flags: [],
+            },
+            multiGen: true,
+        }))
+        const chunksPromise = collectStream(stream.readable)
+        const writer = stream.writable.getWriter()
+        const encoder = new TextEncoder()
+
+        await writer.write(encoder.encode('data: {"choices":[{"delta":{"content":"A"},"index":0},{"delta":{"content":"B"},"index":1}]}\n\n'))
+        await writer.write(encoder.encode('data: {"choices":[{"delta":{"content":"C"},"index":0},{"delta":{"content":"D"},"index":1}]}\n\n'))
+        await writer.close()
+
+        const chunks = await chunksPromise
+        expect(chunks.at(-1)).toMatchObject({
+            '0': 'AC',
+            '1': 'BD',
+        })
+    })
 })
 
 describe('OpenAI Responses API helpers', () => {
