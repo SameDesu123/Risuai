@@ -25,7 +25,8 @@ import { hasher } from "./parser/parser.svelte";
 import { characterURLImport, hubURL } from "./characterCards";
 import { defaultJailbreak, defaultMainPrompt, oldJailbreak, oldMainPrompt } from "./storage/defaultPrompts";
 import { loadRisuAccountData } from "./drive/accounter";
-import { decodeRisuSave, encodeRisuSaveLegacy, RisuSaveEncoder, type toSaveType } from "./storage/risuSave";
+import { decodeRisuSave, encodeRisuSaveLegacy, RisuSaveEncoder } from "./storage/risuSave";
+import { createSaveTracker } from "./storage/saveTracker.svelte";
 import { AutoStorage } from "./storage/autoStorage";
 import { updateAnimationSpeed } from "./gui/animation";
 import { updateColorScheme, updateTextThemeAndCSS } from "./gui/colorscheme";
@@ -312,99 +313,18 @@ export async function saveDb() {
         }
     }
 
-    const changeTracker: toSaveType = {
-        character: [],
-        chat: [],
-        botPreset: false,
-        modules: false,
-        loadouts: false,
-        plugins: false,
-        pluginCustomStorage: false
-    }
-
     let encoder = new RisuSaveEncoder()
     await encoder.init(getDatabase(), {
         compression: forageStorage.isAccount
     })
 
-    $effect.root(() => {
-
-        let selIdState = $state(0)
-
-        const debounceTime = 500; // 500 milliseconds
-        let saveTimeout: ReturnType<typeof setTimeout> | null = null;
-
-        selectedCharID.subscribe((v) => {
-            selIdState = v
-        })
-
-        function saveTimeoutExecute() {
-            if (saveTimeout) {
-                clearTimeout(saveTimeout);
-            }
-            saveTimeout = setTimeout(() => {
-                changed = true;
-            }, debounceTime);
-        }
-
-        $effect(() => {
-            DBState.db.botPresetsId
-            DBState.db.botPresets.length
-            changeTracker.botPreset = true
-            saveTimeoutExecute()
-        })
-        $effect(() => {
-            $state.snapshot(DBState.db.modules)
-            changeTracker.modules = true
-            saveTimeoutExecute()
-        })
-        $effect(() => {
-            $state.snapshot(DBState.db.loadouts)
-            changeTracker.loadouts = true
-            saveTimeoutExecute()
-        })
-        $effect(() => {
-            $state.snapshot(DBState.db.plugins)
-            changeTracker.plugins = true
-            saveTimeoutExecute()
-        })
-        $effect(() => {
-            $state.snapshot(DBState.db.pluginCustomStorage)
-            changeTracker.pluginCustomStorage = true
-            saveTimeoutExecute()
-        })
-        $effect(() => {
-            for (const key in DBState.db) {
-                if (
-                    key !== 'characters' && key !== 'botPresets' && key !== 'modules' &&
-                    key !== 'loadouts' && key !== 'plugins' && key !== 'pluginCustomStorage'
-                ) {
-                    $state.snapshot(DBState.db[key])
-                }
-            }
-            if (DBState?.db?.characters?.[selIdState]) {
-                for (const key in DBState.db.characters[selIdState]) {
-                    if (key !== 'chats') {
-                        $state.snapshot(DBState.db.characters[selIdState][key])
-                    }
-                }
-                $state.snapshot(DBState.db.characters[selIdState].chats)
-                if (changeTracker.character[0] !== DBState.db.characters[selIdState]?.chaId) {
-                    changeTracker.character.unshift(DBState.db.characters[selIdState]?.chaId)
-                }
-                if (
-                    changeTracker.chat[0]?.[0] !== DBState.db.characters[selIdState]?.chaId ||
-                    changeTracker.chat[0]?.[1] !== DBState.db.characters[selIdState]?.chats[DBState.db.characters[selIdState]?.chatPage].id
-                ) {
-                    changeTracker.chat.unshift([DBState.db.characters[selIdState]?.chaId, DBState.db.characters[selIdState]?.chats[DBState.db.characters[selIdState]?.chatPage].id])
-                }
-            }
-            saveTimeoutExecute()
-        })
+    let saveTimeout: ReturnType<typeof setTimeout> | null = null
+    const changeTracker = createSaveTracker(() => DBState.db, () => {
+        if (saveTimeout) clearTimeout(saveTimeout)
+        saveTimeout = setTimeout(() => { changed = true }, 500)
     })
 
     let savetrys = 0
-    let lastDbData = new Uint8Array(0)
     await sleep(1000)
     while (true) {
         if (!changed) {
@@ -425,11 +345,6 @@ export async function saveDb() {
                 requiresFullEncoderReload.state = false
             }
 
-            let toSave = safeStructuredClone(changeTracker)
-            changeTracker.character = changeTracker.character.length === 0 ? [] : [changeTracker.character[0]]
-            changeTracker.chat = changeTracker.chat.length === 0 ? [] : [changeTracker.chat[0]]
-            changeTracker.botPreset = false
-            changeTracker.modules = false
             if (gotChannel) {
                 //Data is saved in other tab
                 await sleep(1000)
@@ -440,13 +355,16 @@ export async function saveDb() {
             }
             let db = getDatabase()
             if (!db.characters) {
+                changed = true
                 await sleep(1000)
                 continue
             }
 
-            await encoder.set(db, toSave)
+            const batch = changeTracker.snapshot()
+            await encoder.set(db, batch.toSave)
             const encoded = encoder.encode()
             if (!encoded) {
+                changed = true
                 await sleep(1000)
                 continue
             }
@@ -465,6 +383,7 @@ export async function saveDb() {
                     await sleep(3000)
                 }
             }
+            batch.acknowledge()
             if (!forageStorage.isAccount) {
                 await getDbBackups()
             }
@@ -472,6 +391,7 @@ export async function saveDb() {
             await saveDbKei()
             await sleep(500)
         } catch (error) {
+            changed = true
             savetrys += 1
             if (savetrys > 4) {
                 alertError(error)
@@ -479,9 +399,10 @@ export async function saveDb() {
             else {
                 console.error(error)
             }
+            await sleep(500)
+        } finally {
+            saving.state = false
         }
-
-        saving.state = false
     }
 }
 
