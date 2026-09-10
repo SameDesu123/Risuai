@@ -360,7 +360,7 @@ export async function saveDb() {
                 continue
             }
 
-            const batch = changeTracker.snapshot()
+            const batch = changeTracker.takeBatch()
             await encoder.set(db, batch.toSave)
             const encoded = encoder.encode()
             if (!encoded) {

@@ -11,10 +11,23 @@ const blocks = {
 } as const
 
 export type SaveTarget =
-    | ['root', string]
-    | ['character', string]
-    | ['chat', string, string]
+    | ['root', field: string]
+    | ['character', characterId: string, section: string]
+    | ['chat', characterId: string, chatId: string, section: string]
     | [(typeof blocks)[keyof typeof blocks]]
+
+// Sections are the persisted fields of a character/chat (e.g. triggerscript,
+// globalLore, message, hypaV3Data). Targets contain identifiers, never data.
+// Read reactive dependencies without copying values or retaining old snapshots.
+function readDeep(value: unknown, seen = new WeakSet<object>()) {
+    if (value === null || typeof value !== 'object' || seen.has(value)) return
+    // Match $state's deep-reactive objects; class instances are tracked on replacement.
+    const prototype = Object.getPrototypeOf(value)
+    if (prototype !== Object.prototype && prototype !== Array.prototype && prototype !== null) return
+    seen.add(value)
+    if (Array.isArray(value)) value.length // Length-only edits must also invalidate the section.
+    for (const key of Object.keys(value)) readDeep(value[key], seen)
+}
 
 // Keep observers attached to objects when arrays are reordered. Removed objects
 // are disposed immediately, including their nested chat observers.
@@ -47,6 +60,7 @@ function watchItems<T>(read: () => Iterable<T>, observe: (item: T) => void | (()
     })
 }
 
+// Initial registration conservatively marks all observed sections dirty.
 export function createSaveTracker(read: () => Database, onChange: () => void) {
     const pending = new Map<string, SaveTarget>()
     let disposed = false
@@ -58,21 +72,28 @@ export function createSaveTracker(read: () => Database, onChange: () => void) {
         untrack(onChange)
     }
 
-    const stop = $effect.root(() => {
-        const stopRoot = watchItems(
-            () => Object.keys(read()).filter(key => key !== 'characters' && !Object.hasOwn(blocks, key)),
+    function watchFields(object: () => object, target: (key: string) => SaveTarget | null, exclude: string[] = []) {
+        return watchItems(
+            () => Object.keys(object()).filter(key => !exclude.includes(key)),
             key => {
                 $effect(() => {
-                    $state.snapshot(read()[key])
-                    mark(['root', key])
+                    readDeep(object()[key])
+                    const changed = target(key)
+                    if (changed) mark(changed)
+                    // Also mark the old owner/section when IDs change or fields disappear.
+                    return () => {
+                        if (changed) mark([...changed] as SaveTarget)
+                    }
                 })
-                return () => mark(['root', key])
             },
         )
+    }
 
+    const stop = $effect.root(() => {
+        const stopRoot = watchFields(read, key => ['root', key], ['characters', ...Object.keys(blocks)])
         for (const [key, block] of Object.entries(blocks)) {
             $effect(() => {
-                $state.snapshot(read()[key])
+                readDeep(read()[key])
                 mark([block])
             })
         }
@@ -80,38 +101,32 @@ export function createSaveTracker(read: () => Database, onChange: () => void) {
         const stopCharacters = watchItems(
             () => read().characters ?? [],
             character => {
-                $effect(() => {
-                    const id = character.chaId
-                    for (const key in character) {
-                        if (key !== 'chats') $state.snapshot(character[key])
-                    }
-                    if (id) mark(['character', id])
-                    return () => {
-                        if (id) mark(['character', id])
-                    }
-                })
-                // Chat ordering/replacement is part of the persisted character too.
+                const stopFields = watchFields(
+                    () => character,
+                    key => (character.chaId ? ['character', character.chaId, key] : null),
+                    ['chats'],
+                )
                 $effect(() => {
                     Array.from(character.chats ?? [])
-                    if (character.chaId) mark(['character', character.chaId])
+                    if (character.chaId) mark(['character', character.chaId, 'chats'])
                 })
-                return watchItems(
+                const stopChats = watchItems(
                     () => character.chats ?? [],
-                    chat => {
-                        $effect(() => {
-                            const characterId = character.chaId
-                            const chatId = chat.id
-                            $state.snapshot(chat)
-                            const changed = () => {
-                                if (!characterId) return
-                                mark(['character', characterId])
-                                if (chatId) mark(['chat', characterId, chatId])
-                            }
-                            changed()
-                            return changed
-                        })
-                    },
+                    chat =>
+                        watchFields(
+                            () => chat,
+                            key => {
+                                if (!character.chaId) return null
+                                return chat.id
+                                    ? ['chat', character.chaId, chat.id, key]
+                                    : ['character', character.chaId, 'chats']
+                            },
+                        ),
                 )
+                return () => {
+                    stopFields()
+                    stopChats()
+                }
             },
         )
 
@@ -128,7 +143,7 @@ export function createSaveTracker(read: () => Database, onChange: () => void) {
 
     return {
         // Reading a batch does not clear anything. A failed write can retry it.
-        snapshot() {
+        takeBatch() {
             const batch = new Map(pending)
             const toSave: toSaveType = {
                 character: [],
@@ -139,20 +154,25 @@ export function createSaveTracker(read: () => Database, onChange: () => void) {
                 plugins: false,
                 pluginCustomStorage: false,
             }
+            const characters = new Set<string>()
+            const chats = new Map<string, [string, string]>()
             for (const target of batch.values()) {
                 switch (target[0]) {
                     case 'root':
                         break // The encoder always writes the root.
                     case 'character':
-                        toSave.character.push(target[1])
+                        characters.add(target[1])
                         break
                     case 'chat':
-                        toSave.chat.push([target[1], target[2]])
+                        characters.add(target[1])
+                        chats.set(JSON.stringify(target.slice(1, 3)), [target[1], target[2]])
                         break
                     default:
                         toSave[target[0]] = true
                 }
             }
+            toSave.character = [...characters]
+            toSave.chat = [...chats.values()]
             return {
                 toSave,
                 targets: Array.from(batch.values(), target => [...target] as SaveTarget),
