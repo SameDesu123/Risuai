@@ -384,11 +384,20 @@ export async function saveDb() {
                 }
             }
             batch.acknowledge()
-            if (!forageStorage.isAccount) {
-                await getDbBackups()
-            }
             savetrys = 0
-            await saveDbKei()
+            // Maintenance failures must not retry an already persisted save.
+            if (!forageStorage.isAccount) {
+                try {
+                    await getDbBackups()
+                } catch (error) {
+                    console.error('Failed to clean up database backups:', error)
+                }
+            }
+            try {
+                await saveDbKei()
+            } catch (error) {
+                console.error('Failed to run the Kei backup:', error)
+            }
             await sleep(500)
         } catch (error) {
             changed = true
