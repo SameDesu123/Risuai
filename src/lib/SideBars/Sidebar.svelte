@@ -16,7 +16,7 @@
 
 
   } from "../../ts/stores.svelte";
-    import { setDatabase, type folder } from "../../ts/storage/database.svelte";
+    import { type folder } from "../../ts/storage/database.svelte";
     import { DBState } from 'src/ts/stores.svelte';
     import BarIcon from "./BarIcon.svelte";
     import SidebarIndicator from "./SidebarIndicator.svelte";
@@ -25,8 +25,6 @@
     Settings,
     ListIcon,
     LayoutGridIcon,
-    FolderIcon,
-    FolderOpenIcon,
     HomeIcon,
     WrenchIcon,
     User2Icon,
@@ -41,10 +39,13 @@
     import isEqual from "lodash/isEqual";
     import SidebarAvatar from "./SidebarAvatar.svelte";
     import BaseRoundedButton from "../UI/BaseRoundedButton.svelte";
-    import { getCharacterIndexObject, selectSingleFile } from "src/ts/util";
+    import { getCharacterIndexObject } from "src/ts/util";
     import { v4 } from "uuid";
-    import { checkCharOrder, getFileSrc, saveAsset } from "src/ts/globalApi.svelte";
-    import { alertInput, alertSelect } from "src/ts/alert";
+    import { checkCharOrder } from "src/ts/globalApi.svelte";
+    import FolderButton from "./FolderButton.svelte";
+    import FolderSettings from "./FolderSettings.svelte";
+    import { folderBackground, type FolderAppearance } from "src/ts/gui/folderAppearance";
+
     import SideChatList from "./SideChatList.svelte";
     import { ConnectionIsHost, ConnectionOpenStore, RoomIdStore } from "src/ts/sync/multiuser";
   import { sideBarSize } from "src/ts/gui/guisize";
@@ -52,6 +53,10 @@
     import QuickSettingsGui from "../Others/QuickSettingsGUI.svelte";
     import PluginDefinedIcon from "../Others/PluginDefinedIcon.svelte";
     import { RISU_SIDEBAR_DRAG_TYPE } from "src/ts/dragTypes";
+    let editingFolderId = $state<string | null>(null);
+    let editingFolder = $derived(DBState.db.characterOrder.find(
+      (item): item is folder => typeof item !== "string" && item.id === editingFolderId
+    ));
   let sideBarMode = $state(0);
   let editMode = $state(false);
   let menuMode = $state(0);
@@ -66,7 +71,7 @@
   }
 
   type sortTypeNormal = { type:'normal',img: string, index: number, name:string }
-  type sortType =  sortTypeNormal|{type:'folder',folder:sortTypeNormal[],id:string, name:string, color:string, img?:string}
+  type sortType =  sortTypeNormal|{type:'folder',folder:sortTypeNormal[],id:string, name:string, color:string, img?:string, appearance:FolderAppearance}
   let charImages: sortType[] = $state([]);
   let IconRounded = $state(false)
   let openFolders:string[] = $state([])
@@ -118,6 +123,7 @@
           name: folder.name,
           color: folder.color,
           img: folder.imgFile,
+          appearance: { name: folder.name, color: folder.color, icon: folder.icon, iconColor: folder.iconColor, iconOpacity: folder.iconOpacity, visualMode: folder.visualMode, imgFile: folder.imgFile, img: folder.img },
         });
       }
     }
@@ -575,7 +581,7 @@
         />
         <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
         <div
-            role="button" tabindex="0"
+            role={char.type === "normal" ? "button" : undefined} tabindex={char.type === "normal" ? 0 : undefined}
             onclick={() => {
               if(char.type === "normal"){
                 changeChar(char.index, {reseter});
@@ -598,109 +604,22 @@
               chaId={DBState.db.characters[char.index]?.chaId}
             />
           {:else if char.type === "folder"}
-            {#key char.color}
-            {#key char.name}
-              <SidebarAvatar src="slot" size="56" rounded={IconRounded} bordered name={char.name} color={char.color} backgroundimg={char.img ? getCharImage(char.img, "plain") : ""}
-              oncontextmenu={async (e) => {
-                e.preventDefault()
-                const sel = parseInt(await alertSelect([language.renameFolder,language.changeFolderColor,language.changeFolderImage,language.cancel]))
-                if(sel === 0){
-                  const v = await alertInput(language.changeFolderName, [], char.name)
-                  const db = DBState.db
-                  if(v){
-                    const oder = db.characterOrder[ind]
-                    if(typeof(oder) === 'string'){
-                      return
-                    }
-                    oder.name = v
-                    db.characterOrder[ind] = oder
-                  }
-                }
-                else if(sel === 1){
-                  const colors = ["red","green","blue","yellow","indigo","purple","pink","default"]
-                  const sel = parseInt(await alertSelect(colors))
-                  const db = DBState.db
-                  const oder = db.characterOrder[ind]
-                  if(typeof(oder) === 'string'){
-                    return
-                  }
-                  oder.color = colors[sel].toLocaleLowerCase()
-                  db.characterOrder[ind] = oder
-                }
-                else if(sel === 2) {
-                  const sel = parseInt(await alertSelect(['Reset to Default Image', 'Select Image File']))
-                  const db = DBState.db
-                  const oder = db.characterOrder[ind]
-                  if(typeof(oder) === 'string'){
-                    return
-                  }
-
-                  switch (sel) {
-                    case 0:
-                      oder.imgFile = null
-                      oder.img = ''
-                      break;
-                  
-                    case 1:
-                      const folderImage = await selectSingleFile([
-                        'png',
-                        'jpg',
-                        'webp',
-                      ])
-
-                      if(!folderImage) {
-                        return
-                      }
-
-                      const folderImageData = await saveAsset(folderImage.data)
-
-                      oder.imgFile = folderImageData
-                      oder.img = await getFileSrc(folderImageData)
-                      db.characterOrder[ind] = oder
-                      break;
-                  }
-                }
-              }}
-              onClick={() => {
-                if(char.type !== 'folder'){
-                  return
-                }
-                if(openFolders.includes(char.id)){
-                  openFolders.splice(openFolders.indexOf(char.id), 1)
-                }
-                else{
-                  openFolders.push(char.id)
-                }
-                openFolders = openFolders
-              }}>
-                {#if DBState.db.showFolderName}
-                  <div class="h-full w-full flex justify-center items-center">
-                    <span class="hyphens-auto truncate font-bold">{char.name}</span>
-                  </div>
-                {:else if openFolders.includes(char.id)}
-                  <FolderOpenIcon />
-                {:else}
-                  <FolderIcon />
-                {/if}
-              </SidebarAvatar>
-            {/key}
-            {/key}
+            <FolderButton folder={char.appearance} rounded={IconRounded}
+              open={openFolders.includes(char.id)} showName={DBState.db.showFolderName}
+              onSettings={() => { editingFolderId = char.id; }}
+              onToggle={() => {
+                openFolders = openFolders.includes(char.id)
+                  ? openFolders.filter(id => id !== char.id)
+                  : [...openFolders, char.id];
+              }} />
           {/if}
         </div>
       </div>
       {#if char.type === 'folder' && openFolders.includes(char.id)}
         {#key char.color}
         <div class="p-1 flex flex-col items-center py-1 mt-1 rounded-lg relative">
-          <div class="absolute top-0 left-1 border border-selected w-full h-full rounded-lg z-0 {
-            char.color === 'red' ? 'bg-red-700/20' :
-            char.color === 'yellow' ? 'bg-yellow-700/20' :
-            char.color === 'green' ? 'bg-green-700/20' :
-            char.color === 'blue' ? 'bg-blue-700/20' :
-            char.color === 'indigo' ? 'bg-indigo-700/20' :
-            char.color === 'purple' ? 'bg-purple-700/20' :
-            char.color === 'pink' ? 'bg-pink-700/20' :
-            'bg-darkbg/20'
-          }"></div>
+          <div class="absolute top-0 left-1 border border-selected w-full h-full rounded-lg z-0"
+            style:background-color={folderBackground(char.color)} style:opacity={0.4}></div>
           <div class="h-4 min-h-4 w-14 relative z-10" role="listitem" ondragover={(e) => {
             if(!getCurrentSidebarDrag(e)){ return }
             e.preventDefault()
@@ -998,6 +917,12 @@
 
     </div>
 
+{/if}
+
+{#if editingFolder}
+  {#key editingFolder.id}
+    <FolderSettings source={editingFolder} onClose={() => { editingFolderId = null; }} />
+  {/key}
 {/if}
 
 <style>

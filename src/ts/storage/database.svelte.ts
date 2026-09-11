@@ -1692,6 +1692,10 @@ interface hordeConfig{
 }
 
 export interface folder{
+    icon?:string
+    iconColor?:string
+    iconOpacity?:number
+    visualMode?:'icon'|'image'
     name:string
     data:string[]
     color:string
