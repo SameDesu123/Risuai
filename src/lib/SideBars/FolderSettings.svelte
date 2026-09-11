@@ -245,9 +245,9 @@
         inset: 0;
         margin: auto;
         padding: 0;
-        width: min(620px, calc(100vw - 24px));
+        width: min(448px, calc(100vw - 24px));
         max-height: calc(100dvh - 24px);
-        border-radius: 22px;
+        border-radius: 12px;
         box-shadow: 0 24px 80px #0005;
         overflow: hidden;
         animation: folder-enter 260ms cubic-bezier(0.16, 1, 0.3, 1);
@@ -266,11 +266,11 @@
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: 18px 24px 8px;
+        padding: 14px 16px 4px;
         flex-shrink: 0;
     }
     h2 {
-        font-size: 26px;
+        font-size: 20px;
         font-weight: 700;
     }
     button {
@@ -283,18 +283,18 @@
     .close {
         display: grid;
         place-items: center;
-        width: 44px;
-        height: 44px;
+        width: 36px;
+        height: 36px;
         color: var(--color-textcolor2);
         border-radius: 9px;
     }
     .body {
         overflow-y: auto;
         min-height: 0;
-        padding: 8px 24px 20px;
+        padding: 8px 16px 16px;
         display: flex;
         flex-direction: column;
-        gap: 18px;
+        gap: 14px;
         overscroll-behavior: contain;
     }
     .section-label,
@@ -304,10 +304,10 @@
     .preview {
         display: flex;
         align-items: center;
-        gap: 20px;
-        min-height: 100px;
-        padding: 20px 14px;
-        border-radius: 13px;
+        gap: 14px;
+        min-height: 76px;
+        padding: 12px;
+        border-radius: 10px;
     }
     .indicator {
         width: 5px;
@@ -316,7 +316,7 @@
         flex-shrink: 0;
     }
     .preview-name {
-        font-size: 22px;
+        font-size: 18px;
         font-weight: 600;
         overflow-wrap: anywhere;
         min-width: 0;
@@ -329,7 +329,7 @@
         align-items: center;
         border-radius: 10px;
         padding: 0 12px;
-        min-height: 48px;
+        min-height: 42px;
         gap: 8px;
     }
     .name-input input {
@@ -354,7 +354,7 @@
         align-items: center;
         justify-content: center;
         gap: 10px;
-        min-height: 46px;
+        min-height: 42px;
         padding: 8px 12px;
         border-radius: 10px;
         background: var(--color-darkbutton);
@@ -368,9 +368,9 @@
     }
     .icon-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(44px, 1fr));
-        gap: 7px;
-        max-height: 154px;
+        grid-template-columns: repeat(auto-fill, minmax(40px, 1fr));
+        gap: 6px;
+        max-height: 132px;
         overflow-y: auto;
         padding: 3px;
         scrollbar-width: thin;
@@ -380,8 +380,8 @@
     .icon-option {
         display: grid;
         place-items: center;
-        min-width: 44px;
-        height: 44px;
+        min-width: 40px;
+        height: 40px;
         border: 2px solid transparent;
         border-radius: 10px;
     }
@@ -413,11 +413,11 @@
         display: flex;
         justify-content: flex-end;
         gap: 12px;
-        padding: 14px 24px;
+        padding: 12px 16px;
         flex-shrink: 0;
     }
     footer button {
-        min-width: 112px;
+        min-width: 96px;
     }
     button:focus-visible,
     input:focus-visible {
@@ -446,16 +446,8 @@
         header {
             padding: 12px 16px 4px;
         }
-        h2 {
-            font-size: 23px;
-        }
         .body {
-            padding: 8px 16px 16px;
-            gap: 16px;
-        }
-        .preview {
-            min-height: 92px;
-            padding: 16px 12px;
+            gap: 12px;
         }
         .mode-switch button {
             font-size: 14px;
