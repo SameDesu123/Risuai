@@ -153,6 +153,8 @@
     })
 
     const apiKeyGuide = $derived.by(() => {
+        // language isn't reactive, so track the saved language to rebuild the guide after switching
+        DBState.db.language
         if(provider === 'claude'){
             return language.setup.setupClaudeSteps.map((text, i) =>
                 `![](/welcome/claude/ant_${i}.webp)\n\n${i === 0 ? 'https://console.anthropic.com/login?returnTo=%2F%3F\n\n' : ''}` + text
