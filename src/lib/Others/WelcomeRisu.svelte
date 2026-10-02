@@ -252,22 +252,17 @@
         <div class="vignette pointer-events-none absolute inset-0"></div>
         <div class="pointer-events-none absolute inset-0 bg-linear-to-t from-black/60 via-black/10 to-black/20 lg:bg-linear-to-r lg:from-black/40 lg:via-transparent lg:to-transparent"></div>
         <img src={Airisu} alt="" class="airisu pointer-events-none absolute bottom-0 right-[6%] hidden h-[44%] max-h-[22rem] w-auto lg:block" draggable="false">
-        {#key speech}
-            <div class="absolute bottom-[min(46%,23rem)] right-[min(15%,13rem)] hidden max-w-sm rounded-3xl rounded-br-md bg-darkbg/90 px-5 py-4 leading-relaxed shadow-xl backdrop-blur lg:block" in:fly={{ y: 8, duration: 300 }}>
-                <span class="mb-1 block text-xs font-semibold uppercase tracking-wider text-textcolor2">Airisu</span>
-                {speech}
-            </div>
-        {/key}
 
-    <header class="relative z-20 flex shrink-0 items-center px-4 py-4 lg:px-[6%] lg:py-7">
+    <header class="relative z-20 flex shrink-0 items-center p-[clamp(1rem,2.4vmin,1.75rem)]">
         <!-- scales with the shorter screen side so tablets don't get a phone-sized logo -->
         <div class="rounded-[clamp(1rem,2.4vmin,1.5rem)] bg-darkbg/85 px-[clamp(1rem,2.2vmin,1.5rem)] py-[clamp(0.625rem,1.6vmin,1rem)] shadow-xl backdrop-blur">
             <img src="/logo_typo_trans.png" alt="Risuai" class="h-[clamp(1.5rem,5.5vmin,3.25rem)] w-auto">
         </div>
     </header>
 
-    <main class="relative z-10 flex min-h-0 flex-1 items-end lg:items-center lg:px-[6%] lg:pb-10">
-        <div class="relative z-10 flex max-h-[78%] w-full flex-col rounded-t-[2rem] bg-darkbg shadow-2xl lg:max-h-full lg:w-[27rem] lg:rounded-[2rem]">
+    <main class="relative z-10 flex min-h-0 flex-1 items-end">
+        <!-- on desktop the modal is centered on 25% of the screen width and keeps a fixed height that scales with the screen -->
+        <div class="relative z-10 flex max-h-[78%] w-full flex-col rounded-t-[2rem] bg-darkbg shadow-2xl lg:absolute lg:left-1/4 lg:top-1/2 lg:h-[clamp(30rem,62%,40rem)] lg:max-h-[calc(100%-2.5rem)] lg:w-[clamp(26rem,32vw,36rem)] lg:-translate-x-1/2 lg:-translate-y-1/2 lg:rounded-[2rem]">
             <img src={Airisu} alt="" class="airisu pointer-events-none absolute bottom-full right-4 -mb-3 h-44 w-auto lg:hidden" draggable="false">
             <div class="flex items-center justify-between px-7 pt-6">
                 <button class="-ml-2 flex h-9 w-9 items-center justify-center rounded-full text-textcolor2 transition-colors hover:bg-textcolor/10 hover:text-textcolor disabled:invisible" disabled={step === 0 || step === 10} onclick={goBack} aria-label={language.goback}>
@@ -284,8 +279,8 @@
             {#key step}
                 <div class="flex min-h-0 flex-1 flex-col" in:fly={{ x: 16, duration: 300 }}>
                 <div class="flex min-h-0 flex-1 flex-col overflow-y-auto px-7 pb-7 pt-4">
-                    <h1 class="text-center text-3xl font-bold leading-tight tracking-tight">{title}</h1>
-                    <div class="mt-3 flex items-start justify-center gap-2 text-center text-textcolor2 lg:hidden">
+                    <h1 class="text-center text-3xl font-bold leading-tight tracking-tight lg:text-[clamp(1.875rem,3.6vmin,2.75rem)]">{title}</h1>
+                    <div class="mt-3 flex items-start justify-center gap-2 text-center text-textcolor2 lg:mt-4 lg:text-[clamp(1rem,1.9vmin,1.375rem)] lg:leading-relaxed">
                         <span>{speech}</span>
                     </div>
 
