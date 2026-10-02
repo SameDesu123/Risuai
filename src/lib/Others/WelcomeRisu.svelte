@@ -260,8 +260,9 @@
         {/key}
 
     <header class="relative z-20 flex shrink-0 items-center px-4 py-4 lg:px-[6%] lg:py-7">
-        <div class="rounded-2xl bg-darkbg/85 px-4 py-2.5 shadow-xl backdrop-blur lg:rounded-3xl lg:px-6 lg:py-4">
-            <img src="/logo_typo_trans.png" alt="Risuai" class="h-6 w-auto lg:h-11">
+        <!-- scales with the shorter screen side so tablets don't get a phone-sized logo -->
+        <div class="rounded-[clamp(1rem,2.4vmin,1.5rem)] bg-darkbg/85 px-[clamp(1rem,2.2vmin,1.5rem)] py-[clamp(0.625rem,1.6vmin,1rem)] shadow-xl backdrop-blur">
+            <img src="/logo_typo_trans.png" alt="Risuai" class="h-[clamp(1.5rem,5.5vmin,3.25rem)] w-auto">
         </div>
     </header>
 
