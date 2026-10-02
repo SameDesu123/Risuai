@@ -44,16 +44,32 @@
         }
     }
 
+    // what the user already saved on a step, so revisiting it doesn't make them type it again
+    function savedInput(s: number){
+        switch(s){
+            case 1: return DBState.db.username
+            case 4: {
+                if(provider === 'openai') return DBState.db.openAIKey
+                if(provider === 'openrouter') return DBState.db.openrouterKey
+                // claudeAPIKey has no default, so a fresh database leaves it undefined
+                if(provider === 'claude') return DBState.db.claudeAPIKey ?? ''
+                return ''
+            }
+            default: return ''
+        }
+    }
+
     function goTo(next: number){
         history = [...history, step]
         step = next
-        input = ''
+        // the name step is skipped here since the default username would fill it on first visit
+        input = next === 4 ? savedInput(next) : ''
     }
 
     function goBack(){
         step = history.at(-1) ?? 0
         history = history.slice(0, -1)
-        input = ''
+        input = savedInput(step)
     }
 
     function selectLanguage(code: string){
