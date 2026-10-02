@@ -251,21 +251,23 @@
         <WelcomeBackground />
         <div class="vignette pointer-events-none absolute inset-0"></div>
         <div class="pointer-events-none absolute inset-0 bg-linear-to-t from-black/60 via-black/10 to-black/20 lg:bg-linear-to-r lg:from-black/40 lg:via-transparent lg:to-transparent"></div>
-        <img src={Airisu} alt="" class="airisu pointer-events-none absolute bottom-0 right-[6%] hidden h-[58%] max-h-[30rem] w-auto lg:block" draggable="false">
+        <img src={Airisu} alt="" class="airisu pointer-events-none absolute bottom-0 right-[6%] hidden h-[44%] max-h-[22rem] w-auto lg:block" draggable="false">
         {#key speech}
-            <div class="absolute bottom-[min(60%,31rem)] right-[min(21%,18rem)] hidden max-w-sm rounded-3xl rounded-br-md bg-darkbg/90 px-5 py-4 leading-relaxed shadow-xl backdrop-blur lg:block" in:fly={{ y: 8, duration: 300 }}>
+            <div class="absolute bottom-[min(46%,23rem)] right-[min(15%,13rem)] hidden max-w-sm rounded-3xl rounded-br-md bg-darkbg/90 px-5 py-4 leading-relaxed shadow-xl backdrop-blur lg:block" in:fly={{ y: 8, duration: 300 }}>
                 <span class="mb-1 block text-xs font-semibold uppercase tracking-wider text-textcolor2">Airisu</span>
                 {speech}
             </div>
         {/key}
 
-    <header class="relative z-20 flex shrink-0 items-center px-6 py-5 lg:px-10 lg:py-7">
-        <img src="/logo_typo_trans.png" alt="Risuai" class="h-7 w-auto drop-shadow-lg lg:h-8">
+    <header class="relative z-20 flex shrink-0 items-center px-4 py-4 lg:px-[6%] lg:py-7">
+        <div class="rounded-2xl bg-darkbg/85 px-4 py-2.5 shadow-xl backdrop-blur lg:rounded-3xl lg:px-6 lg:py-4">
+            <img src="/logo_typo_trans.png" alt="Risuai" class="h-6 w-auto lg:h-11">
+        </div>
     </header>
 
     <main class="relative z-10 flex min-h-0 flex-1 items-end lg:items-center lg:px-[6%] lg:pb-10">
         <div class="relative z-10 flex max-h-[78%] w-full flex-col rounded-t-[2rem] bg-darkbg shadow-2xl lg:max-h-full lg:w-[27rem] lg:rounded-[2rem]">
-            <img src={Airisu} alt="" class="airisu pointer-events-none absolute bottom-full right-6 h-28 w-auto lg:hidden" draggable="false">
+            <img src={Airisu} alt="" class="airisu pointer-events-none absolute bottom-full right-4 -mb-3 h-44 w-auto lg:hidden" draggable="false">
             <div class="flex items-center justify-between px-7 pt-6">
                 <button class="-ml-2 flex h-9 w-9 items-center justify-center rounded-full text-textcolor2 transition-colors hover:bg-textcolor/10 hover:text-textcolor disabled:invisible" disabled={step === 0 || step === 10} onclick={goBack} aria-label={language.goback}>
                     <ArrowLeft size={20} />
