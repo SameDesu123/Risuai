@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { ArrowLeft } from "@lucide/svelte";
+    import { ArrowLeft, ChevronDown } from "@lucide/svelte";
     import { fly, fade } from "svelte/transition";
     import MarkdownIt from "markdown-it";
     import DOMPurify from "dompurify";
@@ -60,6 +60,34 @@
         changeLanguage(code)
         DBState.db.language = code
         goTo(1)
+    }
+
+    let scrollArea: HTMLElement | undefined = $state()
+    let moreBelow = $state(false)
+
+    // shows the scroll hint while part of the step is still hidden below the fold
+    function trackOverflow(node: HTMLElement){
+        const update = () => {
+            moreBelow = node.scrollHeight - node.scrollTop - node.clientHeight > 8
+        }
+        // children are observed too, so guide images that load late still update the hint
+        const observer = new ResizeObserver(update)
+        observer.observe(node)
+        for(const child of node.children){
+            observer.observe(child)
+        }
+        node.addEventListener('scroll', update, { passive: true })
+        update()
+        return {
+            destroy(){
+                observer.disconnect()
+                node.removeEventListener('scroll', update)
+            }
+        }
+    }
+
+    function scrollDown(){
+        scrollArea?.scrollBy({ top: scrollArea.clientHeight * 0.7, behavior: 'smooth' })
     }
 
     const md = new MarkdownIt({ linkify: true, breaks: true })
@@ -278,7 +306,8 @@
 
             {#key step}
                 <div class="flex min-h-0 flex-1 flex-col" in:fly={{ x: 16, duration: 300 }}>
-                <div class="flex min-h-0 flex-1 flex-col overflow-y-auto px-7 pb-7 pt-4">
+                <div class="relative flex min-h-0 flex-1 flex-col">
+                <div class="flex min-h-0 flex-1 flex-col overflow-y-auto px-7 pb-7 pt-4" bind:this={scrollArea} use:trackOverflow>
                     <h1 class="text-center text-3xl font-bold leading-tight tracking-tight lg:text-[clamp(1.875rem,3.6vmin,2.75rem)]">{title}</h1>
                     <div class="mt-3 flex items-start justify-center gap-2 text-center text-textcolor2 lg:mt-4 lg:text-[clamp(1rem,1.9vmin,1.375rem)] lg:leading-relaxed">
                         <span>{speech}</span>
@@ -365,6 +394,15 @@
                         <p class="mt-auto pt-6 text-center text-xs text-textcolor2">{step === 0 ? 'You can change it later in settings.' : language.setup.welcomeChangeLater}</p>
                     {/if}
                 </div>
+                {#if moreBelow}
+                    <div class="pointer-events-none absolute inset-x-0 bottom-0 flex h-16 items-end justify-center bg-linear-to-t from-darkbg via-darkbg/80 to-transparent pb-3 {step === 4 ? '' : 'lg:rounded-b-[2rem]'}" transition:fade={{ duration: 150 }}>
+                        <!-- mouse shortcut only; the area itself scrolls with wheel, touch and keyboard -->
+                        <button class="scroll-hint pointer-events-auto flex h-9 w-9 items-center justify-center rounded-full bg-bgcolor text-textcolor2 shadow-lg transition-colors hover:bg-selected hover:text-textcolor" tabindex="-1" aria-hidden="true" onclick={scrollDown}>
+                            <ChevronDown size={20} />
+                        </button>
+                    </div>
+                {/if}
+                </div>
                 {#if step === 4}
                     <!-- kept outside the scroll area so the key input stays reachable under the long guide -->
                     <div class="shrink-0 rounded-b-[2rem] px-7 pb-7 pt-4 shadow-[0_-12px_24px_-12px_rgb(0_0_0/0.4)]">
@@ -422,6 +460,24 @@
         }
         50% {
             transform: translateY(-8px);
+        }
+    }
+
+    .scroll-hint{
+        animation: scroll-hint 1.6s ease-in-out infinite;
+    }
+    @keyframes scroll-hint {
+        0%, 100% {
+            transform: translateY(0);
+        }
+        50% {
+            transform: translateY(4px);
+        }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .airisu, .scroll-hint{
+            animation: none;
         }
     }
 
