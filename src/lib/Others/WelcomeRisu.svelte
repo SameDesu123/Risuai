@@ -11,7 +11,7 @@
     import { updateTextThemeAndCSS } from "src/ts/gui/colorscheme";
     import { alertError } from "src/ts/alert";
     import Airisu from '../../etc/Airisu.webp'
-    import heroImage from '../../etc/bg.jpg'
+    import WelcomeBackground from './WelcomeBackground.svelte'
 
     let step = $state(0)
     let history: number[] = $state([])
@@ -247,7 +247,8 @@
 </script>
 
 <div class="relative h-full w-full overflow-hidden bg-bgcolor text-textcolor sm:p-3 lg:p-4">
-    <div class="hero relative flex h-full w-full flex-col overflow-hidden sm:rounded-[2rem]" style:background-image={`url("${heroImage}")`}>
+    <div class="relative flex h-full w-full flex-col overflow-hidden sm:rounded-[2rem]">
+        <WelcomeBackground />
         <div class="vignette pointer-events-none absolute inset-0"></div>
         <div class="pointer-events-none absolute inset-0 bg-linear-to-t from-black/60 via-black/10 to-black/20 lg:bg-linear-to-r lg:from-black/40 lg:via-transparent lg:to-transparent"></div>
         <img src={Airisu} alt="" class="airisu pointer-events-none absolute bottom-0 right-[6%] hidden h-[58%] max-h-[30rem] w-auto lg:block" draggable="false">
@@ -408,11 +409,6 @@
 {/snippet}
 
 <style>
-    .hero{
-        background-size: cover;
-        background-position: center;
-    }
-
     .vignette{
         background: radial-gradient(ellipse at 60% 45%, transparent 40%, rgb(0 0 0 / 0.5) 100%);
     }
