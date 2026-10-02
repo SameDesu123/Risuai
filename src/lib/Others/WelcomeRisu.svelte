@@ -1,6 +1,7 @@
 <script lang="ts">
     import { ArrowLeft, ChevronDown } from "@lucide/svelte";
     import { fly, fade } from "svelte/transition";
+    import { MediaQuery } from "svelte/reactivity";
     import MarkdownIt from "markdown-it";
     import DOMPurify from "dompurify";
     import { changeLanguage, language } from "src/lang";
@@ -77,6 +78,9 @@
         DBState.db.language = code
         goTo(1)
     }
+
+    // on short screens like a landscape phone a pinned key input would crush the guide, so it scrolls with it instead
+    const shortScreen = new MediaQuery('max-height: 32rem')
 
     let scrollArea: HTMLElement | undefined = $state()
     let moreBelow = $state(false)
@@ -371,6 +375,12 @@
                                     <li class="rounded-2xl bg-bgcolor p-4 text-sm leading-relaxed">{@html renderMarkdown(item)}</li>
                                 {/each}
                             </ol>
+                            {#if shortScreen.current}
+                                <div class="pt-3">
+                                    <!-- no autofocus here, it would jump past the guide straight to the input -->
+                                    {@render textInput('password', 'sk-...', false)}
+                                </div>
+                            {/if}
                         {:else if step === 5}
                             {@render option(language.setup.chooseChatTypeOption1, language.setup.chooseChatTypeOption1Desc, false, () => {
                                 chatLang = 0
@@ -413,7 +423,7 @@
                     {/if}
                 </div>
                 {#if moreBelow}
-                    <div class="pointer-events-none absolute inset-x-0 bottom-0 flex h-16 items-end justify-center bg-linear-to-t from-darkbg via-darkbg/80 to-transparent pb-3 {step === 4 ? '' : 'lg:rounded-b-[2rem]'}" transition:fade={{ duration: 150 }}>
+                    <div class="pointer-events-none absolute inset-x-0 bottom-0 flex h-16 items-end justify-center bg-linear-to-t from-darkbg via-darkbg/80 to-transparent pb-3 {step === 4 && !shortScreen.current ? '' : 'lg:rounded-b-[2rem]'}" transition:fade={{ duration: 150 }}>
                         <!-- mouse shortcut only; the area itself scrolls with wheel, touch and keyboard -->
                         <button class="scroll-hint pointer-events-auto flex h-9 w-9 items-center justify-center rounded-full bg-bgcolor text-textcolor2 shadow-lg transition-colors hover:bg-selected hover:text-textcolor" tabindex="-1" aria-hidden="true" onclick={scrollDown}>
                             <ChevronDown size={20} />
@@ -421,7 +431,7 @@
                     </div>
                 {/if}
                 </div>
-                {#if step === 4}
+                {#if step === 4 && !shortScreen.current}
                     <!-- kept outside the scroll area so the key input stays reachable under the long guide -->
                     <div class="shrink-0 rounded-b-[2rem] px-7 pb-7 pt-4 shadow-[0_-12px_24px_-12px_rgb(0_0_0/0.4)]">
                         {@render textInput('password', 'sk-...')}
@@ -443,11 +453,11 @@
     </button>
 {/snippet}
 
-{#snippet textInput(type: string, placeholder: string)}
+{#snippet textInput(type: string, placeholder: string, focus = true)}
     <!-- svelte-ignore a11y_autofocus -->
     <input class="w-full rounded-2xl bg-bgcolor px-5 py-4 text-center text-lg text-textcolor outline-hidden ring-textcolor/40 transition-shadow placeholder:text-textcolor2/50 focus:ring-2"
         bind:value={input}
-        autofocus
+        autofocus={focus}
         {type}
         {placeholder}
         onkeydown={(e) => {
