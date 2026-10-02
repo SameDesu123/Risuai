@@ -384,7 +384,7 @@
 </div>
 
 {#snippet option(title: string, desc: string, primary: boolean, onclick: () => void)}
-    <button class="flex flex-col items-center rounded-2xl px-5 py-4 text-center transition-all hover:-translate-y-0.5 hover:shadow-lg {primary ? 'bg-textcolor text-bgcolor hover:opacity-90' : 'bg-bgcolor hover:bg-selected'}" {onclick}>
+    <button class="flex flex-col items-center rounded-2xl px-5 py-4 text-center transition-all hover:shadow-lg {primary ? 'bg-textcolor text-bgcolor hover:opacity-90' : 'bg-bgcolor hover:bg-selected'}" {onclick}>
         <span class="font-semibold">{title}</span>
         {#if desc}
             <span class="mt-1 text-xs leading-relaxed {primary ? 'opacity-70' : 'text-textcolor2'}">{desc}</span>
