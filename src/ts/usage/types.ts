@@ -64,6 +64,11 @@ export function parseBucketKey(key: string): UsageBucket {
     return { provider, model, purpose: purpose as UsagePurpose }
 }
 
+/** Prices are set per provider and model, not per purpose. */
+export function modelKey(provider: string, model: string): string {
+    return provider + keySeparator + model
+}
+
 export function emptyCounters(): UsageCounters {
     return { requests: 0, input: 0, cacheRead: 0, cacheWrite: 0, output: 0, reasoning: 0, estimated: 0 }
 }

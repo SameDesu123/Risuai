@@ -1,3 +1,4 @@
+import { readCustomPrices, type CustomPrices } from './pricing'
 import {
     addToDays,
     bucketKey,
@@ -11,7 +12,7 @@ import {
 } from './types'
 
 /**
- * Where usage documents are kept. Documents are small JSON values: one per month of usage.
+ * Where usage documents are kept. Documents are small JSON values: one per month of usage, plus custom prices.
  * Usage is kept out of the main database on purpose, because saving that database rewrites all of it.
  */
 export interface UsageBackend {
@@ -22,6 +23,7 @@ export interface UsageBackend {
     remove(name: string): Promise<void>
 }
 
+const pricesDocument = 'prices'
 const isMonthDocument = (name: string) => /^\d{4}-\d{2}$/.test(name)
 
 function readMonth(value: unknown): UsageMonth {
@@ -152,6 +154,16 @@ export class UsageStore {
                 }
             })
         })
+    }
+
+    async loadCustomPrices(): Promise<CustomPrices> {
+        const backend = await this.getBackend()
+        return readCustomPrices(await backend.read(pricesDocument))
+    }
+
+    async saveCustomPrices(prices: CustomPrices) {
+        const backend = await this.getBackend()
+        await withLock(() => backend.write(pricesDocument, prices))
     }
 
     /** Best effort: writes pending usage when the page is hidden or closed. */

@@ -123,10 +123,10 @@ describe('UsageStore', () => {
         expect((documents.get('2026-10') as UsageMonth).days['2026-10-03'][key].input).toBe(9)
     })
 
-    it('clears usage but keeps other documents', async () => {
+    it('clears usage but keeps prices', async () => {
         const { backend, documents } = memoryBackend()
-        documents.set('prices', {})
         const store = new UsageStore(async () => backend, 60_000)
+        await store.saveCustomPrices({ a: { input: 1, output: 2 } })
         store.record(bucket, usage(1), new Date(2026, 9, 3))
         await store.flush()
 
@@ -134,5 +134,6 @@ describe('UsageStore', () => {
 
         expect([...documents.keys()]).toEqual(['prices'])
         expect(await store.loadHistory()).toEqual({})
+        expect(await store.loadCustomPrices()).toEqual({ a: { input: 1, output: 2, cacheRead: undefined, cacheWrite: undefined } })
     })
 })
