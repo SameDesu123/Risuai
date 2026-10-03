@@ -114,10 +114,13 @@
         else{
             delete next[key]
         }
-        customPrices = next
-        editing = null
         try {
             await usageStore.saveCustomPrices(next)
+            // Costs only change once the price is stored, so a failed save leaves them and the open editor as they were.
+            customPrices = next
+            if(editing === key){
+                editing = null
+            }
         } catch (error) {
             alertError(error)
         }
