@@ -147,6 +147,10 @@
     }
 </script>
 
+{#snippet placeholder(text: string)}
+    <p class="rounded-md border border-dashed border-darkborderc px-3 py-6 text-center text-sm text-textcolor2">{text}</p>
+{/snippet}
+
 {#snippet stat(label: string, value: string, note: string)}
     <div class="flex min-w-0 flex-col gap-1 rounded-md border border-darkborderc bg-darkbg p-3">
         <span class="text-xs text-textcolor2">{label}</span>
@@ -174,105 +178,104 @@
             />
         </div>
 
-        {#if !firstDay}
-            <p class="text-sm text-textcolor2">{language.usage.empty}</p>
-        {:else}
-            <div class="flex flex-wrap items-center gap-2">
-                <div class="max-w-full overflow-x-auto">
-                    <SegmentedControl
-                        size="sm"
-                        className="mb-0!"
-                        options={rangeOptions}
-                        bind:value={
-                            () => selectedDay ? '' : range,
-                            (value) => {
-                                range = value as UsageRangeId
-                                selectedDay = null
-                            }
+        <div class="flex flex-wrap items-center gap-2">
+            <div class="max-w-full overflow-x-auto">
+                <SegmentedControl
+                    size="sm"
+                    className="mb-0!"
+                    options={rangeOptions}
+                    bind:value={
+                        () => selectedDay ? '' : range,
+                        (value) => {
+                            range = value as UsageRangeId
+                            selectedDay = null
                         }
-                    />
-                </div>
-                {#if selectedDay}
-                    <button
-                        type="button"
-                        class="ml-auto flex items-center gap-1 rounded-full border border-borderc px-3 py-1 text-sm hover:bg-textcolor/5"
-                        title={language.usage.backToPeriod}
-                        onclick={() => { selectedDay = null }}
-                    >
-                        {periodLabel}
-                        <span aria-hidden="true">✕</span>
-                    </button>
-                {:else}
-                    <span class="ml-auto text-sm text-textcolor2">{periodLabel}</span>
-                {/if}
+                    }
+                />
             </div>
-
-            <div class="grid grid-cols-2 gap-2 @lg:grid-cols-4">
-                {@render stat(
-                    language.usage.cost,
-                    costText(summary.total),
-                    summary.total.unpricedTokens > 0 ? language.usage.unpricedTokens(format.tokens(summary.total.unpricedTokens)) : '',
-                )}
-                {@render stat(
-                    language.usage.tokens,
-                    format.tokens(allTokens),
-                    `${language.usage.input} ${format.tokens(promptTokens)} · ${language.usage.output} ${format.tokens(totals.output)}`,
-                )}
-                {@render stat(
-                    language.usage.requests,
-                    format.count(totals.requests),
-                    totals.estimated > 0 ? language.usage.estimatedCount(format.count(totals.estimated)) : '',
-                )}
-                {@render stat(
-                    language.usage.cacheHitRate,
-                    promptTokens > 0 ? format.percent(totals.cacheRead / promptTokens) : '–',
-                    `${language.usage.cacheRead} ${format.tokens(totals.cacheRead)}`,
-                )}
-            </div>
-
-            {#if summary.models.length === 0}
-                <p class="text-sm text-textcolor2">{language.usage.emptyPeriod}</p>
+            {#if selectedDay}
+                <button
+                    type="button"
+                    class="ml-auto flex items-center gap-1 rounded-full border border-borderc px-3 py-1 text-sm hover:bg-textcolor/5"
+                    title={language.usage.backToPeriod}
+                    onclick={() => { selectedDay = null }}
+                >
+                    {periodLabel}
+                    <span aria-hidden="true">✕</span>
+                </button>
             {:else}
-                <section class="flex flex-col gap-2">
-                    <h3 class="text-lg font-semibold">{language.usage.byModel}</h3>
-                    {#each summary.models as usage (modelKey(usage.provider, usage.model))}
-                        {@const key = modelKey(usage.provider, usage.model)}
-                        <UsageModelRow
-                            {usage}
-                            {format}
-                            share={shareOf(usage)}
-                            match={priceOf(usage.provider, usage.model)}
-                            open={editing === key}
-                            onToggle={() => { editing = editing === key ? null : key }}
-                            onSavePrice={(price) => savePrice(key, price)}
-                        />
-                    {/each}
-                </section>
-
-                <section class="flex flex-col gap-2">
-                    <h3 class="text-lg font-semibold">{language.usage.byPurpose}</h3>
-                    <div class="flex flex-col gap-3 rounded-md border border-darkborderc p-3">
-                        {#each summary.purposes as usage (usage.purpose)}
-                            <div class="flex flex-col gap-1">
-                                <div class="flex items-center gap-3 text-sm">
-                                    <span>{language.usage.purposes[usage.purpose] ?? usage.purpose}</span>
-                                    <span class="ml-auto text-textcolor2 tabular-nums">{format.tokens(totalTokens(usage.counters))}</span>
-                                    <span class="w-20 text-right tabular-nums">{costText(usage)}</span>
-                                </div>
-                                <div class="h-1.5 w-full overflow-hidden rounded-full bg-textcolor/10">
-                                    <div class="h-full rounded-full bg-borderc" style:width="{shareOf(usage) * 100}%"></div>
-                                </div>
-                            </div>
-                        {/each}
-                    </div>
-                </section>
+                <span class="ml-auto text-sm text-textcolor2">{periodLabel}</span>
             {/if}
+        </div>
 
-            <div class="flex flex-wrap gap-2">
-                <Button styled="outlined" size="sm" onclick={exportCsv}>{language.usage.exportCsv}</Button>
-                <Button styled="danger" size="sm" onclick={clearHistory}>{language.usage.clearHistory}</Button>
-            </div>
-        {/if}
+        <div class="grid grid-cols-2 gap-2 @lg:grid-cols-4">
+            {@render stat(
+                language.usage.cost,
+                costText(summary.total),
+                summary.total.unpricedTokens > 0 ? language.usage.unpricedTokens(format.tokens(summary.total.unpricedTokens)) : '',
+            )}
+            {@render stat(
+                language.usage.tokens,
+                format.tokens(allTokens),
+                `${language.usage.input} ${format.tokens(promptTokens)} · ${language.usage.output} ${format.tokens(totals.output)}`,
+            )}
+            {@render stat(
+                language.usage.requests,
+                format.count(totals.requests),
+                totals.estimated > 0 ? language.usage.estimatedCount(format.count(totals.estimated)) : '',
+            )}
+            {@render stat(
+                language.usage.cacheHitRate,
+                promptTokens > 0 ? format.percent(totals.cacheRead / promptTokens) : '–',
+                `${language.usage.cacheRead} ${format.tokens(totals.cacheRead)}`,
+            )}
+        </div>
+
+        <section class="flex flex-col gap-2">
+            <h3 class="text-lg font-semibold">{language.usage.byModel}</h3>
+            {#each summary.models as usage (modelKey(usage.provider, usage.model))}
+                {@const key = modelKey(usage.provider, usage.model)}
+                <UsageModelRow
+                    {usage}
+                    {format}
+                    share={shareOf(usage)}
+                    match={priceOf(usage.provider, usage.model)}
+                    open={editing === key}
+                    onToggle={() => { editing = editing === key ? null : key }}
+                    onSavePrice={(price) => savePrice(key, price)}
+                />
+            {:else}
+                {@render placeholder(firstDay ? language.usage.emptyPeriod : language.usage.empty)}
+            {/each}
+        </section>
+
+        <section class="flex flex-col gap-2">
+            <h3 class="text-lg font-semibold">{language.usage.byPurpose}</h3>
+            {#if summary.purposes.length === 0}
+                {@render placeholder(language.usage.emptyPeriod)}
+            {:else}
+                <div class="flex flex-col gap-3 rounded-md border border-darkborderc p-3">
+                    {#each summary.purposes as usage (usage.purpose)}
+                        <div class="flex flex-col gap-1">
+                            <div class="flex items-center gap-3 text-sm">
+                                <span>{language.usage.purposes[usage.purpose] ?? usage.purpose}</span>
+                                <span class="ml-auto text-textcolor2 tabular-nums">{format.tokens(totalTokens(usage.counters))}</span>
+                                <span class="w-20 text-right tabular-nums">{costText(usage)}</span>
+                            </div>
+                            <div class="h-1.5 w-full overflow-hidden rounded-full bg-textcolor/10">
+                                <div class="h-full rounded-full bg-borderc" style:width="{shareOf(usage) * 100}%"></div>
+                            </div>
+                        </div>
+                    {/each}
+                </div>
+            {/if}
+        </section>
+
+        <!-- Nothing to export or clear before the first request is recorded. -->
+        <div class="flex flex-wrap gap-2">
+            <Button styled="outlined" size="sm" disabled={!firstDay} onclick={exportCsv}>{language.usage.exportCsv}</Button>
+            <Button styled="danger" size="sm" disabled={!firstDay} onclick={clearHistory}>{language.usage.clearHistory}</Button>
+        </div>
 
         <div class="flex flex-col gap-1 text-xs text-textcolor2">
             <p>{language.usage.estimatedNote}</p>
