@@ -37,8 +37,8 @@ export interface MeterOptions {
     countPrompt: () => Promise<number>
     /** Counts the tokens of generated text with the local tokenizer. */
     countText: (text: string) => Promise<number>
-    /** Receives the usage of the request once it is finished. */
-    record: (counters: UsageCounters) => void
+    /** Receives the usage of the request once it is finished, with the model set by `setModel` if any. */
+    record: (counters: UsageCounters, model?: string) => void
 }
 
 /**
@@ -49,8 +49,14 @@ export interface MeterOptions {
 export class UsageMeter {
     private responses: ResponseUsage[] = []
     private finished = false
+    private model: string | undefined
 
     constructor(private options: MeterOptions) {}
+
+    /** For providers that pick the actual model while sending, after the request was metered. */
+    setModel(model: string) {
+        this.model = model
+    }
 
     /** Tracks one API response. A request makes several when it calls tools. */
     newResponse(): ResponseUsage {
@@ -76,7 +82,14 @@ export class UsageMeter {
             case 'streaming':
                 return {
                     ...result,
-                    result: watchStream(result.result, (lastChunk) => this.finish(Object.values(lastChunk ?? {})[0] ?? '')),
+                    result: watchStream(result.result, (lastChunk, completed) => {
+                        // A stream that broke before its first chunk is a failed request, not an empty answer.
+                        if(!lastChunk && !completed){
+                            this.finish(undefined)
+                            return
+                        }
+                        this.finish(generatedText(lastChunk))
+                    }),
                 }
             default:
                 // A failed request costs nothing, unless some of its API calls went through first.
@@ -118,26 +131,37 @@ export class UsageMeter {
                 }
                 counters.estimated = !reportedPrompt || reported.output === undefined ? 1 : 0
             }
-            this.options.record(counters)
+            this.options.record(counters, this.model)
         } catch (error) {
             console.error('[usage] Could not record usage', error)
         }
     }
 }
 
-/** Passes a stream through and calls `onEnd` once with the last chunk, whether it finished, failed or was cancelled. */
+/** The generated text of a stream chunk: every generation (one key each), without metadata keys like `__tool_calls`. */
+function generatedText(chunk: StreamResponseChunk | undefined): string {
+    return Object.entries(chunk ?? {})
+        .filter(([key]) => !key.startsWith('__'))
+        .map(([, text]) => text)
+        .join('\n')
+}
+
+/**
+ * Passes a stream through and calls `onEnd` once with the last chunk, whether it finished, failed or was cancelled.
+ * `completed` is true only when the stream ran to its end.
+ */
 export function watchStream(
     stream: ReadableStream<StreamResponseChunk>,
-    onEnd: (lastChunk: StreamResponseChunk | undefined) => void,
+    onEnd: (lastChunk: StreamResponseChunk | undefined, completed: boolean) => void,
 ): ReadableStream<StreamResponseChunk> {
     const reader = stream.getReader()
     let lastChunk: StreamResponseChunk | undefined
     let ended = false
     let cancelled = false
-    const end = () => {
+    const end = (completed = false) => {
         if(!ended){
             ended = true
-            onEnd(lastChunk)
+            onEnd(lastChunk, completed)
         }
     }
 
@@ -157,7 +181,7 @@ export function watchStream(
                 return
             }
             if(read.done){
-                end()
+                end(true)
                 controller.close()
                 return
             }

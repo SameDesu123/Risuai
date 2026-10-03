@@ -216,6 +216,7 @@ export async function requestOpenAI(arg:RequestDataArgumentExtended):Promise<req
 
     if(aiModel === 'openrouter' && db.openrouterRequestModel === 'risu/free'){
         openrouterRequestModel = await getFreeOpenRouterModels()
+        arg.usage?.setModel(openrouterRequestModel)
     }
 
     if(arg.modelInfo.flags.includes(LLMFlags.DeveloperRole)){

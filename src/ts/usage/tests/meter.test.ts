@@ -6,12 +6,16 @@ import type { UsageCounters } from '../types'
 
 function createMeter() {
     const recorded: UsageCounters[] = []
+    const models: (string | undefined)[] = []
     const meter = new UsageMeter({
         countPrompt: async () => 1000,
         countText: async (text) => text.length,
-        record: (counters) => recorded.push(counters),
+        record: (counters, model) => {
+            recorded.push(counters)
+            models.push(model)
+        },
     })
-    return { meter, recorded }
+    return { meter, recorded, models }
 }
 
 function streamOf(chunks: StreamResponseChunk[]) {
@@ -138,7 +142,7 @@ describe('UsageMeter', () => {
         meter.newResponse().update({ input: 70, cacheRead: 0, cacheWrite: 0 })
         const source = new ReadableStream<StreamResponseChunk>({
             start(controller) {
-                controller.enqueue({ '0': 'partial', '1': 'other' })
+                controller.enqueue({ '0': 'partial' })
             },
         })
 
@@ -153,6 +157,73 @@ describe('UsageMeter', () => {
         await vi.waitFor(() => expect(recorded).toHaveLength(1))
         expect(recorded[0]).toMatchObject({ input: 70, output: 'partial'.length, estimated: 1 })
     })
+
+    it('estimates the output of every generation and skips metadata keys', async () => {
+        const { meter, recorded } = createMeter()
+        meter.newResponse().update({ input: 70, cacheRead: 0, cacheWrite: 0 })
+        const tracked = meter.track({
+            type: 'streaming',
+            result: streamOf([{ '0': 'first', '1': 'second', '__tool_calls': '{"0":{"id":"call_1"}}' }]),
+        })
+        if(tracked.type !== 'streaming'){
+            throw new Error('expected a stream')
+        }
+        await readAll(tracked.result)
+
+        await vi.waitFor(() => expect(recorded).toHaveLength(1))
+        expect(recorded[0].output).toBe('first\nsecond'.length)
+    })
+
+    it('records an empty stream that ended normally as a successful empty response', async () => {
+        const { meter, recorded } = createMeter()
+        const tracked = meter.track({ type: 'streaming', result: streamOf([]) })
+        if(tracked.type !== 'streaming'){
+            throw new Error('expected a stream')
+        }
+        await readAll(tracked.result)
+
+        await vi.waitFor(() => expect(recorded).toHaveLength(1))
+        expect(recorded[0]).toMatchObject({ requests: 1, input: 1000, output: 0, estimated: 1 })
+    })
+
+    it('records nothing for a stream that failed before its first chunk', async () => {
+        const { meter, recorded } = createMeter()
+        const failing = new ReadableStream<StreamResponseChunk>({
+            pull(controller) {
+                controller.error(new Error('network'))
+            },
+        })
+        const tracked = meter.track({ type: 'streaming', result: failing })
+        if(tracked.type !== 'streaming'){
+            throw new Error('expected a stream')
+        }
+        await expect(tracked.result.getReader().read()).rejects.toThrow('network')
+
+        await new Promise((resolve) => setTimeout(resolve, 10))
+        expect(recorded).toHaveLength(0)
+    })
+
+    it('records nothing for a stream cancelled before its first chunk', async () => {
+        const { meter, recorded } = createMeter()
+        const source = new ReadableStream<StreamResponseChunk>({ pull() {} })
+        const tracked = meter.track({ type: 'streaming', result: source })
+        if(tracked.type !== 'streaming'){
+            throw new Error('expected a stream')
+        }
+        await tracked.result.cancel()
+
+        await new Promise((resolve) => setTimeout(resolve, 10))
+        expect(recorded).toHaveLength(0)
+    })
+
+    it('hands the model set by the provider to the recorder', async () => {
+        const { meter, recorded, models } = createMeter()
+        meter.setModel('vendor/free-model')
+        meter.track({ type: 'success', result: 'hi' })
+
+        await vi.waitFor(() => expect(recorded).toHaveLength(1))
+        expect(models).toEqual(['vendor/free-model'])
+    })
 })
 
 describe('watchStream', () => {
@@ -161,7 +232,7 @@ describe('watchStream', () => {
         const stream = watchStream(streamOf([{ '0': 'a' }, { '0': 'ab' }]), onEnd)
         await readAll(stream)
         expect(onEnd).toHaveBeenCalledTimes(1)
-        expect(onEnd).toHaveBeenCalledWith({ '0': 'ab' })
+        expect(onEnd).toHaveBeenCalledWith({ '0': 'ab' }, true)
     })
 
     it('passes errors on', async () => {
@@ -173,6 +244,6 @@ describe('watchStream', () => {
         })
         const reader = watchStream(failing, onEnd).getReader()
         await expect(reader.read()).rejects.toThrow('network')
-        expect(onEnd).toHaveBeenCalledWith(undefined)
+        expect(onEnd).toHaveBeenCalledWith(undefined, false)
     })
 })

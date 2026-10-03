@@ -86,6 +86,6 @@ export function meterRequest(arg: RequestDataArgumentExtended): UsageMeter | und
     return new UsageMeter({
         countPrompt: () => new ChatTokenizer(0, 'name').tokenizeChats(prompt),
         countText: tokenize,
-        record: (counters) => usageStore.record(bucket, counters),
+        record: (counters, model) => usageStore.record(model ? { ...bucket, model } : bucket, counters),
     })
 }
