@@ -66,6 +66,21 @@ describe('findCatalogPrice', () => {
     it('returns nothing for unknown models', () => {
         expect(findCatalogPrice(catalog, 'kobold', 'my-local-model')).toBeUndefined()
     })
+
+    it('ignores names that only exist on Object.prototype', () => {
+        for(const model of ['constructor', 'toString', 'hasOwnProperty', '__proto__']){
+            expect(findCatalogPrice(catalog, 'openai', model)).toBeUndefined()
+            expect(findCatalogPrice(catalog, 'openrouter', `anthropic/${model}`)).toBeUndefined()
+        }
+    })
+
+    it('ignores provider names that only exist on Object.prototype', () => {
+        for(const provider of ['constructor', 'toString', '__proto__']){
+            expect(findCatalogPrice(catalog, provider, 'my-local-model')).toBeUndefined()
+            expect(findCatalogPrice(catalog, provider, 'claude-sonnet-4-5')?.catalogProvider).toBe('anthropic')
+        }
+        expect(findCatalogPrice(catalog, 'api.deepseek.com', 'deepseek-v4-flash')?.catalogProvider).toBe('deepseek')
+    })
 })
 
 describe('findPrice', () => {
@@ -73,6 +88,11 @@ describe('findPrice', () => {
         const custom = { [modelKey('anthropic', 'claude-sonnet-4-5')]: { input: 1, output: 2 } }
         expect(findPrice(catalog, custom, 'anthropic', 'claude-sonnet-4-5')).toEqual({ price: { input: 1, output: 2 }, source: 'custom' })
         expect(findPrice(catalog, custom, 'openrouter', 'anthropic/claude-sonnet-4.5').source).toBe('catalog')
+    })
+
+    it('does not mistake inherited properties for prices', () => {
+        expect(findPrice(catalog, {}, 'constructor', 'constructor')).toBeUndefined()
+        expect(findPrice(undefined, {}, 'toString', '__proto__')).toBeUndefined()
     })
 })
 

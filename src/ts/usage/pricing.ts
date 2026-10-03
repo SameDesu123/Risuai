@@ -97,19 +97,25 @@ function readRow(row: (number | null)[]): ModelPrice {
     }
 }
 
+/** Looks a key up without reaching inherited properties, so a model named "constructor" is not a hit. */
+function own<T>(record: Record<string, T>, key: string): T | undefined {
+    return Object.hasOwn(record, key) ? record[key] : undefined
+}
+
 export function findCatalogPrice(catalog: PriceCatalog, provider: string, model: string): PriceMatch | undefined {
-    const route = catalogProvidersOf[provider] ?? (catalog.hosts[provider] ? [catalog.hosts[provider]] : [])
+    const host = own(catalog.hosts, provider)
+    const route = own(catalogProvidersOf, provider) ?? (host ? [host] : [])
     // "vendor/model" names, as OpenRouter writes them, are common on proxies too.
     const vendor = model.includes('/') ? model.split('/')[0].toLowerCase() : undefined
     const candidates = [...route, ...(vendor ? ['openrouter', vendor] : []), ...makerProviders]
 
     const names = nameVariants(model)
     for(const catalogProvider of new Set(candidates)){
-        const prices = catalog.providers[catalogProvider]
+        const prices = own(catalog.providers, catalogProvider)
         if(!prices){
             continue
         }
-        const catalogModel = names.find((name) => prices[name])
+        const catalogModel = names.find((name) => own(prices, name))
         if(catalogModel){
             return { price: readRow(prices[catalogModel]), source: 'catalog', catalogProvider, catalogModel }
         }
@@ -118,9 +124,9 @@ export function findCatalogPrice(catalog: PriceCatalog, provider: string, model:
 }
 
 export function findPrice(catalog: PriceCatalog | undefined, custom: CustomPrices, provider: string, model: string): PriceMatch | undefined {
-    const own = custom[modelKey(provider, model)]
-    if(own){
-        return { price: own, source: 'custom' }
+    const customPrice = own(custom, modelKey(provider, model))
+    if(customPrice){
+        return { price: customPrice, source: 'custom' }
     }
     return catalog ? findCatalogPrice(catalog, provider, model) : undefined
 }
