@@ -54,21 +54,26 @@
         }}>
             <img src="https://c5.patreon.com/external/logo/become_a_patron_button.png" alt="patreon button" class="w-full h-full"/>
         </button>
-        <div class="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm text-textcolor2">
-            <span>{language.supporterRegisterAsk}</span>
-            <button class="group flex items-center font-semibold text-textcolor underline-offset-4 hover:underline" onclick={() => {
-                openURL("https://sv.risuai.xyz/patreon")
-            }}>
-                {language.supporterRegisterAction}
-                <ChevronRightIcon size={16} class="transition-transform group-hover:translate-x-0.5" />
-            </button>
-            <span aria-hidden="true">·</span>
-            <button class="group flex items-center font-semibold text-textcolor underline-offset-4 hover:underline" onclick={() => {
-                openURL("https://www.patreon.com/RisuAI/posts/save-size-107543036")
-            }}>
-                {language.supporterGetBenefit}
-                <ChevronRightIcon size={16} class="transition-transform group-hover:translate-x-0.5" />
-            </button>
+        <!-- Stack the two links on narrow containers instead of leaving the separator dangling -->
+        <div class="@container w-full">
+            <div class="flex flex-col items-start gap-y-1 @lg:flex-row @lg:items-center @lg:gap-x-1.5 text-sm text-textcolor2">
+                <div class="flex flex-wrap items-center gap-x-1.5">
+                    <span>{language.supporterRegisterAsk}</span>
+                    <button class="group flex items-center font-semibold text-textcolor underline-offset-4 hover:underline" onclick={() => {
+                        openURL("https://sv.risuai.xyz/patreon")
+                    }}>
+                        {language.supporterRegisterAction}
+                        <ChevronRightIcon size={16} class="transition-transform group-hover:translate-x-0.5" />
+                    </button>
+                </div>
+                <span class="hidden @lg:inline" aria-hidden="true">·</span>
+                <button class="group flex items-center font-semibold text-textcolor underline-offset-4 hover:underline" onclick={() => {
+                    openURL("https://www.patreon.com/RisuAI/posts/save-size-107543036")
+                }}>
+                    {language.supporterGetBenefit}
+                    <ChevronRightIcon size={16} class="transition-transform group-hover:translate-x-0.5" />
+                </button>
+            </div>
         </div>
     </div>
 
