@@ -75,13 +75,16 @@
                         </button>
                     </span>
                     <span class="link-item">
-                        <button class="link group" onclick={() => {
+                        <!-- The tier condition lives inside the link so it can't be read as applying to the whole row -->
+                        <button class="link group flex-wrap gap-x-1 text-left" onclick={() => {
                             openURL("https://www.patreon.com/RisuAI/posts/save-size-107543036")
                         }}>
-                            {language.supporterGetBenefit}
-                            <ChevronRightIcon size={16} class="transition-transform group-hover:translate-x-0.5" />
+                            <span>{language.supporterGetBenefit}</span>
+                            <span class="flex items-center">
+                                <span class="text-xs font-normal text-textcolor2">({language.supporterBenefitTier.replace('{}', benefitTierLabel)})</span>
+                                <ChevronRightIcon size={16} class="transition-transform group-hover:translate-x-0.5" />
+                            </span>
                         </button>
-                        <span class="text-xs text-textcolor2">({language.supporterBenefitTier.replace('{}', benefitTierLabel)})</span>
                     </span>
                 </div>
             </div>
