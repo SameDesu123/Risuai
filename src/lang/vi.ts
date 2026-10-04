@@ -890,6 +890,7 @@ export const languageVietnamese = {
     "supporterThanksDesc": "Cảm ơn sự hỗ trợ của bạn!",
     "supporterRegisterAsk": "Bạn đã là người ủng hộ?",
     "supporterRegisterAction": "Đăng ký tên của bạn",
+    "supporterGetBenefit": "Nhận quyền lợi Patreon",
     "donatorPatreonDesc": "Theo mặc định, nó sẽ không được hiển thị trong danh sách bảo mật. nếu bạn muốn hiển thị biệt danh của mình, hãy truy cập trang patreon của Risuai và nhấn nút liên kết.",
     "useNamePrefix": "Sử dụng tiền tố tên",
     "textAdventureNAI": "Chạy dưới dạng cuộc phiêu lưu văn bản",

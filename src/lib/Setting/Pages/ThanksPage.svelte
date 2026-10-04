@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { ChevronRightIcon, GiftIcon } from "@lucide/svelte";
+    import { ChevronRightIcon } from "@lucide/svelte";
     import { language } from "src/lang";
     import { openURL } from "src/ts/globalApi.svelte";
 
@@ -49,28 +49,27 @@
     </div>
 
     <div class="flex flex-col items-start gap-2">
-        <div class="flex flex-wrap items-center gap-2">
-            <button class="h-12 w-44" onclick={() => {
-                openURL("https://www.patreon.com/RisuAI")
-            }}>
-                <img src="https://c5.patreon.com/external/logo/become_a_patron_button.png" alt="patreon button" class="w-full h-full"/>
-            </button>
-            <button class="h-12 px-4 flex items-center gap-2 rounded-md border border-darkborderc bg-darkbutton hover:bg-selected text-textcolor text-sm font-semibold transition-colors" onclick={() => {
-                openURL("https://www.patreon.com/RisuAI/posts/save-size-107543036")
-            }}>
-                <GiftIcon size={18} />
-                <span>Get Patreon Benefit</span>
-            </button>
-        </div>
-        <button class="group flex flex-wrap items-center gap-x-1.5 text-sm text-textcolor2" onclick={() => {
-            openURL("https://sv.risuai.xyz/patreon")
+        <button class="h-12 w-44" onclick={() => {
+            openURL("https://www.patreon.com/RisuAI")
         }}>
+            <img src="https://c5.patreon.com/external/logo/become_a_patron_button.png" alt="patreon button" class="w-full h-full"/>
+        </button>
+        <div class="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm text-textcolor2">
             <span>{language.supporterRegisterAsk}</span>
-            <span class="flex items-center font-semibold text-textcolor underline-offset-4 group-hover:underline">
+            <button class="group flex items-center font-semibold text-textcolor underline-offset-4 hover:underline" onclick={() => {
+                openURL("https://sv.risuai.xyz/patreon")
+            }}>
                 {language.supporterRegisterAction}
                 <ChevronRightIcon size={16} class="transition-transform group-hover:translate-x-0.5" />
-            </span>
-        </button>
+            </button>
+            <span aria-hidden="true">·</span>
+            <button class="group flex items-center font-semibold text-textcolor underline-offset-4 hover:underline" onclick={() => {
+                openURL("https://www.patreon.com/RisuAI/posts/save-size-107543036")
+            }}>
+                {language.supporterGetBenefit}
+                <ChevronRightIcon size={16} class="transition-transform group-hover:translate-x-0.5" />
+            </button>
+        </div>
     </div>
 
     {#await supporters}

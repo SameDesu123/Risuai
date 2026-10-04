@@ -1050,6 +1050,7 @@ export const languageEnglish = {
     supporterThanksDesc: "Thank you for your support!",
     supporterRegisterAsk: "Already a supporter?",
     supporterRegisterAction: "Register your name",
+    supporterGetBenefit: "Get Patreon Benefit",
     donatorPatreonDesc: "For default, it will not be shown in the list for privacy. If you want to show your nickname, go to Risuai's patreon page and press the link button.",
     useNamePrefix: "Use Name Prefix",
     textAdventureNAI: "Run as Text Adventure",
