@@ -910,6 +910,8 @@ export const languageKorean = {
     "import": "임포트",
     "supporterThanks": "후원자",
     "supporterThanksDesc": "후원자분들에게 감사합니다!",
+    "supporterRegisterAsk": "혹시 후원자이신가요?",
+    "supporterRegisterAction": "이름을 등록하세요",
     "donatorPatreonDesc": "기본적으로 개인정보 보호를 위해 목록에 표시되지 않습니다. 닉네임을 표시하려면 Risuai의 Patreon 페이지로 이동하여 링크 버튼을 누르세요.",
     "useNamePrefix": "이름을 프리픽스로 사용",
     "textAdventureNAI": "텍스트 어드벤쳐로 실행",

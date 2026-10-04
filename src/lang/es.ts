@@ -888,6 +888,8 @@ export const languageSpanish = {
     "import": "Importar",
     "supporterThanks": "Agradecimiento a los Soportes",
     "supporterThanksDesc": "¡Gracias por tu apoyo!",
+    "supporterRegisterAsk": "¿Ya eres patrocinador?",
+    "supporterRegisterAction": "Registra tu nombre",
     "donatorPatreonDesc": "Por defecto, no se mostrará en la lista por privacidad. Si deseas mostrar tu apodo, ve a la página de patreon de Risuai y presiona el botón de enlace.",
     "useNamePrefix": "Usar Prefijo de Nombre",
     "textAdventureNAI": "Ejecutar como Aventura de Texto",

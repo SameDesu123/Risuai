@@ -1,8 +1,7 @@
 <script lang="ts">
-    import { HeartIcon, UserPlusIcon } from "@lucide/svelte";
+    import { ChevronRightIcon } from "@lucide/svelte";
     import { language } from "src/lang";
     import { openURL } from "src/ts/globalApi.svelte";
-    import Button from "src/lib/UI/GUI/Button.svelte";
 
     interface supporterL{
         amount: number,
@@ -17,7 +16,6 @@
         max: number,
         metal: Metal,
         size: 'xl' | 'lg' | 'md' | 'sm',
-        shimmer: boolean,
     }
 
     interface FilledTier extends Tier {
@@ -25,11 +23,11 @@
     }
 
     const tiers: Tier[] = [
-        { label: 'Supporter V', min: 50, max: Infinity, metal: 'gold', size: 'xl', shimmer: true },
-        { label: 'Supporter IV', min: 20, max: 50, metal: 'silver', size: 'lg', shimmer: true },
-        { label: 'Supporter III', min: 10, max: 20, metal: 'silver', size: 'md', shimmer: false },
-        { label: 'Supporter II', min: 5, max: 10, metal: 'copper', size: 'sm', shimmer: false },
-        { label: 'Supporter I', min: -Infinity, max: 5, metal: 'plain', size: 'sm', shimmer: false },
+        { label: 'Supporter V', min: 50, max: Infinity, metal: 'gold', size: 'xl' },
+        { label: 'Supporter IV', min: 20, max: 50, metal: 'silver', size: 'lg' },
+        { label: 'Supporter III', min: 10, max: 20, metal: 'silver', size: 'md' },
+        { label: 'Supporter II', min: 5, max: 10, metal: 'copper', size: 'sm' },
+        { label: 'Supporter I', min: -Infinity, max: 5, metal: 'plain', size: 'sm' },
     ]
 
     async function loadSupporters(): Promise<FilledTier[]> {
@@ -50,19 +48,21 @@
         <span class="text-textcolor2">{language.supporterThanksDesc}</span>
     </div>
 
-    <div class="flex flex-wrap gap-2">
-        <Button className="flex items-center gap-2" onclick={() => {
+    <div class="flex flex-col items-start gap-2">
+        <button class="h-12 w-44" onclick={() => {
             openURL("https://www.patreon.com/RisuAI")
         }}>
-            <HeartIcon size={16} />
-            <span>Become a Patron</span>
-        </Button>
-        <Button styled="outlined" className="flex items-center gap-2" onclick={() => {
+            <img src="https://c5.patreon.com/external/logo/become_a_patron_button.png" alt="patreon button" class="w-full h-full"/>
+        </button>
+        <button class="group flex flex-wrap items-center gap-x-1.5 text-sm text-textcolor2" onclick={() => {
             openURL("https://sv.risuai.xyz/patreon")
         }}>
-            <UserPlusIcon size={16} />
-            <span>Add your name</span>
-        </Button>
+            <span>{language.supporterRegisterAsk}</span>
+            <span class="flex items-center font-semibold text-textcolor underline-offset-4 group-hover:underline">
+                {language.supporterRegisterAction}
+                <ChevronRightIcon size={16} class="transition-transform group-hover:translate-x-0.5" />
+            </span>
+        </button>
     </div>
 
     {#await supporters}
@@ -70,7 +70,7 @@
     {:then list}
         {#each list as tier (tier.label)}
             {#if tier.names.length > 0}
-                <section class="tier tier-{tier.metal} flex flex-col gap-3 rounded-md border border-darkborderc p-3">
+                <section class="tier tier-{tier.metal} flex flex-col gap-2 mt-2">
                     <header class="flex items-center gap-2">
                         <span class="tier-dot"></span>
                         <h3 class="font-bold text-textcolor">{tier.label}</h3>
@@ -78,7 +78,7 @@
                     </header>
                     <div class="flex flex-wrap gap-2">
                         {#each tier.names as name, i (i)}
-                            <span class="chip chip-{tier.size}" class:chip-shimmer={tier.shimmer}>
+                            <span class="chip chip-{tier.size}">
                                 <span class="metal-text">{name}</span>
                             </span>
                         {/each}
@@ -136,22 +136,21 @@
     }
 
     /* Shimmer is a transform-only sweep over the chip: composited, no repaints */
-    .chip-shimmer::after {
+    .chip::after {
         content: "";
         position: absolute;
         inset: 0;
         width: 50%;
-        background: linear-gradient(100deg, transparent 0%, rgba(255, 255, 255, 0.18) 50%, transparent 100%);
+        background: linear-gradient(100deg, transparent 0%, color-mix(in srgb, var(--tier) 22%, rgba(255, 255, 255, 0.16)) 50%, transparent 100%);
         transform: translateX(-100%);
         animation: sweep 3.5s ease-in-out infinite;
         pointer-events: none;
-        will-change: transform;
     }
     @keyframes sweep {
         0% { transform: translateX(-100%); }
         45%, 100% { transform: translateX(200%); }
     }
     @media (prefers-reduced-motion: reduce) {
-        .chip-shimmer::after { animation: none; display: none; }
+        .chip::after { animation: none; display: none; }
     }
 </style>

@@ -1046,6 +1046,8 @@ export const languageChineseTraditional = {
     "import": "匯入",
     "supporterThanks": "感謝贊助者",
     "supporterThanksDesc": "感謝您的支持！",
+    "supporterRegisterAsk": "已經是贊助者了嗎？",
+    "supporterRegisterAction": "登記您的名字",
     "donatorPatreonDesc": "基於隱私考量，預設不會顯示於清單中。若希望顯示您的暱稱，請前往 Risuai 的 Patreon 頁面並按下連結按鈕",
     "useNamePrefix": "使用名稱前綴",
     "textAdventureNAI": "以文字冒險模式執行",
