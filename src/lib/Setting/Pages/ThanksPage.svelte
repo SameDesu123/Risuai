@@ -30,6 +30,9 @@
         { label: 'Supporter I', min: -Infinity, max: 5, metal: 'bronze', size: 'sm' },
     ]
 
+    // Patreon benefits start from this tier
+    const benefitTierLabel = tiers[3].label
+
     async function loadSupporters(): Promise<FilledTier[]> {
         const supp = await fetch("https://sv.risuai.xyz/patreon/list")
         const list = await supp.json() as supporterL[]
@@ -63,18 +66,23 @@
             <span class="whitespace-nowrap">{language.supporterRegisterAsk}</span>
             <div class="link-group-clip">
                 <div class="link-group">
-                    <button class="link group" onclick={() => {
-                        openURL("https://sv.risuai.xyz/patreon")
-                    }}>
-                        {language.supporterRegisterAction}
-                        <ChevronRightIcon size={16} class="transition-transform group-hover:translate-x-0.5" />
-                    </button>
-                    <button class="link group" onclick={() => {
-                        openURL("https://www.patreon.com/RisuAI/posts/save-size-107543036")
-                    }}>
-                        {language.supporterGetBenefit}
-                        <ChevronRightIcon size={16} class="transition-transform group-hover:translate-x-0.5" />
-                    </button>
+                    <span class="link-item">
+                        <button class="link group" onclick={() => {
+                            openURL("https://sv.risuai.xyz/patreon")
+                        }}>
+                            {language.supporterRegisterAction}
+                            <ChevronRightIcon size={16} class="transition-transform group-hover:translate-x-0.5" />
+                        </button>
+                    </span>
+                    <span class="link-item">
+                        <button class="link group" onclick={() => {
+                            openURL("https://www.patreon.com/RisuAI/posts/save-size-107543036")
+                        }}>
+                            {language.supporterGetBenefit}
+                            <ChevronRightIcon size={16} class="transition-transform group-hover:translate-x-0.5" />
+                        </button>
+                        <span class="text-xs text-textcolor2">({language.supporterBenefitTier.replace('{}', benefitTierLabel)})</span>
+                    </span>
                 </div>
             </div>
         </div>
@@ -122,23 +130,33 @@
         row-gap: 0.25rem;
         margin-left: calc(var(--sep) * -1);
     }
+    /* Separator sits in the item's left padding, so a wrapped hint lines up with the link */
+    .link-item {
+        position: relative;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        column-gap: 0.25rem;
+        padding-left: var(--sep);
+        white-space: nowrap;
+    }
     .link {
         display: flex;
         align-items: center;
-        white-space: nowrap;
         font-weight: 600;
         color: var(--risu-theme-textcolor);
         text-underline-offset: 4px;
     }
     .link:hover { text-decoration: underline; }
-    .link::before {
+    .link-item::before {
         content: "·";
-        display: inline-block;
+        position: absolute;
+        top: 0;
+        left: 0;
         width: var(--sep);
+        line-height: 1.25rem;
         text-align: center;
-        font-weight: 400;
         color: var(--risu-theme-textcolor2);
-        text-decoration: none;
     }
 
     /* Metal stops are mixed with the theme text color so they stay legible on light and dark themes */

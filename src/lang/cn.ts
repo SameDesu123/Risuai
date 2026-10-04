@@ -891,6 +891,7 @@ export const languageChinese = {
     "supporterRegisterAsk": "已经是支持者了吗？",
     "supporterRegisterAction": "登记您的名字",
     "supporterGetBenefit": "领取赞助福利",
+    "supporterBenefitTier": "{} 及以上",
     "donatorPatreonDesc": "为保护隐私，默认不会显示在名单中。若想显示您的昵称，请前往叡苏的 Patreon 页面并点击链接按钮。",
     "useNamePrefix": "使用名称前缀",
     "textAdventureNAI": "以文字冒险形式运行",
