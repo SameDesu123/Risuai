@@ -8,7 +8,7 @@
         name: string,
     }
 
-    type Metal = 'gold' | 'silver' | 'copper' | 'plain'
+    type Metal = 'gold' | 'silver' | 'copper' | 'bronze'
 
     interface Tier {
         label: string,
@@ -27,7 +27,7 @@
         { label: 'Supporter IV', min: 20, max: 50, metal: 'silver', size: 'lg' },
         { label: 'Supporter III', min: 10, max: 20, metal: 'silver', size: 'md' },
         { label: 'Supporter II', min: 5, max: 10, metal: 'copper', size: 'sm' },
-        { label: 'Supporter I', min: -Infinity, max: 5, metal: 'plain', size: 'sm' },
+        { label: 'Supporter I', min: -Infinity, max: 5, metal: 'bronze', size: 'sm' },
     ]
 
     async function loadSupporters(): Promise<FilledTier[]> {
@@ -96,7 +96,7 @@
     .tier-gold   { --tier: #d4af37; --metal: linear-gradient(135deg, var(--m-edge) 0%, var(--m-mid) 50%, var(--m-edge) 100%); --m-edge: color-mix(in srgb, #b08a1a 80%, var(--risu-theme-textcolor)); --m-mid: color-mix(in srgb, #ecc65a 80%, var(--risu-theme-textcolor)); }
     .tier-silver { --tier: #a7adb7; --metal: linear-gradient(135deg, var(--m-edge) 0%, var(--m-mid) 50%, var(--m-edge) 100%); --m-edge: color-mix(in srgb, #7d8590 70%, var(--risu-theme-textcolor)); --m-mid: color-mix(in srgb, #d4d9e0 65%, var(--risu-theme-textcolor)); }
     .tier-copper { --tier: #b87333; --metal: linear-gradient(135deg, var(--m-edge) 0%, var(--m-mid) 50%, var(--m-edge) 100%); --m-edge: color-mix(in srgb, #9a5a22 80%, var(--risu-theme-textcolor)); --m-mid: color-mix(in srgb, #e0a46a 80%, var(--risu-theme-textcolor)); }
-    .tier-plain  { --tier: var(--risu-theme-textcolor2); }
+    .tier-bronze { --tier: #a08a5c; --metal: linear-gradient(135deg, var(--m-edge) 0%, var(--m-mid) 50%, var(--m-edge) 100%); --m-edge: color-mix(in srgb, #85704a 80%, var(--risu-theme-textcolor)); --m-mid: color-mix(in srgb, #cdb88c 80%, var(--risu-theme-textcolor)); }
 
     .tier-dot {
         width: 0.5rem;
@@ -127,7 +127,8 @@
     }
     .tier-gold .metal-text,
     .tier-silver .metal-text,
-    .tier-copper .metal-text {
+    .tier-copper .metal-text,
+    .tier-bronze .metal-text {
         color: transparent;
         background: var(--metal);
         background-size: 100% 100%;
