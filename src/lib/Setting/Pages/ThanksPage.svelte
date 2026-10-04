@@ -54,25 +54,28 @@
         }}>
             <img src="https://c5.patreon.com/external/logo/become_a_patron_button.png" alt="patreon button" class="w-full h-full"/>
         </button>
-        <!-- Stack the two links on narrow containers instead of leaving the separator dangling -->
-        <div class="@container w-full">
-            <div class="flex flex-col items-start gap-y-1 @lg:flex-row @lg:items-center @lg:gap-x-1.5 text-sm text-textcolor2">
-                <div class="flex flex-wrap items-center gap-x-1.5">
-                    <span>{language.supporterRegisterAsk}</span>
-                    <button class="group flex items-center font-semibold text-textcolor underline-offset-4 hover:underline" onclick={() => {
+        <!--
+            Wraps by actual text width, so it works for every language:
+            the link group moves below the question as a unit, then splits per link.
+            A separator that lands at the start of a line is clipped by the wrapper.
+        -->
+        <div class="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm text-textcolor2">
+            <span class="whitespace-nowrap">{language.supporterRegisterAsk}</span>
+            <div class="link-group-clip">
+                <div class="link-group">
+                    <button class="link group" onclick={() => {
                         openURL("https://sv.risuai.xyz/patreon")
                     }}>
                         {language.supporterRegisterAction}
                         <ChevronRightIcon size={16} class="transition-transform group-hover:translate-x-0.5" />
                     </button>
+                    <button class="link group" onclick={() => {
+                        openURL("https://www.patreon.com/RisuAI/posts/save-size-107543036")
+                    }}>
+                        {language.supporterGetBenefit}
+                        <ChevronRightIcon size={16} class="transition-transform group-hover:translate-x-0.5" />
+                    </button>
                 </div>
-                <span class="hidden @lg:inline" aria-hidden="true">·</span>
-                <button class="group flex items-center font-semibold text-textcolor underline-offset-4 hover:underline" onclick={() => {
-                    openURL("https://www.patreon.com/RisuAI/posts/save-size-107543036")
-                }}>
-                    {language.supporterGetBenefit}
-                    <ChevronRightIcon size={16} class="transition-transform group-hover:translate-x-0.5" />
-                </button>
             </div>
         </div>
     </div>
@@ -104,6 +107,40 @@
 </div>
 
 <style>
+    .link-group-clip {
+        --sep: 1.25rem;
+        flex: 0 0 auto;
+        max-width: 100%;
+        overflow: hidden;
+        padding: 0.25rem 0;
+        margin: -0.25rem 0;
+    }
+    .link-group {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        row-gap: 0.25rem;
+        margin-left: calc(var(--sep) * -1);
+    }
+    .link {
+        display: flex;
+        align-items: center;
+        white-space: nowrap;
+        font-weight: 600;
+        color: var(--risu-theme-textcolor);
+        text-underline-offset: 4px;
+    }
+    .link:hover { text-decoration: underline; }
+    .link::before {
+        content: "·";
+        display: inline-block;
+        width: var(--sep);
+        text-align: center;
+        font-weight: 400;
+        color: var(--risu-theme-textcolor2);
+        text-decoration: none;
+    }
+
     /* Metal stops are mixed with the theme text color so they stay legible on light and dark themes */
     .tier-gold   { --tier: #d4af37; --metal: linear-gradient(135deg, var(--m-edge) 0%, var(--m-mid) 50%, var(--m-edge) 100%); --m-edge: color-mix(in srgb, #b08a1a 80%, var(--risu-theme-textcolor)); --m-mid: color-mix(in srgb, #ecc65a 80%, var(--risu-theme-textcolor)); }
     .tier-silver { --tier: #a7adb7; --metal: linear-gradient(135deg, var(--m-edge) 0%, var(--m-mid) 50%, var(--m-edge) 100%); --m-edge: color-mix(in srgb, #7d8590 70%, var(--risu-theme-textcolor)); --m-mid: color-mix(in srgb, #d4d9e0 65%, var(--risu-theme-textcolor)); }
