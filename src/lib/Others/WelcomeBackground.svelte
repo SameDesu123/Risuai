@@ -126,36 +126,77 @@
         return { x: Math.cos(a) * r, y: Math.sin(a) * r, r: range(0.8, 2.2), opacity: range(0.4, 1) }
     })
 
+    // ---- planet ----
+    // wavy cloud bands across the planet, drawn in the planet's tilted frame and clipped to its disc
+    const planetBands = Array.from({ length: 14 }, (_, i) => {
+        const y = -40 + i * 6 + range(-2, 2)
+        const wave = range(-4, 4)
+        return {
+            d: `M -46 ${y.toFixed(1)} Q -16 ${(y + wave).toFixed(1)} 0 ${y.toFixed(1)} T 46 ${(y + range(-2, 2)).toFixed(1)}`,
+            width: range(3, 7),
+            color: pick(['#1c2a78', '#25368f', '#3249a6', '#4560bd', '#5a76cc', '#3a3592']),
+            opacity: range(0.5, 0.9),
+        }
+    })
+
+    const ringDust = Array.from({ length: 40 }, () => {
+        const a = rand() * Math.PI * 2
+        const rx = range(54, 72)
+        return { x: Math.cos(a) * rx, y: Math.sin(a) * rx * 0.24, r: range(0.5, 1.3), front: Math.sin(a) > 0 }
+    })
+
     // ---- meadow ----
     const MW = 1600
     const MH = 360
     function meadowHeight(x: number){
         // tall on the far left, low in the middle, a smaller tuft on the right
-        return Math.max(40 + 260 * Math.exp(-Math.pow(x / 420, 2)), 30 + 150 * Math.exp(-Math.pow((x - 1420) / 260, 2)))
+        return Math.max(40 + 250 * Math.exp(-Math.pow(x / 420, 2)), 30 + 140 * Math.exp(-Math.pow((x - 1420) / 260, 2)))
     }
 
-    const blades = Array.from({ length: 340 }, () => {
-        const x = rand() * MW
-        const h = meadowHeight(x) * range(0.45, 1.05)
-        const lean = range(-0.35, 0.45) * h
-        const w = range(4, 9)
-        const depth = rand()
-        return {
-            depth,
-            d: `M ${(x - w).toFixed(1)} ${MH} Q ${(x + lean * 0.3).toFixed(1)} ${(MH - h * 0.55).toFixed(1)} ${(x + lean).toFixed(1)} ${(MH - h).toFixed(1)} Q ${(x + lean * 0.3 + w * 0.4).toFixed(1)} ${(MH - h * 0.5).toFixed(1)} ${(x + w).toFixed(1)} ${MH} Z`,
-            fill: depth < 0.35 ? pick(['#0c2122', '#0f2a28']) : depth < 0.75 ? pick(['#143a31', '#1a4637', '#1d5040']) : pick(['#245e44', '#2e714f', '#3c8358']),
+    function mound(scale: number){
+        let d = `M 0 ${MH}`
+        for(let x = 0; x <= MW; x += 40){
+            d += ` L ${x} ${(MH - meadowHeight(x) * scale).toFixed(1)}`
         }
-    }).sort((a, b) => a.depth - b.depth)
+        return d + ` L ${MW} ${MH} Z`
+    }
 
-    const flowers = Array.from({ length: 34 }, () => {
-        const x = rand() < 0.78 ? range(10, 640) : range(1290, 1560)
-        const top = MH - meadowHeight(x) * range(0.45, 0.95)
+    // thin curved blades that taper to a tip, darker toward the back
+    function blade(depth: number){
+        const x = rand() * MW
+        const h = meadowHeight(x) * range(0.35, 0.95) * (0.8 + depth * 0.25)
+        const lean = range(-0.3, 0.4) * h
+        const w = range(2.4, 5.5)
+        const tipX = x + lean
+        const tipY = MH - h
+        return `M ${(x - w).toFixed(1)} ${MH} C ${(x - w).toFixed(1)} ${(MH - h * 0.5).toFixed(1)} ${(x + lean * 0.45).toFixed(1)} ${(MH - h * 0.82).toFixed(1)} ${tipX.toFixed(1)} ${tipY.toFixed(1)} C ${(x + lean * 0.4 + w * 0.6).toFixed(1)} ${(MH - h * 0.76).toFixed(1)} ${(x + w).toFixed(1)} ${(MH - h * 0.46).toFixed(1)} ${(x + w).toFixed(1)} ${MH} Z`
+    }
+
+    // each layer is filled with a vertical gradient so the blade tips catch a little of the vortex light
+    const grassLayers = [
+        { count: 240, depth: 0, gradient: 'welcome-grass-far' },
+        { count: 300, depth: 0.5, gradient: 'welcome-grass-mid' },
+        { count: 300, depth: 1, gradient: 'welcome-grass-near' },
+    ].map((layer) => ({
+        ...layer,
+        mound: mound(0.24 + layer.depth * 0.08),
+        blades: Array.from({ length: layer.count }, () => blade(layer.depth)),
+    }))
+
+    const grassGradients = [
+        { id: 'welcome-grass-far', tip: '#0e1838', base: '#050916' },
+        { id: 'welcome-grass-mid', tip: '#152a48', base: '#060b16' },
+        { id: 'welcome-grass-near', tip: '#1e3c56', base: '#050a12' },
+    ]
+
+    const flowers = Array.from({ length: 20 }, () => {
+        const x = rand() < 0.78 ? range(10, 620) : range(1300, 1560)
+        const top = MH - meadowHeight(x) * range(0.35, 0.75)
         return {
             x, top,
-            sway: range(-14, 14),
-            size: range(5, 10),
-            kind: rand() < 0.68 ? 'daisy' : 'lavender',
-            rotate: rand() * 60,
+            sway: range(-12, 12),
+            size: range(2.6, 4.6),
+            kind: rand() < 0.62 ? 'daisy' : 'lavender',
         }
     })
 
@@ -168,20 +209,20 @@
     }))
 </script>
 
-<div class="absolute inset-0 overflow-hidden bg-[#070b2c]" aria-hidden="true">
+<div class="absolute inset-0 overflow-hidden bg-[#03040f]" aria-hidden="true">
     <svg class="absolute inset-0 h-full w-full" viewBox="0 0 {SKY} {SKY}" preserveAspectRatio="xMidYMid slice">
         <defs>
             <linearGradient id="welcome-sky" x1="0" y1="0" x2="0.4" y2="1">
-                <stop offset="0" stop-color="#060a2a" />
-                <stop offset="0.5" stop-color="#0d1658" />
-                <stop offset="1" stop-color="#0a1040" />
+                <stop offset="0" stop-color="#020310" />
+                <stop offset="0.5" stop-color="#060a2c" />
+                <stop offset="1" stop-color="#04061c" />
             </linearGradient>
             <filter id="welcome-nebula" x="-50%" y="-50%" width="200%" height="200%">
                 <feGaussianBlur stdDeviation="70" />
             </filter>
         </defs>
         <rect width={SKY} height={SKY} fill="url(#welcome-sky)" />
-        <g filter="url(#welcome-nebula)" opacity="0.7">
+        <g filter="url(#welcome-nebula)" opacity="0.4">
             {#each nebulae as cloud}
                 <circle cx={cloud.x} cy={cloud.y} r={cloud.r} fill={cloud.fill} />
             {/each}
@@ -211,11 +252,10 @@
                     <feGaussianBlur in="rough" stdDeviation="1.4" />
                 </filter>
                 <radialGradient id="welcome-eye">
-                    <stop offset="0" stop-color="#f6ead2" />
-                    <stop offset="0.42" stop-color="#ead2b4" />
-                    <stop offset="0.62" stop-color="#d79b80" stop-opacity="0.75" />
-                    <stop offset="0.82" stop-color="#7d5aa6" stop-opacity="0.35" />
-                    <stop offset="1" stop-color="#3a3592" stop-opacity="0" />
+                    <stop offset="0" stop-color="#d9c3cf" stop-opacity="0.7" />
+                    <stop offset="0.35" stop-color="#b98a96" stop-opacity="0.5" />
+                    <stop offset="0.65" stop-color="#6e4a86" stop-opacity="0.28" />
+                    <stop offset="1" stop-color="#2a2370" stop-opacity="0" />
                 </radialGradient>
             </defs>
             <g filter="url(#welcome-cloud)" opacity="0.9">
@@ -238,17 +278,24 @@
 
         <svg class="absolute inset-0 h-full w-full overflow-visible" viewBox="-700 -700 1400 1400">
             <defs>
-                <radialGradient id="welcome-planet" cx="0.35" cy="0.3">
-                    <stop offset="0" stop-color="#8fb0ff" />
-                    <stop offset="0.6" stop-color="#3f5fd8" />
-                    <stop offset="1" stop-color="#1f2c8c" />
+                <!-- lit from the upper left, falling into shadow on the lower right -->
+                <radialGradient id="welcome-planet-shade" cx="0.3" cy="0.26" r="0.9">
+                    <stop offset="0" stop-color="#a9bcff" stop-opacity="0.4" />
+                    <stop offset="0.3" stop-color="#a9bcff" stop-opacity="0" />
+                    <stop offset="0.6" stop-color="#04051a" stop-opacity="0.45" />
+                    <stop offset="0.85" stop-color="#04051a" stop-opacity="0.85" />
+                    <stop offset="1" stop-color="#04051a" stop-opacity="0.95" />
                 </radialGradient>
-                <filter id="welcome-soft-glow" x="-100%" y="-100%" width="300%" height="300%">
-                    <feGaussianBlur stdDeviation="6" result="blur" />
-                    <feMerge>
-                        <feMergeNode in="blur" />
-                        <feMergeNode in="SourceGraphic" />
-                    </feMerge>
+                <clipPath id="welcome-planet-clip">
+                    <circle r="38" />
+                </clipPath>
+                <filter id="welcome-paint" x="-20%" y="-60%" width="140%" height="220%">
+                    <feTurbulence type="fractalNoise" baseFrequency="0.09" numOctaves="2" seed="5" result="noise" />
+                    <feDisplacementMap in="SourceGraphic" in2="noise" scale="4" xChannelSelector="R" yChannelSelector="G" result="rough" />
+                    <feGaussianBlur in="rough" stdDeviation="0.5" />
+                </filter>
+                <filter id="welcome-halo" x="-100%" y="-100%" width="300%" height="300%">
+                    <feGaussianBlur stdDeviation="10" />
                 </filter>
             </defs>
 
@@ -259,15 +306,33 @@
                 {/each}
             </g>
 
-            <g class="planet" filter="url(#welcome-soft-glow)">
-                <g transform="rotate(-22)">
-                    <path d="M -64 0 A 64 15 0 0 1 64 0" fill="none" stroke="#9fb3ff" stroke-width="5" opacity="0.85" />
+            <g class="planet">
+                <circle r="50" fill="#5b6fd6" opacity="0.22" filter="url(#welcome-halo)" />
+                <g transform="rotate(-22)" filter="url(#welcome-paint)">
+                    {#each [[60, 13, 0.35, 3], [66, 15, 0.55, 4], [73, 17, 0.25, 2]] as [rx, ry, opacity, width]}
+                        <path d="M {-rx} 0 A {rx} {ry} 0 0 1 {rx} 0" fill="none" stroke="#a9a3dc" stroke-width={width} stroke-opacity={opacity} />
+                    {/each}
+                    {#each ringDust.filter((d) => !d.front) as speck}
+                        <circle cx={speck.x} cy={speck.y} r={speck.r} fill="#e9c879" opacity="0.7" />
+                    {/each}
                 </g>
-                <circle r="38" fill="url(#welcome-planet)" />
-                <path d="M -24 -14 Q -8 -24 12 -20" fill="none" stroke="#c7d6ff" stroke-width="3" stroke-linecap="round" opacity="0.5" />
-                <path d="M -30 6 Q -6 0 26 8" fill="none" stroke="#2a3aa8" stroke-width="4" stroke-linecap="round" opacity="0.6" />
-                <g transform="rotate(-22)">
-                    <path d="M -64 0 A 64 15 0 0 0 64 0" fill="none" stroke="#c4d0ff" stroke-width="5" />
+                <g filter="url(#welcome-paint)">
+                    <circle r="38" fill="#26368c" />
+                    <g clip-path="url(#welcome-planet-clip)" transform="rotate(-22)">
+                        {#each planetBands as band}
+                            <path d={band.d} fill="none" stroke={band.color} stroke-width={band.width} stroke-opacity={band.opacity} stroke-linecap="round" />
+                        {/each}
+                    </g>
+                    <circle r="38" fill="url(#welcome-planet-shade)" />
+                    <path d="M -34 -12 A 36 36 0 0 1 10 -36" fill="none" stroke="#b9c6f5" stroke-width="2.5" stroke-linecap="round" opacity="0.45" />
+                </g>
+                <g transform="rotate(-22)" filter="url(#welcome-paint)">
+                    {#each [[60, 13, 0.4, 3], [66, 15, 0.65, 4], [73, 17, 0.3, 2]] as [rx, ry, opacity, width]}
+                        <path d="M {-rx} 0 A {rx} {ry} 0 0 0 {rx} 0" fill="none" stroke="#c3bdee" stroke-width={width} stroke-opacity={opacity} />
+                    {/each}
+                    {#each ringDust.filter((d) => d.front) as speck}
+                        <circle cx={speck.x} cy={speck.y} r={speck.r} fill="#f0d58f" />
+                    {/each}
                 </g>
             </g>
 
@@ -283,6 +348,20 @@
 
     <svg class="meadow absolute bottom-0 left-0 w-full" viewBox="0 0 {MW} {MH}" preserveAspectRatio="xMinYMax slice">
         <defs>
+            <!-- wobbles the vector edges so the grass reads as brushwork -->
+            <filter id="welcome-grass" x="-5%" y="-10%" width="110%" height="120%">
+                <feTurbulence type="fractalNoise" baseFrequency="0.06" numOctaves="2" seed="9" result="noise" />
+                <feDisplacementMap in="SourceGraphic" in2="noise" scale="5" xChannelSelector="R" yChannelSelector="G" />
+            </filter>
+            <filter id="welcome-grass-blur">
+                <feGaussianBlur stdDeviation="1.6" />
+            </filter>
+            {#each grassGradients as g}
+                <linearGradient id={g.id} gradientUnits="userSpaceOnUse" x1="0" y1={MH - 280} x2="0" y2={MH}>
+                    <stop offset="0" stop-color={g.tip} />
+                    <stop offset="1" stop-color={g.base} />
+                </linearGradient>
+            {/each}
             <filter id="welcome-firefly" x="-300%" y="-300%" width="700%" height="700%">
                 <feGaussianBlur stdDeviation="3" result="blur" />
                 <feMerge>
@@ -291,24 +370,31 @@
                 </feMerge>
             </filter>
         </defs>
-        {#each blades as blade}
-            <path d={blade.d} fill={blade.fill} />
-        {/each}
-        {#each flowers as flower}
-            <path d="M {flower.x} {MH} Q {flower.x + flower.sway * 0.3} {(MH + flower.top) / 2} {flower.x + flower.sway} {flower.top}" fill="none" stroke="#2e6b4a" stroke-width="2" />
-            <g transform="translate({flower.x + flower.sway} {flower.top}) rotate({flower.rotate})">
-                {#if flower.kind === 'daisy'}
-                    {#each [0, 45, 90, 135, 180, 225, 270, 315] as angle}
-                        <ellipse cx={flower.size * 0.9} rx={flower.size * 0.75} ry={flower.size * 0.3} fill="#eef0f7" transform="rotate({angle})" />
+        <g filter="url(#welcome-grass)">
+            {#each grassLayers as layer, i}
+                <g fill="url(#{layer.gradient})" filter={i === 0 ? 'url(#welcome-grass-blur)' : undefined}>
+                    <path d={layer.mound} />
+                    {#each layer.blades as d}
+                        <path {d} />
                     {/each}
-                    <circle r={flower.size * 0.45} fill="#f5c65b" />
-                {:else}
-                    {#each [0, 1, 2, 3, 4] as i}
-                        <circle cx={i % 2 === 0 ? -2 : 2} cy={-i * flower.size * 0.7} r={flower.size * 0.42} fill={i % 2 === 0 ? '#8b7cf6' : '#a99bff'} />
-                    {/each}
-                {/if}
-            </g>
-        {/each}
+                </g>
+            {/each}
+            {#each flowers as flower}
+                <path d="M {flower.x} {MH} Q {flower.x + flower.sway * 0.3} {(MH + flower.top) / 2} {flower.x + flower.sway} {flower.top}" fill="none" stroke="#10262a" stroke-width="1.6" />
+                <g transform="translate({flower.x + flower.sway} {flower.top})">
+                    {#if flower.kind === 'daisy'}
+                        {#each [0, 72, 144, 216, 288] as angle}
+                            <circle cx={flower.size * 0.75} r={flower.size * 0.6} fill="#8d94bd" opacity="0.7" transform="rotate({angle})" />
+                        {/each}
+                        <circle r={flower.size * 0.45} fill="#a8823c" />
+                    {:else}
+                        {#each [0, 1, 2, 3, 4] as i}
+                            <circle cx={i % 2 === 0 ? -1.4 : 1.4} cy={-i * flower.size * 0.8} r={flower.size * 0.5} fill={i % 2 === 0 ? '#4b3f9a' : '#5f52b4'} opacity="0.85" />
+                        {/each}
+                    {/if}
+                </g>
+            {/each}
+        </g>
         <g filter="url(#welcome-firefly)">
             {#each fireflies as fly}
                 <circle class="firefly" cx={fly.x} cy={fly.y} r={fly.r} fill="#ffd98a" style:animation-delay={`${fly.delay}s`} style:animation-duration={`${fly.duration}s`} />
@@ -342,6 +428,7 @@
 
     /* the filtered layers are rasterized once and only rotated as a whole */
     .swirl{
+        filter: brightness(0.8);
         will-change: transform;
         animation: spin 240s linear infinite;
     }
