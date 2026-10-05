@@ -114,8 +114,15 @@ class Web(SimpleHTTPRequestHandler):
         pass
 
 
+class Server(ThreadingHTTPServer):
+    def handle_error(self, request, client_address):
+        # a browser dropping a keep-alive connection is routine; anything else still gets a traceback
+        if not isinstance(sys.exc_info()[1], (ConnectionResetError, ConnectionAbortedError, BrokenPipeError)):
+            super().handle_error(request, client_address)
+
+
 def serve(port, handler):
-    ThreadingHTTPServer(('127.0.0.1', port), handler).serve_forever()  # loopback only: no firewall prompt on the runner
+    Server(('127.0.0.1', port), handler).serve_forever()  # loopback only: no firewall prompt on the runner
 
 
 threading.Thread(target=serve, args=(4173, Web), daemon=True).start()

@@ -126,7 +126,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: install harness dependencies
-        run: pip install playwright psutil
+        run: pip install playwright psutil pillow
       - uses: actions/download-artifact@v4
         with:
           name: bench-bundle

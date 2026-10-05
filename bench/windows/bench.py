@@ -30,6 +30,17 @@ NO_OCCLUSION = ['--disable-backgrounding-occluded-windows']
 NOPROXY = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 
+def elevated():
+    # WebView2 150+ ignores WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS when the host process is elevated (GitHub's Windows runners are)
+    if not IS_WIN:
+        return False
+    import ctypes
+    try:
+        return bool(ctypes.windll.shell32.IsUserAnAdmin())
+    except Exception:
+        return False
+
+
 def log(*a):
     print(time.strftime('%H:%M:%S'), *a, flush=True)
 
@@ -115,6 +126,102 @@ def kill_strays():
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             pass
     psutil.wait_procs(ps, timeout=15)
+
+
+def proc_dump():
+    out = []
+    for p in psutil.process_iter(['ppid', 'name', 'cmdline']):
+        try:
+            n = (p.info['name'] or '').lower()
+            if n.startswith('risuai') or n in ('msedgewebview2.exe', 'msedge.exe', 'werfault.exe'):
+                out.append({'pid': p.pid, 'ppid': p.info['ppid'], 'name': n, 'cmdline': ' '.join(p.info['cmdline'] or [])[:600]})
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+    return out[:40]
+
+
+def listening(pids):
+    try:
+        return sorted({c.laddr.port for c in psutil.net_connections('tcp') if c.pid in pids and c.status == psutil.CONN_LISTEN})
+    except Exception as e:
+        return str(e)[:200]
+
+
+def win_windows():
+    """Visible top-level windows; shows a dialog an app is stuck on before its webview comes up."""
+    import ctypes
+    from ctypes import wintypes
+    user32 = ctypes.windll.user32
+    user32.IsWindowVisible.argtypes = [wintypes.HWND]
+    user32.GetWindowTextW.argtypes = user32.GetClassNameW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+    user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
+    out = []
+
+    @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    def cb(hwnd, _):
+        if user32.IsWindowVisible(hwnd):
+            title = ctypes.create_unicode_buffer(256)
+            user32.GetWindowTextW(hwnd, title, 256)
+            cls = ctypes.create_unicode_buffer(256)
+            user32.GetClassNameW(hwnd, cls, 256)
+            pid = wintypes.DWORD()
+            user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+            out.append({'title': title.value[:120], 'class': cls.value, 'pid': pid.value})
+        return True
+
+    user32.EnumWindows(cb, 0)
+    return out[:60]
+
+
+def edge_policies():
+    import winreg
+    out = {}
+
+    def walk(hive, hname, path, depth):
+        try:
+            with winreg.OpenKey(hive, path) as k:
+                i = 0
+                while True:
+                    try:
+                        n, v, _ = winreg.EnumValue(k, i)
+                    except OSError:
+                        break
+                    out[f'{hname}\\{path}\\{n}'] = str(v)[:200]
+                    i += 1
+                if depth:
+                    j = 0
+                    while True:
+                        try:
+                            sub = winreg.EnumKey(k, j)
+                        except OSError:
+                            break
+                        walk(hive, hname, path + '\\' + sub, depth - 1)
+                        j += 1
+        except OSError:
+            pass
+
+    for hive, hname in ((winreg.HKEY_LOCAL_MACHINE, 'HKLM'), (winreg.HKEY_CURRENT_USER, 'HKCU')):
+        walk(hive, hname, r'SOFTWARE\Policies\Microsoft\Edge', 2)
+    return out
+
+
+def desktop_shot(name):
+    try:
+        from PIL import ImageGrab
+        os.makedirs(os.path.join(WORK, 'shots'), exist_ok=True)
+        ImageGrab.grab(all_screens=True).save(os.path.join(WORK, 'shots', name + '_desktop.png'))
+    except Exception as e:
+        log('desktop screenshot failed', e)
+
+
+def tail(path, n=4000):
+    try:
+        with open(path, 'rb') as f:
+            f.seek(0, 2)
+            f.seek(max(0, f.tell() - n))
+            return f.read().decode('utf-8', 'replace')
+    except OSError as e:
+        return str(e)
 
 
 def asset_files():
@@ -359,7 +466,7 @@ class Session:
         self.kind = 'web' if target == 'web' else 'tauri'
         self.port = free_port()
         self.proc = self.browser = self.page = self.cdp = None
-        self.udd = None
+        self.udd = self.app_out = self.app_log = self.wv2_log = None
         self.console = []
         self.crashed = False
 
@@ -382,10 +489,16 @@ class Session:
                 for f in asset_files():
                     shutil.copy(f, os.path.join(self.appdata(), 'assets', 'bench'))
             env = dict(os.environ)
-            env['WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS'] = ' '.join(
-                [f'--disable-features={WV2_FEATURES},CalculateNativeWinOcclusion', *NO_OCCLUSION, f'--remote-debugging-port={self.port}'])
+            self.wv2_log = os.path.join(WORK, f'wv2_{self.target}_{self.port}.log')
+            args = ' '.join([f'--disable-features={WV2_FEATURES},CalculateNativeWinOcclusion', *NO_OCCLUSION, f'--remote-debugging-port={self.port}',
+                             '--enable-logging', f'--log-file={self.wv2_log}'])
+            env['WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS'] = args
+            env['RUST_BACKTRACE'] = '1'
             exe = os.environ['BENCH_EXE_' + self.target.upper()]
-            self.proc = subprocess.Popen([exe], env=env, cwd=os.path.dirname(exe))
+            # a release build has no console; its panic message still reaches an inherited stderr handle
+            self.app_log = os.path.join(WORK, f'app_{self.target}_{self.port}.log')
+            self.app_out = open(self.app_log, 'w')
+            self.proc = subprocess.Popen([exe], env=env, cwd=os.path.dirname(exe), stdout=self.app_out, stderr=subprocess.STDOUT)
             prefix = ('http://tauri.localhost', 'https://tauri.localhost')
         else:
             self.udd = tempfile.mkdtemp(prefix='bench-edge-')
@@ -393,13 +506,48 @@ class Session:
                                           '--no-default-browser-check', '--disable-features=CalculateNativeWinOcclusion', *NO_OCCLUSION,
                                           '--window-size=1040,808', *EXTRA_ARGS, f'--app={WEB_URL}'])
             prefix = (WEB_URL.rstrip('/'),)
-        wait_http(f'http://127.0.0.1:{self.port}/json/version', 120)
+        self._wait_cdp()
         self.browser = self.pw.chromium.connect_over_cdp(f'http://127.0.0.1:{self.port}')
         self.page = self._find_page(prefix)
         self.page.on('console', self._on_console)
         self.page.on('crash', self._on_crash)
         self.cdp = self.page.context.new_cdp_session(self.page)
         return self
+
+    def _wait_cdp(self, timeout=90):
+        url = f'http://127.0.0.1:{self.port}/json/version'
+        t0 = time.time()
+        while time.time() - t0 < timeout:
+            rc = self.proc.poll()
+            if rc is not None and self.kind == 'tauri':
+                raise RuntimeError(f'{self.target} exited with code {rc} before its debugging port opened')
+            try:
+                with NOPROXY.open(url, timeout=2) as r:
+                    return r.read()
+            except Exception:
+                time.sleep(0.3)
+        raise TimeoutError(url)
+
+    def diag(self):
+        """Why a session did not come up: process state, browser command lines, listening ports, windows, logs."""
+        d = {'returncode': self.proc.poll() if self.proc else 'not started', 'port': self.port, 'elevated': elevated()}
+        if IS_WIN:
+            for k, f in (('procs', proc_dump), ('windows', win_windows), ('edge_policies', edge_policies)):
+                try:
+                    d[k] = f()
+                except Exception as e:
+                    d[k] = f'{type(e).__name__}: {e}'[:300]
+            d['listening'] = listening({p['pid'] for p in d['procs']} if isinstance(d.get('procs'), list) else set())
+        if self.kind == 'tauri':
+            prof = os.path.join(os.environ.get('LOCALAPPDATA', ''), IDENT, 'EBWebView')
+            d['profile_files'] = sorted(os.listdir(prof))[:40] if os.path.isdir(prof) else None
+            port_file = os.path.join(prof, 'DevToolsActivePort')
+            d['devtools_active_port'] = tail(port_file, 200) if os.path.exists(port_file) else None
+            if self.app_out:
+                self.app_out.flush()
+            d['app_log'] = tail(self.app_log) if self.app_log else None
+            d['wv2_log'] = tail(self.wv2_log) if self.wv2_log and os.path.exists(self.wv2_log) else None
+        return d
 
     def _on_console(self, msg):
         if msg.type in ('error', 'warning') and len(self.console) < 40:
@@ -434,6 +582,8 @@ class Session:
         kill_tree(self.proc.pid if self.proc else None)
         if IS_WIN:
             kill_strays()
+        if self.app_out:
+            self.app_out.close()
         if self.udd:
             rmtree(self.udd)
 
@@ -645,10 +795,13 @@ def run_test(pw, kind, fn, target, db=None, tag='', bench_assets=False, **kw):
         res['error'] = f'{type(e).__name__}: {e}'[:1500]
         res['trace'] = traceback.format_exc()[-2500:]
         log('!! error', res['error'])
-        try:
+        if s.page is None:
+            res['diag'] = s.diag()
+            log('   diag', json.dumps(res['diag'])[:6000])
+            if IS_WIN:
+                desktop_shot(f'{kind}_{target}_{tag}_error')
+        else:
             s.screenshot(f'{kind}_{target}_{tag}_error')
-        except Exception:
-            pass
     finally:
         res['renderer_crashed'] = s.crashed
         res['console'] = s.console[:20]
@@ -789,6 +942,45 @@ def targets(*names):
     return out
 
 
+PROBED = {}
+
+
+def probe(pw, target):
+    """Start a Tauri build once on an empty profile. A build that never opens its debugging port is reported once
+    (with diagnostics) and left out of the suite instead of timing out in every test."""
+    if target in PROBED:
+        return PROBED[target]
+    log(f'== probe {target}')
+    s = Session(pw, target)
+    res = {'test': 'probe', 'target': target}
+    t0 = time.time()
+    try:
+        s.start()
+        res['start_s'] = round(time.time() - t0, 1)
+        res['url'] = s.page.url
+        res['ok'] = True
+        res['info'] = s.info()
+    except Exception as e:
+        res['ok'] = False
+        res['error'] = f'{type(e).__name__}: {e}'[:1500]
+        if elevated():
+            res['error'] += ' (this process is elevated, and WebView2 ignores WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS for elevated hosts)'
+        res['diag'] = s.diag()
+        log('!! probe failed', res['error'])
+        log('   diag', json.dumps(res['diag'])[:6000])
+        if IS_WIN:
+            desktop_shot(f'probe_{target}')
+    finally:
+        s.stop()
+    emit(res)
+    PROBED[target] = res['ok']
+    return PROBED[target]
+
+
+def usable(pw, *names):
+    return [t for t in targets(*names) if t == 'web' or probe(pw, t)]
+
+
 def start_servers():
     os.makedirs(WORK, exist_ok=True)
     p = subprocess.Popen([sys.executable, os.path.join(HERE, 'servers.py'), DATA, WEB_DIR, os.path.join(WORK, 'servers.log')])
@@ -798,7 +990,8 @@ def start_servers():
 
 
 def env_info():
-    info = {'python': sys.version.split()[0], 'cpu_count': psutil.cpu_count(), 'ram_gb': round(psutil.virtual_memory().total / 2**30, 1)}
+    info = {'python': sys.version.split()[0], 'cpu_count': psutil.cpu_count(), 'ram_gb': round(psutil.virtual_memory().total / 2**30, 1),
+            'elevated': elevated()}
     if IS_WIN:
         import winreg
         for name, key in [('webview2', r'SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'),
@@ -828,18 +1021,18 @@ def suite(name, quick=False):
         with sync_playwright() as pw:
             if name == 'stream':
                 heavy_sends, simple_sends = (1, 2) if quick else (2, 6)
-                for t in targets('web', 'patched', 'unpatched', 'shipped'):
+                for t in usable(pw, 'web', 'patched', 'unpatched', 'shipped'):
                     run_test(pw, 'stream', t_stream, t, 'db_small.bin', 'heavy', sends=heavy_sends)
-                for t in targets('web', 'patched', 'unpatched', 'shipped'):
+                for t in usable(pw, 'web', 'patched', 'unpatched', 'shipped'):
                     run_test(pw, 'stream', t_stream, t, 'db_simple.bin', 'simple', sends=simple_sends if t in ('web', 'patched') else min(2, simple_sends))
             elif name == 'tick':
-                for t in targets('web', 'patched', 'shipped'):
+                for t in usable(pw, 'web', 'patched', 'shipped'):
                     run_test(pw, 'idle', t_idle, t, 'db_simple.bin', 'idle')
                 for db, tag in (('db_small.bin', 'small'), ('db_big.bin', 'big')):
-                    for t in targets('web', 'patched', 'shipped'):
+                    for t in usable(pw, 'web', 'patched', 'shipped'):
                         run_test(pw, 'tick', t_tick, t, db, tag, ticks=4 if quick else 12)
             elif name == 'micro':
-                for t in targets('patched', 'shipped'):
+                for t in usable(pw, 'patched', 'shipped'):
                     run_test(pw, 'micro', t_micro, t, 'db_simple.bin', 'micro', bench_assets=True, quick=quick)
             else:
                 raise SystemExit('unknown suite ' + name)
@@ -866,7 +1059,11 @@ def summarize():
     for r in rows:
         if r.get('test') == 'env':
             p(f"**env** `{json.dumps({k: v for k, v in r.items() if k != 'test'})}`\n")
-    errs = [r for r in rows if r.get('error')]
+    for r in rows:
+        if r.get('test') == 'probe':
+            p(f"**probe {r['target']}**: " + (f"ok, debugging port + page in {r.get('start_s')} s" if r.get('ok') else f"failed: `{r.get('error')}`"))
+    p('')
+    errs = [r for r in rows if r.get('error') and r.get('test') != 'probe']
     for r in rows:
         for m in r.get('micro_errors', []):
             errs.append({'test': 'micro', 'target': r['target'], 'tag': '', 'error': m})
