@@ -6,7 +6,7 @@
 # web build on the same Chromium engine. Each result is one JSON object per line in $BENCH_WORK/results.jsonl
 # (also printed with a "RESULT " prefix).
 #
-# usage: python bench.py suite <stream|tick|micro|probe|ipcdiag|bigsave|cdpab> [--quick]
+# usage: python bench.py suite <stream|tick|micro|probe|ipcdiag|bigsave[16|40|64]|cdpab> [--quick]
 #        python bench.py summarize
 #
 # Every desktop run starts from an empty profile by deleting the app's data folders (%APPDATA% and %LOCALAPPDATA%
@@ -39,6 +39,8 @@ DUMPS = os.path.join(WORK, 'dumps')
 # machine-wide WER LocalDumps for the app executables (crashes of the Rust host are not caught by WebView2's Crashpad)
 WER_DUMPS = IS_WIN and os.environ.get('BENCH_WER_DUMPS') == '1'
 CDB = r'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\cdb.exe'
+# desktop builds, each taken from BENCH_EXE_<NAME> (see the workflow's build job)
+DESKTOP = ('patched', 'nochunk', 'unpatched', 'shipped')
 
 
 def wv2_policy(names, args=None):
@@ -264,7 +266,7 @@ def wer_local_dumps():
     import winreg
     os.makedirs(os.path.join(DUMPS, 'wer'), exist_ok=True)
     base = r'SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps'
-    for exe in [os.path.basename(os.environ.get('BENCH_EXE_' + n.upper(), '')) for n in ('patched', 'unpatched', 'shipped')] + ['msedgewebview2.exe']:
+    for exe in [os.path.basename(os.environ.get('BENCH_EXE_' + n.upper(), '')) for n in DESKTOP] + ['msedgewebview2.exe']:
         if exe:
             with winreg.CreateKeyEx(winreg.HKEY_LOCAL_MACHINE, base + '\\' + exe, 0, winreg.KEY_SET_VALUE | winreg.KEY_WOW64_64KEY) as k:
                 winreg.SetValueEx(k, 'DumpFolder', 0, winreg.REG_EXPAND_SZ, os.path.join(DUMPS, 'wer'))
@@ -460,19 +462,28 @@ window.fetch = function (input, init) {
   try { cmd = decodeURIComponent(cmd); } catch (e) {}
   const b = init && init.body;
   const size = b ? (b.byteLength !== undefined ? b.byteLength : (typeof b === 'string' ? b.length : 0)) : 0;
-  let path = null;
+  let path = null, to = null, append = false;
   try {
-    // ipc-protocol.js spreads the command's headers into a plain object (plugin-fs puts the file path there)
+    // ipc-protocol.js spreads the command's headers into a plain object (plugin-fs puts write_file's path and options there)
     const h = init && init.headers;
-    path = h ? (typeof h.get === 'function' ? h.get('path') : (h.path || null)) : null;
+    const hv = (k) => h ? (typeof h.get === 'function' ? h.get(k) : (h[k] || null)) : null;
+    path = hv('path');
     if (path) path = decodeURIComponent(path);
+    const o = hv('options');
+    if (o) append = !!JSON.parse(o).append;
+    // other commands send their arguments as JSON (copy_file: fromPath/toPath, rename: oldPath/newPath)
+    if (!path && typeof b === 'string' && b.length < 4096) {
+      const a = JSON.parse(b);
+      path = a.path || a.fromPath || a.oldPath || null;
+      to = a.toPath || a.newPath || null;
+    }
   } catch (e) {}
   const t0 = performance.now(), wall = Date.now();
   window.__ipcInflight++; window.__ipcLast = t0;
   const p = of.apply(this, arguments);
   const rec = (ok) => {
     window.__ipcInflight--; window.__ipcLast = performance.now();
-    window.__ipcMon.push({cmd, size, path, t0: Math.round(t0), wall, dt: +(performance.now() - t0).toFixed(1), ok});
+    window.__ipcMon.push({cmd, size, path, to, append, t0: Math.round(t0), wall, dt: +(performance.now() - t0).toFixed(1), ok});
   };
   p.then(() => rec(true), () => rec(false));
   return p;
@@ -1227,11 +1238,34 @@ def open_bot(s, wait_js="document.querySelectorAll('.chattext').length >= 3"):
     return {'avatars': n, 'open_s': round(time.time() - t0, 2)}
 
 
+def in_db_dir(x):
+    return bool(x.get('path')) and 'database/' in x['path'].replace('\\', '/')
+
+
+def db_saves(ipc):
+    """saveDb() runs, from the IPC log: a save starts with a non-appending write of the save file (database.bin, or
+    database.bin.tmp when it is sent in chunks) and takes every database/ write, copy and rename up to the next one.
+    Returns [start ms, IPC calls, MB sent, ms from the first call's start to the last call's end] per save."""
+    ops = sorted((x for x in ipc if in_db_dir(x) and x['cmd'] in ('plugin:fs|write_file', 'plugin:fs|copy_file', 'plugin:fs|rename')),
+                 key=lambda x: x['t0'])
+    saves = []
+    for x in ops:
+        name = x['path'].replace('\\', '/').rsplit('/', 1)[-1]
+        if x['cmd'] == 'plugin:fs|write_file' and not x.get('append') and name in ('database.bin', 'database.bin.tmp'):
+            saves.append([])
+        if saves:
+            saves[-1].append(x)
+    return [[s[0]['t0'], len(s), mb(sum(y['size'] for y in s if y['cmd'] == 'plugin:fs|write_file')),
+             round(max(y['t0'] + y['dt'] for y in s) - s[0]['t0'])] for s in saves]
+
+
 def mon_summary(mon):
     """Aggregate IPC (Tauri) and IndexedDB put (web) activity; DB saves are what saveDb() writes."""
     ipc, idb = mon['ipc'], mon['idb']
     writes = [x for x in ipc if x['cmd'] == 'plugin:fs|write_file']
-    db_writes = [x for x in writes if x.get('path') and 'database/' in x['path'].replace('\\', '/')]
+    db_writes = [x for x in writes if in_db_dir(x)]
+    saves = db_saves(ipc)
+    save_ms = sorted(s[3] for s in saves)
     by_cmd = {}
     for x in ipc:
         d = by_cmd.setdefault(x['cmd'], {'n': 0, 'bytes': 0, 'ms_sum': 0.0, 'ms_max': 0.0})
@@ -1241,6 +1275,8 @@ def mon_summary(mon):
         d['ms_max'] = max(d['ms_max'], x['dt'])
     idb_db = [x for x in idb if 'database' in x['key']]
     return {
+        'tauri_db_saves': len(saves), 'tauri_save_ms_median': save_ms[len(save_ms) // 2] if save_ms else None,
+        'tauri_save_ms_max': save_ms[-1] if save_ms else None, 'tauri_save_list': saves[:40],
         'tauri_db_writes': len(db_writes), 'tauri_db_write_mb': mb(sum(x['size'] for x in db_writes)),
         'tauri_db_write_ms_max': max([x['dt'] for x in db_writes], default=0), 'tauri_db_write_ms_sum': round(sum(x['dt'] for x in db_writes)),
         # [epoch s, MB, ms, ok] per DB write, to line up with hostping stalls
@@ -1405,6 +1441,50 @@ def t_tick(s, res, ticks=12, degrade=False):
     res['mon'] = mon_summary(ev(s.page, MON_READ))
     res['mem_end'] = s.mem()
     res['heap_end'] = s.heap()
+
+
+SCROLL_UP = """
+const el = document.querySelector('.default-chat-screen');
+if (!el) return false;
+el.scrollTop = -el.scrollHeight;  // the chat is a column-reverse list: older messages load at the top
+el.dispatchEvent(new Event('scroll'));
+return true;
+"""
+
+
+def t_scroll(s, res, scrolls=8):
+    """Browsing only: scroll up through the chat history (older messages load and render), no variable changes,
+    and count the saves that causes."""
+    res['load'] = load_save(s)
+    res['open'] = open_bot(s, "document.querySelectorAll('.x-risu-status-card').length >= 3")
+    dismiss_alert(s, res)
+    ev(s.page, MON_INSTALL)
+    # the saves after boot and after opening the bot
+    s.page.wait_for_timeout(5000)
+    try:
+        s.page.wait_for_function(DRAINED, timeout=180000, polling=250)
+    except Exception as e:
+        res['settle_error'] = str(e)[:300]
+    ev(s.page, MON_READ)
+    res['messages_before'] = ev(s.page, "return document.querySelectorAll('.chattext').length")
+    hp = HostPing(s)
+    ev(s.page, FRAME_START)
+    res['scrolled'] = 0
+    for k in range(scrolls):
+        res['scrolled'] += bool(ev(s.page, SCROLL_UP))
+        s.page.wait_for_timeout(2500)
+    s.page.wait_for_timeout(3000)
+    t0 = time.time()
+    try:
+        s.page.wait_for_function(DRAINED, timeout=180000, polling=250)
+    except Exception as e:
+        res['drain_error'] = str(e)[:300]
+    res['drain_s'] = round(time.time() - t0, 1)
+    res['hostping'] = hp.result()
+    res['frames'] = ev(s.page, FRAME_STOP)
+    res['messages_after'] = ev(s.page, "return document.querySelectorAll('.chattext').length")
+    res['mon'] = mon_summary(ev(s.page, MON_READ))
+    res['mem_end'] = s.mem()
 
 
 def micro_step(s, res, section, script, *args, sample=False):
@@ -1671,7 +1751,7 @@ def env_info():
             except OSError:
                 info[name] = None
     pat = re.compile(rb'[\\/]((?:tauri|wry|tauri-runtime-wry|tauri-plugin-fs|tauri-plugin-http|webview2-com|tao)-\d+\.\d+\.\d+)[\\/]')
-    for n in ('patched', 'unpatched', 'shipped'):
+    for n in DESKTOP:
         exe = os.environ.get('BENCH_EXE_' + n.upper(), '')
         if os.path.isfile(exe):
             blob = open(exe, 'rb').read()
@@ -1684,7 +1764,7 @@ def guard_appdata():
     """Keep a real installation's data safe: the desktop runs delete the app's data folders."""
     if os.environ.get('GITHUB_ACTIONS') == 'true' or os.environ.get('BENCH_WIPE_APPDATA') == '1':
         return
-    if not any(os.path.isfile(os.environ.get('BENCH_EXE_' + n.upper(), '')) for n in ('patched', 'unpatched', 'shipped')):
+    if not any(os.path.isfile(os.environ.get('BENCH_EXE_' + n.upper(), '')) for n in DESKTOP):
         return
     dirs = [d for d in (os.path.join(os.environ.get('APPDATA', ''), IDENT), os.path.join(os.environ.get('LOCALAPPDATA', ''), IDENT))
             if os.path.isdir(d)]
@@ -1778,16 +1858,24 @@ def suite(name, quick=False):
                     for direction, n in first_fail.items():
                         run_test(pw, 'ipcramp', t_ipcramp, 'patched', 'db_simple.bin', f'{direction}_unguarded', direction=direction, guard=False, sizes=[n])
                 analyze_dumps()
-            elif name == 'bigsave':
-                # saves that stay in the save file (cold storage off, as with plugins installed), 16 / 40 / 64 MB
+            elif re.fullmatch(r'bigsave(16|40|64)?', name):
+                # saves that stay in the save file (cold storage off, as with plugins installed), 16 / 40 / 64 MB;
+                # bigsave16 / bigsave40 / bigsave64 run one size, so each size can get its own runner
                 if WER_DUMPS:
                     wer_local_dumps()
-                hot = [db for db in ('db_hot16.bin', 'db_hot40.bin', 'db_hot64.bin') if os.path.isfile(os.path.join(DATA, db))]
+                sizes = [name[7:]] if name != 'bigsave' else ['16', '40', '64']
+                hot = [f'db_hot{n}.bin' for n in sizes if os.path.isfile(os.path.join(DATA, f'db_hot{n}.bin'))]
                 for db in hot[:1] if quick else hot:
-                    for t in usable(pw, 'web', 'patched'):
+                    for t in usable(pw, 'web', 'patched', 'nochunk', 'unpatched'):
                         run_test(pw, 'tick', t_tick, t, db, db[3:-4], ticks=4 if quick else 8)
-                if hot and usable(pw, 'patched'):
-                    run_test(pw, 'tick', t_tick, 'patched', hot[0], hot[0][3:-4] + '_degraded', ticks=4 if quick else 8, degrade=True)
+                if 'db_hot16.bin' in hot:
+                    # every IPC call through postMessage, as after one failed
+                    for t in usable(pw, 'patched', 'nochunk', 'unpatched'):
+                        run_test(pw, 'tick', t_tick, t, 'db_hot16.bin', 'hot16_degraded', ticks=4 if quick else 8, degrade=True)
+                    # the same save with the bot's low level access on: browsing alone used to save
+                    if os.path.isfile(os.path.join(DATA, 'db_hot16_lla.bin')):
+                        for t in usable(pw, 'patched', 'unpatched'):
+                            run_test(pw, 'scroll', t_scroll, t, 'db_hot16_lla.bin', 'hot16_lla', scrolls=4 if quick else 8)
                 analyze_dumps()
             elif name == 'cdpab':
                 # the guarded IPC ramp over a bare CDP connection that only evaluates scripts and with Playwright attached
@@ -1860,19 +1948,38 @@ def summarize():
     if tk:
         p('### Lua button tick (reloadDisplay + chat vars): HUD update latency')
         p('host UI thread: WM_NULL round trips to the app (or Edge) window every 20 ms from the first tick until saves drained')
-        p('| db | target | boot s | tick median s | ticks (s) | long frames >200ms | jank ms | DB writes (tauri) | written MB | write ms max / sum | '
-          'idb DB puts (ms max) | IPC failed (path after load) | host UI thread max ms / >100 ms / blocked s | drain s | peak private MB |')
-        p('|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|')
+        p('saves (tauri): saveDb() runs seen in the IPC log; save ms: first write_file start to the end of its last database/ write, copy or rename. '
+          'DB writes: write_file calls under database/ (a save sent in chunks is several)')
+        p('| db | target | boot s | tick median s | ticks (s) | long frames >200ms | jank ms | saves (tauri) | save ms median / max | DB writes (tauri) | '
+          'written MB | write ms max / sum | idb DB puts (ms max) | IPC failed (path after load) | host UI thread max ms / >100 ms / blocked s | drain s | '
+          'peak private MB |')
+        p('|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|')
         for r in tk:
             m = r.get('mon', {})
             h = r.get('hostping') or {}
             mode = r.get('ipc_mode')
             ipcf = m.get('ipc_failed') if 'ipc_mode' not in r else f"{m.get('ipc_failed')} ({mode if isinstance(mode, str) else 'no answer'})"
-            p('| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} / {} | {} ({}) | {} | {} / {} / {} | {} | {} |'.format(
+            p('| {} | {} | {} | {} | {} | {} | {} | {} | {} / {} | {} | {} | {} / {} | {} ({}) | {} | {} / {} / {} | {} | {} |'.format(
                 r['tag'], r['target'], (r.get('load') or {}).get('boot_s'), r.get('tick_median_s'), ' '.join(str(x) for x in r.get('tick_s', [])),
-                r.get('frames', {}).get('long200'), r.get('frames', {}).get('jank_ms'), m.get('tauri_db_writes'), m.get('tauri_db_write_mb'),
+                r.get('frames', {}).get('long200'), r.get('frames', {}).get('jank_ms'), m.get('tauri_db_saves'), m.get('tauri_save_ms_median'),
+                m.get('tauri_save_ms_max'), m.get('tauri_db_writes'), m.get('tauri_db_write_mb'),
                 m.get('tauri_db_write_ms_max'), m.get('tauri_db_write_ms_sum'), m.get('idb_db_puts'), m.get('idb_db_put_ms_max'),
                 ipcf, h.get('max_ms'), h.get('over_100'), h.get('blocked_s'), r.get('drain_s'), r.get('mem_peak', {}).get('private_mb')))
+        p('')
+    sc = [r for r in rows if r.get('test') == 'scroll' and not r.get('error')]
+    if sc:
+        p('### scrolling up through the chat history (older messages load), no variable changes')
+        p('| db | target | scrolls | messages rendered before -> after | saves (tauri) | save ms median / max | DB writes | written MB | '
+          'host UI thread max ms / >100 ms / blocked s | long frames >200ms | drain s | end private MB |')
+        p('|---|---|---|---|---|---|---|---|---|---|---|---|')
+        for r in sc:
+            m = r.get('mon', {})
+            h = r.get('hostping') or {}
+            p('| {} | {} | {} | {} -> {} | {} | {} / {} | {} | {} | {} / {} / {} | {} | {} | {} |'.format(
+                r['tag'], r['target'], r.get('scrolled'), r.get('messages_before'), r.get('messages_after'), m.get('tauri_db_saves'),
+                m.get('tauri_save_ms_median'), m.get('tauri_save_ms_max'), m.get('tauri_db_writes'), m.get('tauri_db_write_mb'),
+                h.get('max_ms'), h.get('over_100'), h.get('blocked_s'), r.get('frames', {}).get('long200'), r.get('drain_s'),
+                (r.get('mem_end') or {}).get('private_mb')))
         p('')
     idle = [r for r in rows if r.get('test') == 'idle' and not r.get('error')]
     if idle:

@@ -1,8 +1,9 @@
 name: 'windows-perf-bench'
 
-# Measurement-only workflow: builds the desktop app on Windows (this branch, and this branch with the
-# streamed_fetch fix reverted), fetches the shipped release for reference, and drives each build plus the
-# web build in Edge through the same Playwright-over-CDP harness (bench/windows/bench.py).
+# Measurement-only workflow: builds the desktop app on Windows (patched: this branch; nochunk: this branch with the
+# chunked save write reverted; unpatched: the upstream code this branch starts from), fetches the shipped release for
+# reference, and drives each build plus the web build in Edge through the same Playwright-over-CDP harness
+# (bench/windows/bench.py).
 # It never creates tags, releases or updater artifacts; build outputs live for one day as run artifacts.
 
 on:
@@ -17,7 +18,7 @@ on:
         type: string
         default: ''
       suites:
-        description: 'JSON list of suites to run (stream, tick, micro, probe, ipcdiag, bigsave, cdpab)'
+        description: 'JSON list of suites to run (stream, tick, micro, probe, ipcdiag, bigsave, bigsave16, bigsave40, bigsave64, cdpab)'
         type: string
         default: '["stream","tick","micro"]'
   push:
@@ -75,16 +76,27 @@ jobs:
           cp -r dist out/web
           cp src-tauri/Cargo.lock out/Cargo.lock
 
-      - name: build unpatched (streamed_fetch fix reverted)
+      - name: build nochunk (chunked save write reverted)
         shell: bash
         run: |
-          sha=$(git log --format=%H -n1 --grep='coalesce streamed_fetch chunks')
+          sha=$(git log --format=%H -n1 --grep='send the save over IPC in 8 MB chunks')
           test -n "$sha"
           git show "$sha^:src/ts/globalApi.svelte.ts" > src/ts/globalApi.svelte.ts
           git diff --stat
           pnpm tauri build --no-bundle --config '{"bundle":{"createUpdaterArtifacts":false}}'
-          cp src-tauri/target/release/RisuAI.exe out/bin/RisuAI_unpatched.exe
+          cp src-tauri/target/release/RisuAI.exe out/bin/RisuAI_nochunk.exe
           git checkout -- src/ts/globalApi.svelte.ts
+
+      - name: build unpatched (upstream code before this branch's fixes)
+        shell: bash
+        run: |
+          sha=$(git log --format=%H -n1 --grep='coalesce streamed_fetch chunks')
+          test -n "$sha"
+          git restore --source="$sha^" -- src
+          git status --short
+          pnpm tauri build --no-bundle --config '{"bundle":{"createUpdaterArtifacts":false}}'
+          cp src-tauri/target/release/RisuAI.exe out/bin/RisuAI_unpatched.exe
+          git restore --source=HEAD -- src
 
       - name: fetch shipped release (reference)
         shell: bash
@@ -175,7 +187,7 @@ jobs:
           Get-CimInstance Win32_Processor | Format-List Name, NumberOfLogicalProcessors
 
       - name: generate large saves (bigsave)
-        if: ${{ matrix.suite == 'bigsave' }}
+        if: ${{ startsWith(matrix.suite, 'bigsave') }}
         shell: bash
         run: |
           # kept out of cold storage (COLD=0), as for a user with plugins; about 16, 39 and 62 MB
@@ -183,6 +195,8 @@ jobs:
           COLD=0 SAVEICON=1 node bench/windows/gen_db.cjs out/data/db_hot16.bin 300 8 1300
           COLD=0 SAVEICON=1 node bench/windows/gen_db.cjs out/data/db_hot40.bin 300 20 1300
           COLD=0 SAVEICON=1 node bench/windows/gen_db.cjs out/data/db_hot64.bin 300 32 1300
+          # the 16 MB save with the bot's low level access on
+          LLA=1 COLD=0 SAVEICON=1 node bench/windows/gen_db.cjs out/data/db_hot16_lla.bin 300 8 1300
 
       - name: run ${{ matrix.suite }} suite
         shell: pwsh
@@ -193,6 +207,7 @@ jobs:
           BENCH_DATA: ${{ github.workspace }}\out\data
           BENCH_WEB_DIR: ${{ github.workspace }}\out\web
           BENCH_EXE_PATCHED: ${{ github.workspace }}\out\bin\RisuAI_patched.exe
+          BENCH_EXE_NOCHUNK: ${{ github.workspace }}\out\bin\RisuAI_nochunk.exe
           BENCH_EXE_UNPATCHED: ${{ github.workspace }}\out\bin\RisuAI_unpatched.exe
           BENCH_EXE_SHIPPED: ${{ github.workspace }}\out\bin\RisuAI_shipped.exe
           # the runner is elevated, so WebView2 only takes the debugging port from the machine-wide HKLM policy
