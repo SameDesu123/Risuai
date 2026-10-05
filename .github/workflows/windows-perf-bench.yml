@@ -1,0 +1,183 @@
+name: 'windows-perf-bench'
+
+# Measurement-only workflow: builds the desktop app on Windows (this branch, and this branch with the
+# streamed_fetch fix reverted), fetches the shipped release for reference, and drives each build plus the
+# web build in Edge through the same Playwright-over-CDP harness (bench/windows/bench.py).
+# It never creates tags, releases or updater artifacts; build outputs live for one day as run artifacts.
+
+on:
+  workflow_dispatch:
+    inputs:
+      quick:
+        description: 'Fewer iterations (smoke test)'
+        type: boolean
+        default: false
+  push:
+    branches:
+      - 'ccr-36f42df4-t3jv95'
+    paths:
+      - '.github/workflows/windows-perf-bench.yml'
+      - 'bench/windows/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-perf-bench-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 120
+    env:
+      VITE_RISU_LEGAL_CONFIGURED: 'TRUE'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 30
+      - name: install pnpm
+        uses: pnpm/action-setup@v5
+        with:
+          version: 10.34.1
+      - name: setup node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: 'pnpm'
+          cache-dependency-path: 'pnpm-lock.yaml'
+      - name: install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          key: windows-perf-bench
+          cache-on-failure: true
+      - name: install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: build patched (this branch)
+        shell: bash
+        run: |
+          pnpm tauri build --no-bundle --config '{"bundle":{"createUpdaterArtifacts":false}}'
+          mkdir -p out/bin
+          cp src-tauri/target/release/RisuAI.exe out/bin/RisuAI_patched.exe
+          cp -r dist out/web
+          cp src-tauri/Cargo.lock out/Cargo.lock
+
+      - name: build unpatched (streamed_fetch fix reverted)
+        shell: bash
+        run: |
+          sha=$(git log --format=%H -n1 --grep='coalesce streamed_fetch chunks')
+          test -n "$sha"
+          git show "$sha^:src/ts/globalApi.svelte.ts" > src/ts/globalApi.svelte.ts
+          git diff --stat
+          pnpm tauri build --no-bundle --config '{"bundle":{"createUpdaterArtifacts":false}}'
+          cp src-tauri/target/release/RisuAI.exe out/bin/RisuAI_unpatched.exe
+          git checkout -- src/ts/globalApi.svelte.ts
+
+      - name: fetch shipped release (reference)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p shipped && cd shipped
+          gh release download v2026.8.250 --repo kwaroran/Risuai --pattern '*x64-setup.exe'
+          ls -la
+          7z x -y -oext ./*x64-setup.exe > /dev/null || true
+          exe=$(find ext -iname 'risuai.exe' 2>/dev/null | head -n1)
+          if [ -z "$exe" ]; then
+            ./*x64-setup.exe //S
+            exe=$(find "$LOCALAPPDATA" -maxdepth 3 -iname 'risuai.exe' 2>/dev/null | head -n1)
+          fi
+          echo "shipped exe: $exe"
+          test -n "$exe"
+          cp "$exe" ../out/bin/RisuAI_shipped.exe
+
+      - name: generate test data
+        shell: bash
+        run: |
+          pip install pillow
+          mkdir -p out/data
+          node bench/windows/gen_db.cjs out/data/db_small.bin 300 0 0
+          SIMPLE=1 node bench/windows/gen_db.cjs out/data/db_simple.bin 300 0 0
+          node bench/windows/gen_db.cjs out/data/db_big.bin 300 20 2500
+          python bench/windows/gen_assets.py out/data/assets
+          ls -la out out/bin out/data
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bench-bundle
+          path: out
+          retention-days: 1
+          if-no-files-found: error
+
+  bench:
+    needs: build
+    runs-on: windows-latest
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [stream, tick, micro]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: install harness dependencies
+        run: pip install playwright psutil
+      - uses: actions/download-artifact@v4
+        with:
+          name: bench-bundle
+          path: out
+
+      - name: prepare machine
+        shell: pwsh
+        run: |
+          $id = '{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
+          $pv = @("HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\$id", "HKLM:\SOFTWARE\Microsoft\EdgeUpdate\Clients\$id", "HKCU:\SOFTWARE\Microsoft\EdgeUpdate\Clients\$id") |
+            Where-Object { Test-Path $_ } | ForEach-Object { (Get-ItemProperty $_).pv } | Where-Object { $_ -and $_ -ne '0.0.0.0' }
+          if (-not $pv) {
+            Write-Host 'installing WebView2 runtime'
+            Invoke-WebRequest 'https://go.microsoft.com/fwlink/p/?LinkId=2124703' -OutFile "$env:RUNNER_TEMP\wv2setup.exe"
+            Start-Process "$env:RUNNER_TEMP\wv2setup.exe" -ArgumentList '/silent', '/install' -Wait
+          } else { Write-Host "WebView2 runtime $pv" }
+          Add-Content -Path "$env:windir\System32\drivers\etc\hosts" -Value "`r`n127.0.0.1 fakellm.test"
+          ipconfig /flushdns | Out-Null
+          $pol = 'HKLM:\SOFTWARE\Policies\Microsoft\Edge'
+          New-Item -Path $pol -Force | Out-Null
+          Set-ItemProperty -Path $pol -Name HideFirstRunExperience -Value 1 -Type DWord
+          Set-ItemProperty -Path $pol -Name StartupBoostEnabled -Value 0 -Type DWord
+          Set-ItemProperty -Path $pol -Name BackgroundModeEnabled -Value 0 -Type DWord
+          try { Set-DisplayResolution -Width 1920 -Height 1080 -Force } catch { Write-Host "Set-DisplayResolution: $_" }
+          Get-CimInstance Win32_VideoController | Format-List Name, CurrentHorizontalResolution, CurrentVerticalResolution
+          Get-CimInstance Win32_Processor | Format-List Name, NumberOfLogicalProcessors
+
+      - name: run ${{ matrix.suite }} suite
+        shell: pwsh
+        env:
+          BENCH_WORK: ${{ github.workspace }}\out\work
+          BENCH_DATA: ${{ github.workspace }}\out\data
+          BENCH_WEB_DIR: ${{ github.workspace }}\out\web
+          BENCH_EXE_PATCHED: ${{ github.workspace }}\out\bin\RisuAI_patched.exe
+          BENCH_EXE_UNPATCHED: ${{ github.workspace }}\out\bin\RisuAI_unpatched.exe
+          BENCH_EXE_SHIPPED: ${{ github.workspace }}\out\bin\RisuAI_shipped.exe
+        run: python bench/windows/bench.py suite ${{ matrix.suite }} ${{ inputs.quick && '--quick' || '' }}
+
+      - name: summary
+        if: always()
+        shell: pwsh
+        env:
+          BENCH_WORK: ${{ github.workspace }}\out\work
+        run: |
+          python bench/windows/bench.py summarize | Out-Null
+          if (Test-Path out\work\summary.md) { Get-Content out\work\summary.md | Add-Content $env:GITHUB_STEP_SUMMARY }
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: results-${{ matrix.suite }}
+          path: out/work
+          retention-days: 14
+          if-no-files-found: warn
