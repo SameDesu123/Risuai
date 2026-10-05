@@ -1,0 +1,52 @@
+From 89ab80cb940e4434664c571dbd6b26271e33d4a0 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Mon, 5 Oct 2026 06:50:36 +0000
+Subject: [PATCH] perf(tauri): copy the save backup on the Rust side instead of
+ sending it over IPC again
+
+On desktop, saveDb() sent the whole encoded save over IPC twice per save:
+once for database.bin and once more for the new dbbackup-*.bin. IPC
+request bodies are expensive on Windows (WebView2 and the Tauri host
+copy each body several times, and wry reads it on the window's UI
+thread), so the second transfer doubled the time, the memory spike and
+the UI-thread stall of every save, for bytes that were already on disk.
+
+Write database.bin once and let plugin-fs copy it to the backup.
+fs:allow-copy-file and the $APPDATA/**/* scope are already granted.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_012gh4XeiASSGgQZowZWFKHT
+---
+ src/ts/globalApi.svelte.ts | 9 +++++++--
+ 1 file changed, 7 insertions(+), 2 deletions(-)
+
+diff --git a/src/ts/globalApi.svelte.ts b/src/ts/globalApi.svelte.ts
+index 6f046ec1..37bd8e14 100644
+--- a/src/ts/globalApi.svelte.ts
++++ b/src/ts/globalApi.svelte.ts
+@@ -5,7 +5,8 @@ import {
+     exists,
+     mkdir,
+     readDir,
+-    remove
++    remove,
++    copyFile
+ } from "@tauri-apps/plugin-fs"
+ import { changeFullscreen, checkNullish, sleep } from "./util"
+ import { convertFileSrc, invoke } from "@tauri-apps/api/core"
+@@ -453,7 +454,11 @@ export async function saveDb() {
+             const dbData = new Uint8Array(encoded)
+             if (isTauri) {
+                 await writeFile('database/database.bin', dbData, { baseDir: BaseDirectory.AppData });
+-                await writeFile(`database/dbbackup-${(Date.now() / 100).toFixed()}.bin`, dbData, { baseDir: BaseDirectory.AppData });
++                // copied on the Rust side: sending the save over IPC a second time costs as much as the first write
++                await copyFile('database/database.bin', `database/dbbackup-${(Date.now() / 100).toFixed()}.bin`, {
++                    fromPathBaseDir: BaseDirectory.AppData,
++                    toPathBaseDir: BaseDirectory.AppData
++                });
+             }
+             else {
+ 
+-- 
+2.43.0
+

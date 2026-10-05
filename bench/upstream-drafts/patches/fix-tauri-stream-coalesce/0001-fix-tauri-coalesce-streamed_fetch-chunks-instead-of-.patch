@@ -1,0 +1,67 @@
+From ada349e6efcdb79c646394251fa085ff6670ac2b Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sun, 4 Oct 2026 16:41:33 +0000
+Subject: [PATCH] fix(tauri): coalesce streamed_fetch chunks instead of
+ draining one per tick
+
+The Tauri branch of fetchNative() took exactly one queued streamed_fetch
+event per 10 ms tick and enqueued it as its own stream chunk. Every
+network chunk therefore went through the whole per-chunk pipeline
+(SSE re-parse, message update, regex/CBS/Lua editDisplay, DOMPurify,
+saveDb change detection) one at a time, and the drain could never catch
+up once rendering took longer than the tick. The web path receives
+whatever accumulated while the main thread was busy as one read, so it
+self-throttles.
+
+Drain everything queued since the last tick and enqueue it as a single
+concatenated chunk. Stream consumers already accumulate bytes and split
+on line boundaries, as they must for arbitrary network chunking.
+
+Measured on Linux/WebKitGTK with a 1,500-chunk stream that the server
+finishes in 5.0 s:
+- heavy bot (regex HTML + Lua editDisplay + background CSS):
+  120-137 s before, 5.8-7.1 s after (web build: 5.9-7.5 s)
+- simple bot: 71-76 s before, 5.6-6.4 s after (web build: 5.6-6.4 s)
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_012gh4XeiASSGgQZowZWFKHT
+---
+ src/ts/globalApi.svelte.ts | 14 ++++++++++----
+ 1 file changed, 10 insertions(+), 4 deletions(-)
+
+diff --git a/src/ts/globalApi.svelte.ts b/src/ts/globalApi.svelte.ts
+index 6f046ec1..091cc0c3 100644
+--- a/src/ts/globalApi.svelte.ts
++++ b/src/ts/globalApi.svelte.ts
+@@ -1860,11 +1860,13 @@ export async function fetchNative(url: string, arg: {
+         const tauriReadableStream = new ReadableStream<Uint8Array>({
+             async start(controller) {
+                 while (!resolved || nativeFetchData[fetchId].length > 0) {
+-                    if (nativeFetchData[fetchId].length > 0) {
+-                        const data = nativeFetchData[fetchId].shift()
++                    // Drain everything that arrived since the last tick and hand it over as one chunk,
++                    // so a busy renderer pays the per-chunk parse/render cost once per tick, not once per network chunk.
++                    const pending = nativeFetchData[fetchId].splice(0)
++                    const parts: Buffer[] = []
++                    for (const data of pending) {
+                         if (data.type === 'chunk') {
+-                            const chunk = Buffer.from(data.body, 'base64')
+-                            controller.enqueue(chunk as unknown as Uint8Array)
++                            parts.push(Buffer.from(data.body, 'base64'))
+                         }
+                         if (data.type === 'headers') {
+                             resHeaders = data.body
+@@ -1874,6 +1876,10 @@ export async function fetchNative(url: string, arg: {
+                             resolved = true
+                         }
+                     }
++                    if (parts.length > 0) {
++                        const chunk = parts.length === 1 ? parts[0] : Buffer.concat(parts)
++                        controller.enqueue(chunk as unknown as Uint8Array)
++                    }
+                     await sleep(10)
+                 }
+                 controller.close()
+-- 
+2.43.0
+

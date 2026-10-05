@@ -1,0 +1,194 @@
+From 042d23cb29e3c1bc0eccf8bb0d89892acb74ea11 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Mon, 5 Oct 2026 06:55:22 +0000
+Subject: [PATCH 2/2] perf(tauri): send the save over IPC in 8 MB chunks and
+ rename it into place
+
+On Windows every IPC request body is copied several times on its way to
+the command (while one is in flight, WebView2's browser process commits
+about 19 times its size and the Tauri host about 9.5 times), and wry
+reads it on the window's UI thread. A save of tens of MB therefore
+spiked memory by gigabytes and froze the window for the whole transfer.
+
+saveDb() now writes database.bin through replaceFileInChunks(): the save
+goes to database/database.bin.tmp in chunks of at most 8 MB (plugin-fs
+write_file with append), and the temporary file is then renamed over
+database.bin. If the rename fails (e.g. another program holds
+database.bin open on Windows), the temporary file is copied over it.
+
+The temporary file also keeps database.bin whole when a save is cut
+short. RisuSaveDecoder skips blocks it cannot read, so a truncated
+database.bin still loads, without the characters after the cut, and the
+loader never falls back to a backup.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_012gh4XeiASSGgQZowZWFKHT
+---
+ src/ts/globalApi.svelte.ts        |  3 +-
+ src/ts/storage/tauriWrite.test.ts | 92 +++++++++++++++++++++++++++++++
+ src/ts/storage/tauriWrite.ts      | 33 +++++++++++
+ 3 files changed, 127 insertions(+), 1 deletion(-)
+ create mode 100644 src/ts/storage/tauriWrite.test.ts
+ create mode 100644 src/ts/storage/tauriWrite.ts
+
+diff --git a/src/ts/globalApi.svelte.ts b/src/ts/globalApi.svelte.ts
+index 37bd8e14..4179d8dc 100644
+--- a/src/ts/globalApi.svelte.ts
++++ b/src/ts/globalApi.svelte.ts
+@@ -27,6 +27,7 @@ import { characterURLImport, hubURL } from "./characterCards";
+ import { defaultJailbreak, defaultMainPrompt, oldJailbreak, oldMainPrompt } from "./storage/defaultPrompts";
+ import { loadRisuAccountData } from "./drive/accounter";
+ import { decodeRisuSave, encodeRisuSaveLegacy, RisuSaveEncoder, type toSaveType } from "./storage/risuSave";
++import { replaceFileInChunks } from "./storage/tauriWrite";
+ import { AutoStorage } from "./storage/autoStorage";
+ import { updateAnimationSpeed } from "./gui/animation";
+ import { updateColorScheme, updateTextThemeAndCSS } from "./gui/colorscheme";
+@@ -453,7 +454,7 @@ export async function saveDb() {
+             }
+             const dbData = new Uint8Array(encoded)
+             if (isTauri) {
+-                await writeFile('database/database.bin', dbData, { baseDir: BaseDirectory.AppData });
++                await replaceFileInChunks('database/database.bin', dbData);
+                 // copied on the Rust side: sending the save over IPC a second time costs as much as the first write
+                 await copyFile('database/database.bin', `database/dbbackup-${(Date.now() / 100).toFixed()}.bin`, {
+                     fromPathBaseDir: BaseDirectory.AppData,
+diff --git a/src/ts/storage/tauriWrite.test.ts b/src/ts/storage/tauriWrite.test.ts
+new file mode 100644
+index 00000000..0fd56253
+--- /dev/null
++++ b/src/ts/storage/tauriWrite.test.ts
+@@ -0,0 +1,92 @@
++// @vitest-environment node
++
++import { beforeEach, describe, expect, test, vi } from 'vitest'
++
++const fs = vi.hoisted(() => ({
++  files: new Map<string, Uint8Array>(),
++  calls: [] as string[],
++  renameError: null as Error | null,
++}))
++
++vi.mock('@tauri-apps/plugin-fs', () => ({
++  BaseDirectory: { AppData: 14 },
++  writeFile: vi.fn(async (path: string, data: Uint8Array, options: { append?: boolean }) => {
++    fs.calls.push(`write ${path} ${data.length}${options.append ? ' append' : ''}`)
++    const prev = options.append ? (fs.files.get(path) ?? new Uint8Array(0)) : new Uint8Array(0)
++    const next = new Uint8Array(prev.length + data.length)
++    next.set(prev)
++    next.set(data, prev.length)
++    fs.files.set(path, next)
++  }),
++  rename: vi.fn(async (from: string, to: string) => {
++    fs.calls.push(`rename ${from} ${to}`)
++    if (fs.renameError) throw fs.renameError
++    fs.files.set(to, fs.files.get(from)!)
++    fs.files.delete(from)
++  }),
++  copyFile: vi.fn(async (from: string, to: string) => {
++    fs.calls.push(`copy ${from} ${to}`)
++    fs.files.set(to, fs.files.get(from)!.slice())
++  }),
++}))
++
++import { replaceFileInChunks } from './tauriWrite'
++
++const bytes = (n: number) => Uint8Array.from({ length: n }, (_, i) => i % 251)
++
++beforeEach(() => {
++  fs.files.clear()
++  fs.calls.length = 0
++  fs.renameError = null
++  vi.spyOn(console, 'error').mockImplementation(() => {})
++})
++
++describe('replaceFileInChunks', () => {
++  test('sends the data in chunks to a temporary file and renames it over the target', async () => {
++    fs.files.set('db.bin', bytes(3))
++    const data = bytes(25)
++    await replaceFileInChunks('db.bin', data, 10)
++    expect(fs.calls).toEqual([
++      'write db.bin.tmp 10',
++      'write db.bin.tmp 10 append',
++      'write db.bin.tmp 5 append',
++      'rename db.bin.tmp db.bin',
++    ])
++    expect(fs.files.get('db.bin')).toEqual(data)
++    expect(fs.files.has('db.bin.tmp')).toBe(false)
++  })
++
++  test('does not send an empty chunk when the size is a multiple of the chunk size', async () => {
++    await replaceFileInChunks('db.bin', bytes(20), 10)
++    expect(fs.calls).toEqual(['write db.bin.tmp 10', 'write db.bin.tmp 10 append', 'rename db.bin.tmp db.bin'])
++  })
++
++  test('writes an empty file', async () => {
++    await replaceFileInChunks('db.bin', new Uint8Array(0), 10)
++    expect(fs.calls).toEqual(['write db.bin.tmp 0', 'rename db.bin.tmp db.bin'])
++    expect(fs.files.get('db.bin')).toEqual(new Uint8Array(0))
++  })
++
++  test('truncates a temporary file left over from an earlier write', async () => {
++    fs.files.set('db.bin.tmp', bytes(50))
++    await replaceFileInChunks('db.bin', bytes(15), 10)
++    expect(fs.files.get('db.bin')).toEqual(bytes(15))
++  })
++
++  test('copies the temporary file over the target when the rename fails', async () => {
++    fs.files.set('db.bin', bytes(3))
++    fs.renameError = new Error('os error 5')
++    await replaceFileInChunks('db.bin', bytes(15), 10)
++    expect(fs.calls.slice(-2)).toEqual(['rename db.bin.tmp db.bin', 'copy db.bin.tmp db.bin'])
++    expect(fs.files.get('db.bin')).toEqual(bytes(15))
++  })
++
++  test('leaves the target untouched when a chunk fails to write', async () => {
++    const { writeFile } = await import('@tauri-apps/plugin-fs')
++    const old = bytes(3)
++    fs.files.set('db.bin', old)
++    vi.mocked(writeFile).mockImplementationOnce(async () => {}).mockRejectedValueOnce(new Error('disk full'))
++    await expect(replaceFileInChunks('db.bin', bytes(25), 10)).rejects.toThrow('disk full')
++    expect(fs.files.get('db.bin')).toBe(old)
++  })
++})
+diff --git a/src/ts/storage/tauriWrite.ts b/src/ts/storage/tauriWrite.ts
+new file mode 100644
+index 00000000..4554ed34
+--- /dev/null
++++ b/src/ts/storage/tauriWrite.ts
+@@ -0,0 +1,33 @@
++import { BaseDirectory, copyFile, rename, writeFile } from "@tauri-apps/plugin-fs"
++
++// Every IPC request body is copied several times by WebView2 and the Tauri host, and wry reads it on the window's
++// UI thread, so a file of tens of MB sent in one call spikes memory by gigabytes and freezes the window on Windows.
++export const ipcWriteChunkSize = 8 * 1024 * 1024
++
++/**
++ * Replaces a file under AppData, sending the data over IPC in chunks of at most `chunkSize` bytes.
++ * The chunks go to a temporary file that is then renamed over the target, so a write cut short
++ * never leaves the target truncated (a truncated save file still decodes, without its last blocks).
++ *
++ * @param {string} path - The path of the file to replace, relative to AppData.
++ * @param {Uint8Array} data - The new contents of the file.
++ * @param {number} chunkSize - The largest number of bytes sent in one IPC call.
++ */
++export async function replaceFileInChunks(path: string, data: Uint8Array, chunkSize = ipcWriteChunkSize) {
++    const tmpPath = `${path}.tmp`
++    let offset = 0
++    do {
++        await writeFile(tmpPath, data.subarray(offset, offset + chunkSize), {
++            baseDir: BaseDirectory.AppData,
++            append: offset > 0
++        })
++        offset += chunkSize
++    } while (offset < data.length)
++    try {
++        await rename(tmpPath, path, { oldPathBaseDir: BaseDirectory.AppData, newPathBaseDir: BaseDirectory.AppData })
++    } catch (error) {
++        // e.g. another program holds the target open on Windows: overwrite it in place instead
++        console.error(error)
++        await copyFile(tmpPath, path, { fromPathBaseDir: BaseDirectory.AppData, toPathBaseDir: BaseDirectory.AppData })
++    }
++}
+-- 
+2.43.0
+
