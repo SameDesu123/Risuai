@@ -115,7 +115,7 @@ class Web(SimpleHTTPRequestHandler):
 
 
 def serve(port, handler):
-    ThreadingHTTPServer(('0.0.0.0', port), handler).serve_forever()
+    ThreadingHTTPServer(('127.0.0.1', port), handler).serve_forever()  # loopback only: no firewall prompt on the runner
 
 
 threading.Thread(target=serve, args=(4173, Web), daemon=True).start()

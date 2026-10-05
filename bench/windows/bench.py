@@ -98,13 +98,18 @@ def kill_tree(pid):
     psutil.wait_procs(ps, timeout=15)
 
 
+def is_app_wv2(cmdline):
+    # the WebView2 browser runs with --webview-exe-name=RisuAI_*.exe and a user data dir under the app identifier
+    return 'RisuAI' in cmdline or IDENT in cmdline
+
+
 def kill_strays():
     ps = []
     for p in psutil.process_iter(['name', 'cmdline']):
         try:
             n = (p.info['name'] or '').lower()
             cl = ' '.join(p.info['cmdline'] or [])
-            if n.startswith('risuai') or (n == 'msedgewebview2.exe' and 'RisuAI' in cl) or (n == 'msedge.exe' and 'bench-edge-' in cl):
+            if n.startswith('risuai') or (n == 'msedgewebview2.exe' and is_app_wv2(cl)) or (n == 'msedge.exe' and 'bench-edge-' in cl):
                 p.kill()
                 ps.append(p)
         except (psutil.NoSuchProcess, psutil.AccessDenied):
@@ -443,7 +448,7 @@ class Session:
             seen = {p.pid for p in out}
             for p in psutil.process_iter(['name', 'cmdline']):
                 try:
-                    if p.pid not in seen and (p.info['name'] or '').lower() == 'msedgewebview2.exe' and 'RisuAI' in ' '.join(p.info['cmdline'] or []):
+                    if p.pid not in seen and (p.info['name'] or '').lower() == 'msedgewebview2.exe' and is_app_wv2(' '.join(p.info['cmdline'] or [])):
                         out.append(p)
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     pass
