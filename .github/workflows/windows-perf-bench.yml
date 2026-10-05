@@ -17,7 +17,7 @@ on:
         type: string
         default: ''
       suites:
-        description: 'JSON list of suites to run (stream, tick, micro, probe)'
+        description: 'JSON list of suites to run (stream, tick, micro, probe, ipcdiag, bigsave)'
         type: string
         default: '["stream","tick","micro"]'
   push:
@@ -173,8 +173,20 @@ jobs:
           Get-CimInstance Win32_VideoController | Format-List Name, CurrentHorizontalResolution, CurrentVerticalResolution
           Get-CimInstance Win32_Processor | Format-List Name, NumberOfLogicalProcessors
 
+      - name: generate large saves (bigsave)
+        if: ${{ matrix.suite == 'bigsave' }}
+        shell: bash
+        run: |
+          # kept out of cold storage (COLD=0), as for a user with plugins; about 16, 39 and 62 MB
+          npm install --prefix bench/windows --no-save --no-package-lock msgpackr@1.10.1
+          COLD=0 SAVEICON=1 node bench/windows/gen_db.cjs out/data/db_hot16.bin 300 8 1300
+          COLD=0 SAVEICON=1 node bench/windows/gen_db.cjs out/data/db_hot40.bin 300 20 1300
+          COLD=0 SAVEICON=1 node bench/windows/gen_db.cjs out/data/db_hot64.bin 300 32 1300
+
       - name: run ${{ matrix.suite }} suite
         shell: pwsh
+        # leaves time for the summary and the upload when a run hangs
+        timeout-minutes: 125
         env:
           BENCH_WORK: ${{ github.workspace }}\out\work
           BENCH_DATA: ${{ github.workspace }}\out\data
@@ -184,6 +196,8 @@ jobs:
           BENCH_EXE_SHIPPED: ${{ github.workspace }}\out\bin\RisuAI_shipped.exe
           # the runner is elevated, so WebView2 only takes the debugging port from the machine-wide HKLM policy
           BENCH_WV2_POLICY: '1'
+          # WER LocalDumps for the app and WebView2 executables (crash dumps go to out/work/dumps)
+          BENCH_WER_DUMPS: '1'
         run: python bench/windows/bench.py suite ${{ matrix.suite }} ${{ inputs.quick && '--quick' || '' }}
 
       - name: summary

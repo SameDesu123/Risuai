@@ -1,6 +1,6 @@
-// Used by .github/workflows/windows-perf-bench.yml. Run from the repo root after pnpm install (needs msgpackr).
+// Used by .github/workflows/windows-perf-bench.yml. Needs msgpackr: run from the repo root after pnpm install, or after npm install --prefix bench/windows msgpackr.
 // Generates a legacy-format RisuAI save (magic header + msgpack) with one "complex bot" and filler characters.
-// usage: node gen_db.cjs <out.bin> <heavyMsgs> <fillerChars> <fillerMsgsPerChar>
+// usage: [SIMPLE=1] [COLD=0] [SAVEICON=1] node gen_db.cjs <out.bin> <heavyMsgs> <fillerChars> <fillerMsgsPerChar>
 // msgpackr 1.10 calls buf.utf8Write(str, pos, 0xffffffff); Node 24 rejects lengths past the end of the buffer
 const utf8Write = Buffer.prototype.utf8Write;
 Buffer.prototype.utf8Write = function (str, offset, length) {
@@ -102,6 +102,11 @@ const db = { didFirstSetup: true, characters: [heavyBot(+heavyMsgs)], language: 
   aiModel: 'reverse_proxy', subModel: 'reverse_proxy', forceReplaceUrl: 'http://fakellm.test:8899/v1/chat/completions',
   proxyKey: 'sk-test', customProxyRequestModel: 'fake-model', useStreaming: true, usePlainFetch: true, maxContext: 16000, maxResponse: 4000 };
 for (let i = 0; i < +fillerChars; i++) db.characters.push(filler(i, +fillerMsgs));
+// the app moves chats idle for 10+ days to cold storage at boot (on by default without plugins); COLD=0 keeps them in
+// the save, as for a user with plugins or recently active chats
+if (process.env.COLD === '0') db.coldstorage = false;
+// shows the save indicator (.saving-animation) while the save loop writes, so the harness can wait for saves to finish
+if (process.env.SAVEICON === '1') db.showSavingIcon = true;
 const packed = packr.encode(db);
 const buf = new Uint8Array(magicHeader.length + packed.length);
 buf.set(magicHeader, 0); buf.set(packed, magicHeader.length);

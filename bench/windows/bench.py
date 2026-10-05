@@ -6,7 +6,7 @@
 # web build on the same Chromium engine. Each result is one JSON object per line in $BENCH_WORK/results.jsonl
 # (also printed with a "RESULT " prefix).
 #
-# usage: python bench.py suite <stream|tick|micro|probe> [--quick]
+# usage: python bench.py suite <stream|tick|micro|probe|ipcdiag|bigsave> [--quick]
 #        python bench.py summarize
 #
 # Every desktop run starts from an empty profile by deleting the app's data folders (%APPDATA% and %LOCALAPPDATA%
@@ -35,6 +35,10 @@ NOPROXY = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 # and HKCU overrides but honors the machine-wide HKLM policy, so the workflow opts in to passing the arguments there.
 WV2_POLICY = IS_WIN and os.environ.get('BENCH_WV2_POLICY') == '1'
 WV2_POLICY_KEY = r'SOFTWARE\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments'
+DUMPS = os.path.join(WORK, 'dumps')
+# machine-wide WER LocalDumps for the app executables (crashes of the Rust host are not caught by WebView2's Crashpad)
+WER_DUMPS = IS_WIN and os.environ.get('BENCH_WER_DUMPS') == '1'
+CDB = r'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\cdb.exe'
 
 
 def wv2_policy(names, args=None):
@@ -254,6 +258,172 @@ def mb(x):
     return round(x / 1048576, 1)
 
 
+# ---------------------------------------------------------------- crash forensics
+
+def wer_local_dumps():
+    import winreg
+    os.makedirs(os.path.join(DUMPS, 'wer'), exist_ok=True)
+    base = r'SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps'
+    for exe in [os.path.basename(os.environ.get('BENCH_EXE_' + n.upper(), '')) for n in ('patched', 'unpatched', 'shipped')] + ['msedgewebview2.exe']:
+        if exe:
+            with winreg.CreateKeyEx(winreg.HKEY_LOCAL_MACHINE, base + '\\' + exe, 0, winreg.KEY_SET_VALUE | winreg.KEY_WOW64_64KEY) as k:
+                winreg.SetValueEx(k, 'DumpFolder', 0, winreg.REG_EXPAND_SZ, os.path.join(DUMPS, 'wer'))
+                winreg.SetValueEx(k, 'DumpType', 0, winreg.REG_DWORD, 1)  # minidump
+                winreg.SetValueEx(k, 'DumpCount', 0, winreg.REG_DWORD, 20)
+
+
+def win_events(since):
+    """Application Error / Windows Error Reporting / Application Hang entries of the Application log since a time."""
+    start = time.strftime('%Y-%m-%dT%H:%M:%S', time.localtime(since - 5))
+    ps = ("Get-WinEvent -FilterHashtable @{LogName='Application'; StartTime=[datetime]'" + start + "'} -ErrorAction SilentlyContinue | "
+          "Where-Object { $_.ProviderName -in @('Application Error', 'Windows Error Reporting', 'Application Hang') } | "
+          "Select-Object -First 8 | ForEach-Object { '[' + $_.TimeCreated.ToString('HH:mm:ss') + '] ' + $_.ProviderName + ' ' + $_.Id + ': ' + ($_.Message -replace '\\s+', ' ') }")
+    try:
+        r = subprocess.run(['powershell', '-NoProfile', '-Command', ps], capture_output=True, text=True, timeout=90, errors='replace')
+        return [l[:1500] for l in r.stdout.splitlines() if l.strip()]
+    except Exception as e:
+        return [f'{type(e).__name__}: {e}'[:300]]
+
+
+def proc_wait(pid):
+    """Block until a process exits and return its exit code (None if it is already gone). Works for non-children."""
+    if not IS_WIN:
+        try:
+            return psutil.Process(pid).wait()
+        except Exception:
+            return None
+    import ctypes
+    from ctypes import wintypes
+    k32 = ctypes.WinDLL('kernel32', use_last_error=True)
+    k32.OpenProcess.restype = wintypes.HANDLE
+    k32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    k32.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+    k32.GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+    k32.CloseHandle.argtypes = [wintypes.HANDLE]
+    h = k32.OpenProcess(0x00100000 | 0x1000, False, pid)  # SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION
+    if not h:
+        return None
+    try:
+        k32.WaitForSingleObject(h, 0xFFFFFFFF)
+        code = wintypes.DWORD()
+        k32.GetExitCodeProcess(h, ctypes.byref(code))
+        return code.value
+    finally:
+        k32.CloseHandle(h)
+
+
+def proc_role(p):
+    name = p.name().lower()
+    return 'host' if name.startswith('risuai') else next((a.split('=', 1)[1] for a in p.cmdline() if a.startswith('--type=')), 'browser')
+
+
+class Watch:
+    """When each process of a running session exits and with which code (0xc0000005 access violation, 0xc0000409
+    fail-fast such as a Rust abort, 0xe0000008 Chromium out of memory, 0x80000003 breakpoint / Chromium CHECK)."""
+
+    def __init__(self, s):
+        self.t0 = time.time()
+        self.pids, self.gone = {}, {}
+        self.stopping = False
+        for p in s.procs():
+            try:
+                role = proc_role(p)
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+            key = role if role not in self.pids else f'{role}_{p.pid}'
+            self.pids[key] = p.pid
+            threading.Thread(target=self._wait, args=(key, p.pid), daemon=True).start()
+
+    def _wait(self, key, pid):
+        code = proc_wait(pid)
+        if code is None and psutil.pid_exists(pid):
+            return  # could not be opened
+        if not self.stopping:
+            self.gone[key] = {'after_s': round(time.time() - self.t0, 2), 'exit_code': None if code is None else hex(code & 0xffffffff)}
+
+    def died(self):
+        return any(k in ('host', 'browser') or v['exit_code'] not in ('0x0', None) for k, v in list(self.gone.items()))
+
+
+def postmortem(s, since):
+    """What is left after a session's app or browser died: exit codes, crash dumps (copied to dumps/), Event Log entries."""
+    out = {'gone': dict(s.watch.gone) if s.watch else None, 'host_returncode': s.proc.poll() if s.proc else None}
+    if s.app_out:
+        s.app_out.flush()
+    # a Rust panic or "memory allocation of N bytes failed" abort is printed to the inherited stderr
+    out['app_log'] = tail(s.app_log, 1500) if s.app_log else None
+    out['wv2_log'] = tail(s.wv2_log, 2500) if s.wv2_log and os.path.exists(s.wv2_log) else None
+    if not IS_WIN:
+        return out
+    time.sleep(3)  # let WER and Crashpad finish writing
+    os.makedirs(DUMPS, exist_ok=True)
+    found = []
+    wer = os.path.join(DUMPS, 'wer')
+    for root in (os.path.join(os.environ.get('LOCALAPPDATA', ''), IDENT, 'EBWebView', 'Crashpad'), wer):
+        for d, _, files in os.walk(root):
+            for f in files:
+                p = os.path.join(d, f)
+                try:
+                    if f.lower().endswith('.dmp') and os.path.getmtime(p) >= since - 5:
+                        dst = p if root == wer else os.path.join(DUMPS, f'{s.target}_{s.port}_{f}')
+                        if dst != p:
+                            shutil.copy(p, dst)
+                        found.append({'file': os.path.relpath(dst, WORK), 'kb': round(os.path.getsize(p) / 1024)})
+                except OSError:
+                    pass
+    out['dumps'] = found
+    out['events'] = win_events(since)
+    return out
+
+
+def analyze_dumps(limit=4):
+    """Exception record and raw stack of the first crash dumps with cdb (Windows SDK debugger) if it is installed.
+    No symbol server: msedge.dll's symbols alone are gigabytes; the dumps are uploaded with the results instead."""
+    if not IS_WIN or not os.path.isdir(DUMPS):
+        return
+    dumps = sorted((os.path.join(d, f) for d, _, fs in os.walk(DUMPS) for f in fs if f.lower().endswith('.dmp')), key=os.path.getmtime)
+    if not dumps:
+        return
+    out = {'test': 'dumps', 'cdb': os.path.isfile(CDB), 'n': len(dumps), 'dumps': []}
+    for p in dumps[:limit]:
+        rec = {'file': os.path.relpath(p, WORK), 'kb': round(os.path.getsize(p) / 1024)}
+        if out['cdb']:
+            log('   analyzing', rec['file'])
+            try:
+                r = subprocess.run([CDB, '-z', p, '-y', os.path.join(DUMPS, 'nosymbols'), '-c', '.exr -1; .ecxr; kc 30; !analyze -v; q'],
+                                   capture_output=True, text=True, timeout=180, errors='replace')
+                with open(p + '.txt', 'w', encoding='utf-8') as f:
+                    f.write(r.stdout)
+                keys = ('ExceptionCode', 'EXCEPTION_CODE', 'ERROR_CODE', 'FAILURE_BUCKET_ID', 'PROCESS_NAME', 'MODULE_NAME', 'IMAGE_NAME', 'SYMBOL_NAME')
+                rec['summary'] = [l.strip()[:300] for l in r.stdout.splitlines() if l.strip().startswith(keys)][:20]
+                st = r.stdout.find('STACK_TEXT:')
+                rec['stack'] = r.stdout[st:st + 3000] if st >= 0 else r.stdout[-2000:]
+            except Exception as e:
+                rec['error'] = f'{type(e).__name__}: {e}'[:300]
+        out['dumps'].append(rec)
+    emit(out)
+
+
+class HostPing:
+    """UI-thread availability of a session's top-level window, measured by hostping.py in its own process."""
+
+    def __init__(self, s):
+        self.p = None
+        if IS_WIN and s.proc and s.proc.poll() is None:
+            self.p = subprocess.Popen([sys.executable, os.path.join(HERE, 'hostping.py'), str(s.proc.pid)],
+                                      stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+
+    def result(self):
+        if not self.p:
+            return None
+        try:
+            out, _ = self.p.communicate('stop\n', timeout=30)
+            return json.loads(out.strip().splitlines()[-1])
+        except Exception as e:
+            self.p.kill()
+            return {'error': f'{type(e).__name__}: {e}'[:200]}
+
+
 # ---------------------------------------------------------------- page scripts
 
 FRAME_START = """
@@ -275,7 +445,7 @@ return {n: f.length, long50: long.length, long200: f.filter(x => x > 200).length
 # web build saves through IndexedDB put(); log both so saves can be counted and timed without touching the app.
 MON_INSTALL = """
 if (window.__ipcMon) return 'already';
-window.__ipcMon = []; window.__idbMon = [];
+window.__ipcMon = []; window.__idbMon = []; window.__ipcInflight = 0; window.__ipcLast = 0; window.__idbInflight = 0; window.__idbLast = 0;
 const of = window.fetch;
 window.fetch = function (input, init) {
   let url = '';
@@ -293,16 +463,30 @@ window.fetch = function (input, init) {
     path = h ? (typeof h.get === 'function' ? h.get('path') : (h.path || null)) : null;
     if (path) path = decodeURIComponent(path);
   } catch (e) {}
-  const t0 = performance.now();
+  const t0 = performance.now(), wall = Date.now();
+  window.__ipcInflight++; window.__ipcLast = t0;
   const p = of.apply(this, arguments);
-  const rec = (ok) => window.__ipcMon.push({cmd, size, path, t0: Math.round(t0), dt: +(performance.now() - t0).toFixed(1), ok});
+  const rec = (ok) => {
+    window.__ipcInflight--; window.__ipcLast = performance.now();
+    window.__ipcMon.push({cmd, size, path, t0: Math.round(t0), wall, dt: +(performance.now() - t0).toFixed(1), ok});
+  };
   p.then(() => rec(true), () => rec(false));
   return p;
 };
 const op = IDBObjectStore.prototype.put;
 IDBObjectStore.prototype.put = function (value, key) {
-  try { window.__idbMon.push({store: this.name, key: String(key), size: (value && (value.byteLength || value.length)) || 0, t: Math.round(performance.now())}); } catch (e) {}
-  return op.apply(this, arguments);
+  const t0 = performance.now();
+  const req = op.apply(this, arguments);  // clones the value synchronously
+  try {
+    const rec = {store: this.name, key: String(key), size: (value && (value.byteLength || value.length)) || 0, t: Math.round(t0),
+                 clone_ms: +(performance.now() - t0).toFixed(1), dt: null};
+    window.__idbMon.push(rec);
+    window.__idbInflight++;
+    const done = () => { window.__idbInflight--; window.__idbLast = performance.now(); rec.dt = +(performance.now() - t0).toFixed(1); };
+    req.addEventListener('success', done);
+    req.addEventListener('error', done);
+  } catch (e) {}
+  return req;
 };
 return 'installed';
 """
@@ -473,8 +657,149 @@ return {variant, kind, iters, median_ms: Math.round(times[Math.floor(times.lengt
 """
 
 
-def ev(page, body, *args):
-    return page.evaluate('async (args) => {\n' + body + '\n}', list(args))
+# Tauri's page script (ipc-protocol.js) sends each invoke as fetch('http://ipc.localhost/<cmd>'). If that fetch rejects
+# once, for any reason, it sets customProtocolIpcFailed and sends this call and every later one through
+# window.ipc.postMessage as JSON, where byte arrays become arrays of numbers, for the rest of the page's life.
+# This wrapper records IPC fetch failures (request, or reading the response body). With guard on, a failed call is
+# left pending instead, so the page never switches and larger sizes can still be tried; failNext makes the next call
+# fail on purpose.
+DIAG_INSTALL = """
+const [guard] = args;
+if (!window.__diag) {
+  const D = window.__diag = {fails: [], warns: [], guard: false, failNext: false, fetches: 0};
+  const fmt = (a) => Array.from(a).map((x) => { try { return x instanceof Error ? x.name + ': ' + x.message : (typeof x === 'string' ? x : JSON.stringify(x)); } catch (e) { return String(x); } }).join(' ').slice(0, 500);
+  for (const k of ['warn', 'error']) {
+    const o = console[k];
+    console[k] = function () { D.warns.push({t: Math.round(performance.now()), k, m: fmt(arguments)}); return o.apply(this, arguments); };
+  }
+  const of = window.fetch;
+  window.fetch = function (input, init) {
+    let url = '';
+    try { url = typeof input === 'string' ? input : (input && input.url) || String(input); } catch (e) {}
+    const m = /^(?:https?:\\/\\/ipc\\.localhost|ipc:\\/\\/localhost)\\/(.*)$/.exec(url);
+    if (!m) return of.apply(this, arguments);
+    let cmd = m[1];
+    try { cmd = decodeURIComponent(cmd); } catch (e) {}
+    const b = init && init.body;
+    const size = b ? (b.byteLength !== undefined ? b.byteLength : (typeof b === 'string' ? b.length : 0)) : 0;
+    const t0 = performance.now();
+    const guarded = D.guard;
+    D.fetches++;
+    const fail = (stage, e) => {
+      const r = {cmd, size, stage, dt: Math.round(performance.now() - t0), err: e && e.name ? e.name + ': ' + e.message : String(e)};
+      D.fails.push(r);
+      console.log('DIAG ipc-fail ' + JSON.stringify(r));
+      if (guarded) return new Promise(() => {});
+      throw e;
+    };
+    if (D.failNext) {
+      D.failNext = false;
+      const e = new TypeError('bench: forced IPC failure');
+      D.fails.push({cmd, size, stage: 'forced', dt: 0, err: e.name + ': ' + e.message});
+      return Promise.reject(e);
+    }
+    // ipc-protocol.js reads the body with json(), text() or arrayBuffer() depending on the content type
+    return of.apply(this, arguments).then((r) => {
+      for (const k of ['arrayBuffer', 'json', 'text']) {
+        const o = r[k].bind(r);
+        r[k] = () => o().catch((e) => fail('body', e));
+      }
+      return r;
+    }, (e) => fail('fetch', e));
+  };
+}
+window.__diag.guard = !!guard;
+return {guard: window.__diag.guard};
+"""
+
+# one plugin:fs call that sends (write) or receives (read) sizeMb of random bytes
+DIAG_STEP = """
+const [direction, sizeMb, timeoutMs] = args;
+const inv = window.__TAURI_INTERNALS__.invoke;
+const D = window.__diag;
+const nf = D.fails.length, nw = D.warns.length;
+let call;
+if (direction === 'write') {
+  const buf = window.__mk(sizeMb * 1048576);
+  call = () => inv('plugin:fs|write_file', buf, {headers: {path: encodeURIComponent('bench/w.bin'), options: JSON.stringify({baseDir: 14})}}).then(() => 'ok');
+} else {
+  call = () => inv('plugin:fs|read_file', {path: 'bench/r' + sizeMb + '.bin', options: {baseDir: 14}})
+    .then((a) => { const n = a.byteLength !== undefined ? a.byteLength : a.length; return n === sizeMb * 1048576 ? 'ok' : 'short read: ' + n; });
+}
+let iv, timer;
+const t0 = performance.now();
+const racers = [
+  call().catch((e) => 'rejected: ' + (e instanceof ArrayBuffer ? 'ArrayBuffer(' + e.byteLength + ')' : String(e).slice(0, 300))),
+  new Promise((res) => { timer = setTimeout(() => res('timeout'), timeoutMs); }),
+];
+// guarded: a failed call never settles, so stop at the recorded failure
+if (D.guard) racers.push(new Promise((res) => { iv = setInterval(() => { if (D.fails.length > nf) res('ipc-fail'); }, 25); }));
+const result = await Promise.race(racers);
+clearInterval(iv); clearTimeout(timer);
+return {direction, sizeMb, guard: D.guard, result, ms: Math.round(performance.now() - t0), fails: D.fails.slice(nf), warns: D.warns.slice(nw, nw + 4)};
+"""
+
+# switch the page to postMessage IPC the way a failed call does, and time tiny calls on both paths
+DIAG_FORCE_FALLBACK = """
+const inv = window.__TAURI_INTERNALS__.invoke;
+const D = window.__diag;
+D.guard = false;
+const tiny = async (n) => { const t = performance.now(); for (let i = 0; i < n; i++) await inv('plugin:path|resolve_directory', {directory: 14}); return +((performance.now() - t) / n).toFixed(2); };
+const out = {tiny_protocol_ms: await tiny(20)};
+const f0 = D.fetches;
+D.failNext = true;
+out.switch_call = await inv('plugin:path|resolve_directory', {directory: 14}).then(() => 'ok', (e) => 'rejected: ' + String(e).slice(0, 200));
+out.tiny_postmessage_ms = await tiny(20);
+out.ipc_fetches_after_switch = D.fetches - f0;  // 1 (the forced failure) when every later call went through postMessage
+out.warns = D.warns.slice(-2);
+return out;
+"""
+
+# write then read back sizeMb through whichever IPC path the page currently uses
+DIAG_RW = """
+const [sizeMb] = args;
+const inv = window.__TAURI_INTERNALS__.invoke;
+const buf = window.__mk(sizeMb * 1048576);
+const f0 = window.__diag.fetches;
+const out = {sizeMb};
+let t = performance.now();
+await inv('plugin:fs|write_file', buf, {headers: {path: encodeURIComponent('bench/w.bin'), options: JSON.stringify({baseDir: 14})}});
+out.write_ms = Math.round(performance.now() - t);
+t = performance.now();
+const a = await inv('plugin:fs|read_file', {path: 'bench/w.bin', options: {baseDir: 14}});
+out.read_ms = Math.round(performance.now() - t);
+out.read_type = a instanceof ArrayBuffer ? 'ArrayBuffer' : (Array.isArray(a) ? 'Array' : typeof a);
+const n = a.byteLength !== undefined ? a.byteLength : a.length;
+const mid = n >> 1;
+out.read_ok = n === buf.length && (a instanceof ArrayBuffer ? new Uint8Array(a)[mid] : a[mid]) === buf[mid];
+out.ipc_fetches = window.__diag.fetches - f0;  // 0 when both calls went through postMessage
+return out;
+"""
+
+# which IPC path the page is on: a call that never reaches fetch went through postMessage, because an earlier IPC
+# fetch failed (on the desktop build the save is read at boot, before the harness is attached)
+IPC_MODE = """
+const f0 = window.__diag.fetches;
+await window.__TAURI_INTERNALS__.invoke('plugin:path|resolve_directory', {directory: 14});
+return window.__diag.fetches > f0 ? 'protocol' : 'postMessage';
+"""
+
+
+def ev(page, body, *args, timeout_s=None):
+    if timeout_s is None:
+        return page.evaluate('async (args) => {\n' + body + '\n}', list(args))
+    # an IPC call nobody answers never settles; give up on it with {timeout_s} so the rest of the suite still runs
+    return page.evaluate('async (args) => {\nconst run = async () => {\n' + body + '\n};\n'
+                         f'return await Promise.race([run(), new Promise((res) => setTimeout(() => res({{timeout_s: {timeout_s}}}), {timeout_s * 1000}))]);\n}}',
+                         list(args))
+
+
+def classify(s, e):
+    """('died', message) when the page went away (the app, the browser or the renderer is gone), else ('error', message)."""
+    msg = f'{type(e).__name__}: {e}'[:300]
+    time.sleep(1)  # the page's close event and the process exits arrive a little after the failed evaluate
+    gone = s.page.is_closed() or 'has been closed' in msg or 'crashed' in msg or bool(s.watch and s.watch.died())
+    return ('died' if gone else 'error'), msg
 
 
 # ---------------------------------------------------------------- sessions
@@ -490,7 +815,9 @@ class Session:
         self.udd = self.app_out = self.app_log = self.wv2_log = None
         self.policy_names = ()
         self.console = []
+        self.diag_console = []
         self.crashed = False
+        self.watch = None
 
     @staticmethod
     def appdata():
@@ -576,8 +903,14 @@ class Session:
         return d
 
     def _on_console(self, msg):
+        text = msg.text
+        if text.startswith('DIAG') or 'IPC custom protocol failed' in text:
+            # logged as it arrives: the page may not survive long enough to be asked
+            log('   console', msg.type, text[:400])
+            if len(self.diag_console) < 50:
+                self.diag_console.append(f'{time.strftime("%H:%M:%S")} {msg.type}: {text[:400]}')
         if msg.type in ('error', 'warning') and len(self.console) < 40:
-            self.console.append(f'{msg.type}: {msg.text[:300]}')
+            self.console.append(f'{msg.type}: {text[:300]}')
 
     def _on_crash(self, *_):
         self.crashed = True
@@ -600,6 +933,8 @@ class Session:
         raise TimeoutError(f'no page starting with {prefix}: {[p.url for c in self.browser.contexts for p in c.pages]}')
 
     def stop(self):
+        if self.watch:
+            self.watch.stopping = True
         if self.policy_names:
             # only read when the app creates its WebView2 environment, so removing it leaves the running app alone
             wv2_policy(self.policy_names)
@@ -635,27 +970,27 @@ class Session:
         return out
 
     def mem(self):
-        """Private bytes (commit) and working set of the whole process tree, split by Chromium process type."""
+        """Private bytes (commit) and working set of the whole process tree, split by Chromium process type.
+        peak_commit_mb is each process's own peak commit (Windows), so it also covers spikes between two samples."""
         by = {}
         tot_priv = tot_ws = 0
         for p in self.procs():
             try:
-                name = p.name().lower()
-                cl = p.cmdline()
-                role = 'host' if name.startswith('risuai') else next((a.split('=', 1)[1] for a in cl if a.startswith('--type=')), 'browser')
+                role = proc_role(p)
                 mi = p.memory_info()
                 priv = getattr(mi, 'private', mi.rss)
-                d = by.setdefault(role, {'n': 0, 'private_mb': 0.0, 'ws_mb': 0.0})
+                d = by.setdefault(role, {'n': 0, 'private_mb': 0.0, 'ws_mb': 0.0, 'peak_commit_mb': 0.0})
                 d['n'] += 1
                 d['private_mb'] += priv / 1048576
                 d['ws_mb'] += mi.rss / 1048576
+                d['peak_commit_mb'] += getattr(mi, 'peak_pagefile', 0) / 1048576
                 tot_priv += priv
                 tot_ws += mi.rss
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 pass
         for d in by.values():
-            d['private_mb'] = round(d['private_mb'], 1)
-            d['ws_mb'] = round(d['ws_mb'], 1)
+            for k in ('private_mb', 'ws_mb', 'peak_commit_mb'):
+                d[k] = round(d[k], 1)
         return {'private_mb': mb(tot_priv), 'ws_mb': mb(tot_ws), 'by_role': by}
 
     def heap(self):
@@ -696,6 +1031,7 @@ class Sampler:
         self.s = s
         self.peak_priv = self.peak_ws = 0.0
         self.peak_by = {}
+        self.commit_by = {}
         self._stop = False
         self.t = threading.Thread(target=self.run, daemon=True)
 
@@ -706,6 +1042,7 @@ class Sampler:
             self.peak_ws = max(self.peak_ws, m['ws_mb'])
             for k, v in m['by_role'].items():
                 self.peak_by[k] = max(self.peak_by.get(k, 0), v['private_mb'])
+                self.commit_by[k] = max(self.commit_by.get(k, 0), v['peak_commit_mb'])
             time.sleep(0.25)
 
     def __enter__(self):
@@ -717,7 +1054,7 @@ class Sampler:
         self.t.join()
 
     def result(self):
-        return {'private_mb': self.peak_priv, 'ws_mb': self.peak_ws, 'private_by_role_mb': self.peak_by}
+        return {'private_mb': self.peak_priv, 'ws_mb': self.peak_ws, 'private_by_role_mb': self.peak_by, 'peak_commit_by_role_mb': self.commit_by}
 
 
 # ---------------------------------------------------------------- app flows
@@ -805,8 +1142,13 @@ def mon_summary(mon):
     return {
         'tauri_db_writes': len(db_writes), 'tauri_db_write_mb': mb(sum(x['size'] for x in db_writes)),
         'tauri_db_write_ms_max': max([x['dt'] for x in db_writes], default=0), 'tauri_db_write_ms_sum': round(sum(x['dt'] for x in db_writes)),
+        # [epoch s, MB, ms, ok] per DB write, to line up with hostping stalls
+        'tauri_db_write_list': [[round(x['wall'] / 1000, 2), mb(x['size']), x['dt'], x['ok']] for x in db_writes][:40],
+        'ipc_failed': sum(1 for x in ipc if not x['ok']),
         'ipc_by_cmd': by_cmd,
         'idb_db_puts': len(idb_db), 'idb_db_put_mb': mb(sum(x['size'] for x in idb_db)), 'idb_puts_total': len(idb),
+        'idb_db_put_ms_max': max([x.get('dt') or 0 for x in idb_db], default=0), 'idb_db_put_ms_sum': round(sum(x.get('dt') or 0 for x in idb_db)),
+        'idb_db_clone_ms_max': max([x.get('clone_ms') or 0 for x in idb_db], default=0),
     }
 
 
@@ -814,8 +1156,10 @@ def run_test(pw, kind, fn, target, db=None, tag='', bench_assets=False, **kw):
     res = {'test': kind, 'target': target, 'db': db, 'tag': tag, **kw}
     log(f'== {kind} {target} {db or ""} {kw}')
     s = Session(pw, target, db, bench_assets)
+    t_start = time.time()
     try:
         s.start()
+        s.watch = Watch(s)
         with Sampler(s) as samp:
             fn(s, res, **kw)
         res['mem_peak'] = samp.result()
@@ -833,8 +1177,13 @@ def run_test(pw, kind, fn, target, db=None, tag='', bench_assets=False, **kw):
         else:
             s.screenshot(f'{kind}_{target}_{tag}_error')
     finally:
+        if s.watch and s.watch.died():
+            res['postmortem'] = postmortem(s, t_start)
+            log('   postmortem', json.dumps(res['postmortem'])[:4000])
         res['renderer_crashed'] = s.crashed
         res['console'] = s.console[:20]
+        if s.diag_console:
+            res['diag_console'] = s.diag_console
         s.stop()
     emit(res)
     return res
@@ -881,7 +1230,24 @@ def t_stream(s, res, sends=2):
     res['runs'] = runs
 
 
-def t_tick(s, res, ticks=12):
+def db_files(s):
+    d = os.path.join(Session.appdata(), 'database')
+    try:
+        return [[f, mb(os.path.getsize(os.path.join(d, f)))] for f in sorted(os.listdir(d))][:30]
+    except OSError as e:
+        return str(e)[:200]
+
+
+# nothing saving for 2 s: no IPC or IndexedDB put in flight or just finished, and no save indicator (shown while the
+# save loop runs when the save has showSavingIcon; the only sign of a save once IPC has fallen back to postMessage)
+DRAINED = """() => {
+  const now = performance.now();
+  if (document.querySelector('.saving-animation') || window.__ipcInflight || window.__idbInflight) window.__busyLast = now;
+  return now - Math.max(window.__busyLast || 0, window.__ipcLast || 0, window.__idbLast || 0) > 2000;
+}"""
+
+
+def t_tick(s, res, ticks=12, degrade=False):
     res['load'] = load_save(s)
     res['open'] = open_bot(s, "document.querySelectorAll('.x-risu-status-card').length >= 3")
     t0 = time.time()
@@ -897,6 +1263,15 @@ def t_tick(s, res, ticks=12):
     res['mem_after_open'] = s.mem()
     dismiss_alert(s, res)
     ev(s.page, MON_INSTALL)
+    if s.kind == 'tauri':
+        ev(s.page, DIAG_INSTALL, False)  # records an IPC fetch failure (e.g. of a large save) as it happens
+        res['ipc_mode'] = ev(s.page, IPC_MODE, timeout_s=60)
+        log('   IPC path after loading the save:', res['ipc_mode'])
+        if degrade:
+            # what every later IPC call costs once one has failed: ipc-protocol.js has switched to postMessage
+            res['switch'] = ev(s.page, DIAG_FORCE_FALLBACK, timeout_s=120)
+            log('   switched to postMessage IPC', json.dumps(res['switch']))
+    hp = HostPing(s)
     ev(s.page, FRAME_START)
     times = []
     for k in range(ticks):
@@ -909,7 +1284,19 @@ def t_tick(s, res, ticks=12):
         except Exception:
             times.append(None)
         s.page.wait_for_timeout(1000)
-    s.page.wait_for_timeout(5000)  # let the save loop drain
+    # let the save loop drain: nothing in flight for 2 s (a save is two DB writes and a read_dir, or an IndexedDB put)
+    s.page.wait_for_timeout(3000)
+    t0 = time.time()
+    try:
+        s.page.wait_for_function(DRAINED, timeout=180000, polling=250)
+    except Exception as e:
+        res['drain_error'] = str(e)[:300]
+    res['drain_s'] = round(time.time() - t0, 1)
+    s.page.wait_for_timeout(2000)
+    res['hostping'] = hp.result()
+    if s.kind == 'tauri':
+        res['db_files'] = db_files(s)
+        res['ipc_fails'] = ev(s.page, "return window.__diag ? window.__diag.fails.slice(0, 20) : null")
     res['frames'] = ev(s.page, FRAME_STOP)
     res['tick_s'] = times
     valid = sorted(t for t in times if t is not None)
@@ -924,11 +1311,14 @@ def micro_step(s, res, section, script, *args, sample=False):
     try:
         if sample:
             with Sampler(s) as smp:
-                r = ev(s.page, script, *args)
+                r = ev(s.page, script, *args, timeout_s=300)
+        else:
+            r = ev(s.page, script, *args, timeout_s=300)
+        if isinstance(r, dict) and list(r) == ['timeout_s']:
+            raise TimeoutError('no answer in 300 s')
+        if sample:
             r['peak_private_mb'] = smp.result()['private_mb']
             r['peak_by_role_mb'] = smp.result()['private_by_role_mb']
-        else:
-            r = ev(s.page, script, *args)
     except Exception as e:
         log(f'!! {section} {args}: {str(e)[:300]}')
         res.setdefault('micro_errors', []).append(f'{section} {args}: {str(e)[:500]}')
@@ -939,25 +1329,169 @@ def micro_step(s, res, section, script, *args, sample=False):
     return r
 
 
-def t_micro(s, res, quick=False):
+MICRO_SECTIONS = ('ipc', 'save_stall', 'http_body', 'assets')
+
+
+def t_micro(s, res, section, quick=False):
+    """One section per app session, so a transfer that takes the app down only costs its own section."""
     res['load'] = load_save(s)
     res['setup'] = ev(s.page, MICRO_SETUP)
-    res['ipc'], res['save_stall'], res['http_body'], res['assets'] = [], [], [], []
-    for size in ([1, 10] if quick else [1, 10, 50, 100]):
-        micro_step(s, res, 'ipc', MICRO_IPC, size, sample=True)
-    for size in ([25] if quick else [25, 75, 150]):
-        micro_step(s, res, 'save_stall', MICRO_SAVE, size)
-    for size in ([1] if quick else [1, 5, 20]):
-        micro_step(s, res, 'http_body', MICRO_HTTP, size, sample=True)
-    names = [os.path.basename(f) for f in asset_files()]
-    res['asset_prep'] = micro_step(s, res, 'asset_prep', ASSET_PREP, names)
-    if res['asset_prep'] is None:
-        return
-    for kind in ('img', 'cssbg'):
-        for variant in ('asset', 'data', 'blob'):
-            r = micro_step(s, res, 'assets', ASSET_RERENDER, variant, 10 if quick else 30, kind)
+    ev(s.page, DIAG_INSTALL, False)  # records IPC fetch failures as they happen
+    res[section] = []
+    if section == 'ipc':
+        # larger single transfers are covered by the ipcdiag suite
+        for size in ([1, 10] if quick else [1, 10, 25]):
+            micro_step(s, res, 'ipc', MICRO_IPC, size, sample=True)
+    elif section == 'save_stall':
+        for size in ([5] if quick else [5, 15, 25]):
+            hp = HostPing(s)
+            r = micro_step(s, res, 'save_stall', MICRO_SAVE, size)
+            h = hp.result()
             if r is not None:
-                r['mem'] = s.mem()['private_mb']
+                r['hostping'] = h
+    elif section == 'http_body':
+        for size in ([1] if quick else [1, 5, 20]):
+            micro_step(s, res, 'http_body', MICRO_HTTP, size, sample=True)
+    elif section == 'assets':
+        names = [os.path.basename(f) for f in asset_files()]
+        res['asset_prep'] = micro_step(s, res, 'asset_prep', ASSET_PREP, names)
+        if res['asset_prep'] is None:
+            return
+        for kind in ('img', 'cssbg'):
+            for variant in ('asset', 'data', 'blob'):
+                r = micro_step(s, res, 'assets', ASSET_RERENDER, variant, 10 if quick else 30, kind)
+                if r is not None:
+                    r['mem'] = s.mem()['private_mb']
+    fails = ev(s.page, "return window.__diag.fails.slice(0, 20)")
+    if fails:
+        res['ipc_fails'] = fails
+
+
+RAMP = [16, 24, 32, 40, 48, 56, 64, 96, 128]
+
+
+def make_read_files(sizes):
+    """%APPDATA%\\co.aiclient.risu\\bench\\r<N>.bin of N MB of random bytes, for plugin:fs read_file (baseDir AppData)."""
+    d = os.path.join(Session.appdata(), 'bench')
+    os.makedirs(d, exist_ok=True)
+    for n in sizes:
+        with open(os.path.join(d, f'r{n}.bin'), 'wb') as f:
+            for _ in range(n):
+                f.write(os.urandom(1048576))
+
+
+def peaks(smp):
+    r = smp.result()
+    return {'peak_private_mb': r['private_by_role_mb'], 'peak_commit_mb': r['peak_commit_by_role_mb']}
+
+
+def t_ipcramp(s, res, direction, guard, sizes=RAMP, timeout_s=90):
+    """Largest single plugin:fs transfer each way. Guarded, a failed IPC fetch is recorded and held, so the page keeps
+    the custom protocol and the next size can be tried. Unguarded is what the app does on a failure: ipc-protocol.js
+    retries the call, and every later one, through postMessage."""
+    res['load'] = load_save(s)
+    res['setup'] = ev(s.page, MICRO_SETUP)
+    ev(s.page, DIAG_INSTALL, guard)
+    if direction == 'read':
+        make_read_files(sizes)
+    res['steps'] = []
+    bad = 0
+    for n in sizes:
+        r = {'direction': direction, 'sizeMb': n, 'guard': guard}
+        with Sampler(s) as smp:
+            try:
+                r.update(ev(s.page, DIAG_STEP, direction, n, timeout_s * 1000))
+                if not guard:
+                    # the postMessage retry may still be running, or may take the app down a little later
+                    s.page.wait_for_timeout(10000)
+                    r['alive_10s_later'] = ev(s.page, 'return 1', timeout_s=30) == 1
+            except Exception as e:
+                k, msg = classify(s, e)
+                r[k] = msg
+        r.update(peaks(smp))
+        res['steps'].append(r)
+        log(f'   {direction} {n} MB guard={guard}:', json.dumps(r)[:1500])
+        if 'died' in r:
+            time.sleep(2)
+            r['gone'] = dict(s.watch.gone) if s.watch else None
+            break
+        if r.get('result') != 'ok':
+            bad += 1
+            if r.get('result') == 'timeout' or bad >= 3:
+                break
+
+
+def t_degraded(s, res, sizes=(1, 4, 8, 16)):
+    """Cost of the postMessage IPC that ipc-protocol.js falls back to after one failed IPC fetch: the same write +
+    read round trips before and after forcing that switch."""
+    res['load'] = load_save(s)
+    res['setup'] = ev(s.page, MICRO_SETUP)
+    ev(s.page, DIAG_INSTALL, False)
+    for phase in ('protocol', 'postmessage'):
+        if phase == 'postmessage':
+            res['switch'] = ev(s.page, DIAG_FORCE_FALLBACK, timeout_s=120)
+            log('   switch', json.dumps(res['switch']))
+        res[phase] = []
+        for n in sizes:
+            r = {'sizeMb': n}
+            with Sampler(s) as smp:
+                try:
+                    r.update(ev(s.page, DIAG_RW, n, timeout_s=180))
+                except Exception as e:
+                    k, msg = classify(s, e)
+                    r[k] = msg
+            r.update(peaks(smp))
+            res[phase].append(r)
+            log(f'   {phase}', json.dumps(r))
+            if 'died' in r:
+                return
+            if 'timeout_s' in r or 'error' in r:
+                break  # a larger size would not do better
+
+
+# micro's 50 MB round trip (which took the app down) split into its operations, one evaluate each
+REPRO_OPS = {
+    'write': """const [n] = args; const buf = window.__mk(n * 1048576); const t = performance.now();
+await window.__TAURI_INTERNALS__.invoke('plugin:fs|write_file', buf, {headers: {path: encodeURIComponent('bench/w.bin'), options: JSON.stringify({baseDir: 14})}});
+return {ms: Math.round(performance.now() - t)};""",
+    'read': """const [n] = args; const t = performance.now();
+const a = await window.__TAURI_INTERNALS__.invoke('plugin:fs|read_file', {path: 'bench/w.bin', options: {baseDir: 14}});
+return {ms: Math.round(performance.now() - t), len: a.byteLength !== undefined ? a.byteLength : a.length, type: a instanceof ArrayBuffer ? 'ArrayBuffer' : (Array.isArray(a) ? 'Array' : typeof a)};""",
+    'asset_fetch': """const t = performance.now();
+const url = window.__TAURI_INTERNALS__.convertFileSrc(await window.__join(window.__appdata, 'bench', 'w.bin'), 'asset');
+const ab = await (await fetch(url)).arrayBuffer();
+return {ms: Math.round(performance.now() - t), len: ab.byteLength};""",
+    'idb_put': """const [n] = args; const buf = window.__mk(n * 1048576); const t = performance.now();
+await new Promise((res, rej) => { const tx = window.__idb.transaction('s', 'readwrite'); tx.objectStore('s').put(buf, 'k'); tx.oncomplete = res; tx.onerror = () => rej(tx.error); });
+return {ms: Math.round(performance.now() - t)};""",
+}
+
+
+def t_repro(s, res, size=50):
+    res['load'] = load_save(s)
+    res['setup'] = ev(s.page, MICRO_SETUP)
+    ev(s.page, DIAG_INSTALL, False)
+    res['ops'] = []
+    for op, script in REPRO_OPS.items():
+        log(f'   {op} {size} MB ...')
+        nf = ev(s.page, 'return window.__diag.fails.length')
+        r = {'op': op}
+        with Sampler(s) as smp:
+            try:
+                r.update(ev(s.page, script, size, timeout_s=180))
+                s.page.wait_for_timeout(5000)
+                r['alive_5s_later'] = ev(s.page, 'return 1', timeout_s=30) == 1
+            except Exception as e:
+                k, msg = classify(s, e)
+                r[k] = msg
+        r.update(peaks(smp))
+        r['fails'] = None if 'died' in r else ev(s.page, 'return window.__diag.fails.slice(args[0], args[0] + 5)', nf)
+        res['ops'].append(r)
+        log(f'   {op}', json.dumps(r))
+        if 'died' in r:
+            time.sleep(2)
+            r['gone'] = dict(s.watch.gone) if s.watch else None
+            return
 
 
 # ---------------------------------------------------------------- suites
@@ -1080,7 +1614,39 @@ def suite(name, quick=False):
                     probe(pw, t)
             elif name == 'micro':
                 for t in usable(pw, 'patched', 'shipped'):
-                    run_test(pw, 'micro', t_micro, t, 'db_simple.bin', 'micro', bench_assets=True, quick=quick)
+                    for sec in MICRO_SECTIONS:
+                        run_test(pw, 'micro', t_micro, t, 'db_simple.bin', 'micro_' + sec, bench_assets=True, section=sec, quick=quick)
+            elif name == 'ipcdiag':
+                if WER_DUMPS:
+                    wer_local_dumps()
+                ts = usable(pw, 'patched', 'shipped')
+                if 'patched' in ts:
+                    run_test(pw, 'repro', t_repro, 'patched', 'db_simple.bin', 'repro50', size=50)
+                first_fail = {}
+                for t in ts:
+                    for direction in ('write', 'read'):
+                        r = run_test(pw, 'ipcramp', t_ipcramp, t, 'db_simple.bin', f'{direction}_guarded', direction=direction, guard=True,
+                                     sizes=RAMP[:4] if quick else RAMP)
+                        # the first size whose IPC fetch failed without taking the app down
+                        n = next((x['sizeMb'] for x in r.get('steps', []) if x.get('result') == 'ipc-fail'), None)
+                        if t == 'patched' and n:
+                            first_fail[direction] = n
+                if 'patched' in ts:
+                    run_test(pw, 'degraded', t_degraded, 'patched', 'db_simple.bin', 'degraded')
+                    for direction, n in first_fail.items():
+                        run_test(pw, 'ipcramp', t_ipcramp, 'patched', 'db_simple.bin', f'{direction}_unguarded', direction=direction, guard=False, sizes=[n])
+                analyze_dumps()
+            elif name == 'bigsave':
+                # saves that stay in the save file (cold storage off, as with plugins installed), 16 / 40 / 64 MB
+                if WER_DUMPS:
+                    wer_local_dumps()
+                hot = [db for db in ('db_hot16.bin', 'db_hot40.bin', 'db_hot64.bin') if os.path.isfile(os.path.join(DATA, db))]
+                for db in hot[:1] if quick else hot:
+                    for t in usable(pw, 'web', 'patched'):
+                        run_test(pw, 'tick', t_tick, t, db, db[3:-4], ticks=4 if quick else 8)
+                if hot and usable(pw, 'patched'):
+                    run_test(pw, 'tick', t_tick, 'patched', hot[0], hot[0][3:-4] + '_degraded', ticks=4 if quick else 8, degrade=True)
+                analyze_dumps()
             else:
                 raise SystemExit('unknown suite ' + name)
     finally:
@@ -1136,14 +1702,20 @@ def summarize():
     tk = [r for r in rows if r.get('test') == 'tick' and not r.get('error')]
     if tk:
         p('### Lua button tick (reloadDisplay + chat vars): HUD update latency')
-        p('| db | target | tick median s | ticks (s) | long frames >200ms | jank ms | DB writes (tauri) | written MB | write ms max / sum | idb DB puts | peak private MB |')
-        p('|---|---|---|---|---|---|---|---|---|---|---|')
+        p('host UI thread: WM_NULL round trips to the app (or Edge) window every 20 ms from the first tick until saves drained')
+        p('| db | target | boot s | tick median s | ticks (s) | long frames >200ms | jank ms | DB writes (tauri) | written MB | write ms max / sum | '
+          'idb DB puts (ms max) | IPC failed (path after load) | host UI thread max ms / >100 ms / blocked s | drain s | peak private MB |')
+        p('|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|')
         for r in tk:
             m = r.get('mon', {})
-            p('| {} | {} | {} | {} | {} | {} | {} | {} | {} / {} | {} | {} |'.format(
-                r['tag'], r['target'], r.get('tick_median_s'), ' '.join(str(x) for x in r.get('tick_s', [])),
+            h = r.get('hostping') or {}
+            mode = r.get('ipc_mode')
+            ipcf = m.get('ipc_failed') if 'ipc_mode' not in r else f"{m.get('ipc_failed')} ({mode if isinstance(mode, str) else 'no answer'})"
+            p('| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} / {} | {} ({}) | {} | {} / {} / {} | {} | {} |'.format(
+                r['tag'], r['target'], (r.get('load') or {}).get('boot_s'), r.get('tick_median_s'), ' '.join(str(x) for x in r.get('tick_s', [])),
                 r.get('frames', {}).get('long200'), r.get('frames', {}).get('jank_ms'), m.get('tauri_db_writes'), m.get('tauri_db_write_mb'),
-                m.get('tauri_db_write_ms_max'), m.get('tauri_db_write_ms_sum'), m.get('idb_db_puts'), r.get('mem_peak', {}).get('private_mb')))
+                m.get('tauri_db_write_ms_max'), m.get('tauri_db_write_ms_sum'), m.get('idb_db_puts'), m.get('idb_db_put_ms_max'),
+                ipcf, h.get('max_ms'), h.get('over_100'), h.get('blocked_s'), r.get('drain_s'), r.get('mem_peak', {}).get('private_mb')))
         p('')
     idle = [r for r in rows if r.get('test') == 'idle' and not r.get('error')]
     if idle:
@@ -1155,30 +1727,123 @@ def summarize():
             p('| {} | {} | {} | {} | {} |'.format(r['target'], m.get('private_mb'), m.get('ws_mb'),
                                                  ', '.join(f"{k}:{v['private_mb']}" for k, v in m.get('by_role', {}).items()), r.get('heap', {}).get('used_mb')))
         p('')
-    mi = [r for r in rows if r.get('test') == 'micro' and not r.get('error')]
-    for r in mi:
-        t = r['target']
+    merged = {}
+    for r in rows:
+        if r.get('test') == 'micro':
+            d = merged.setdefault(r['target'], {k: [] for k in MICRO_SECTIONS})
+            for k in MICRO_SECTIONS:
+                d[k] += r.get(k) or []
+    for t, r in merged.items():
         p(f'### micro ({t})')
         p('| MB | tauri write ms | tauri read ms | asset fetch ms | idb put ms | idb get ms | peak private MB |')
         p('|---|---|---|---|---|---|---|')
-        for x in r.get('ipc', []):
+        for x in r['ipc']:
             p(f"| {x['sizeMb']} | {x['tauri_write_ms']} | {x['tauri_read_ms']} | {x['asset_fetch_ms']} | {x['idb_put_ms']} | {x['idb_get_ms']} | {x.get('peak_private_mb')} |")
         p('')
-        p('| save MB | 2x write_file + read_dir ms | per call ms | UI-thread ping max ms (idle max) | frame max ms | IndexedDB put ms (ping max) |')
-        p('|---|---|---|---|---|---|')
-        for x in r.get('save_stall', []):
-            p(f"| {x['sizeMb']} | {x['save']['dur_ms']} | {x['save']['out']} | {x['save']['ping_max']} ({x['idle']['ping_max']}) | {x['save']['frame_max']} | {x['idb_same_size']['out']} ({x['idb_same_size']['ping_max']}) |")
+        p('| save MB | 2x write_file + read_dir ms | per call ms | IPC ping max ms (idle max) | host UI thread max ms / blocked s | frame max ms | '
+          'IndexedDB put ms (ping max) |')
+        p('|---|---|---|---|---|---|---|')
+        for x in r['save_stall']:
+            h = x.get('hostping') or {}
+            p(f"| {x['sizeMb']} | {x['save']['dur_ms']} | {x['save']['out']} | {x['save']['ping_max']} ({x['idle']['ping_max']}) | "
+              f"{h.get('max_ms')} / {h.get('blocked_s')} | {x['save']['frame_max']} | {x['idb_same_size']['out']} ({x['idb_same_size']['ping_max']}) |")
         p('')
         p('| body MB | Array.from ms | invoke fetch ms | send ms | plain fetch ms | peak private MB |')
         p('|---|---|---|---|---|---|')
-        for x in r.get('http_body', []):
+        for x in r['http_body']:
             p(f"| {x['sizeMb']} | {x['array_from_ms']} | {x['ipc_fetch_ms']} | {x['send_ms']} | {x['plain_fetch_ms']} | {x.get('peak_private_mb')} |")
         p('')
         p('| kind | variant | median ms | p90 ms | requests | ping max ms | frame max ms |')
         p('|---|---|---|---|---|---|---|')
-        for x in r.get('assets', []):
+        for x in r['assets']:
             p(f"| {x['kind']} | {x['variant']} | {x['median_ms']} | {x['p90_ms']} | {x['asset_requests']} | {x['ping_max']} | {x['frame_max']} |")
         p('')
+
+    def roles(d):
+        d = d or {}
+        return ' / '.join(str(round(d[k])) if k in d else '-' for k in ('host', 'browser', 'renderer'))
+
+    def fails_txt(f):
+        return '; '.join(f"{y.get('stage')} after {y.get('dt')} ms: {y.get('err')}" for y in (f or []))[:240] or '-'
+
+    def state(x, default):
+        if 'died' in x:
+            return 'DIED: ' + x['died'][:150]
+        if 'error' in x:
+            return 'error: ' + x['error'][:150]
+        if 'timeout_s' in x:
+            return f"no answer in {x['timeout_s']} s"
+        return default
+
+    for r in rows:
+        if r.get('test') != 'repro':
+            continue
+        p(f"### micro's {r.get('size')} MB round trip, one operation at a time ({r['target']})")
+        p('| op | ms | outcome | IPC fetch failures | peak private MB host / browser / renderer | peak commit MB host / browser / renderer |')
+        p('|---|---|---|---|---|---|')
+        if r.get('error') and not r.get('ops'):
+            p(f"| - | - | error: {r['error'][:200]} | - | - | - |")
+        for x in r.get('ops', []):
+            outcome = state(x, '')
+            if 'died' not in x and 'error' not in x:
+                outcome += (', ' if outcome else '') + ('alive 5 s later' if x.get('alive_5s_later') else 'not answering')
+            if 'len' in x:
+                outcome += f", got {x['len']} bytes" + (f" as {x['type']}" if x.get('type') else '')
+            p(f"| {x['op']} | {x.get('ms')} | {outcome} | {fails_txt(x.get('fails'))} | {roles(x.get('peak_private_mb'))} | {roles(x.get('peak_commit_mb'))} |")
+        p('')
+    rm = [r for r in rows if r.get('test') == 'ipcramp']
+    if rm:
+        p('### IPC size ramp: one plugin:fs write_file / read_file of N MB')
+        p("guarded: a failed IPC fetch is held, so the page keeps the custom protocol; unguarded: the app's own fallback to postMessage. "
+          'Peak commit is each process\'s peak so far in that session.')
+        p('| target | direction | guard | MB | result | ms | ms/MB | IPC fetch failure | peak private MB host / browser / renderer | peak commit MB host / browser / renderer |')
+        p('|---|---|---|---|---|---|---|---|---|---|')
+        for r in rm:
+            if r.get('error') and not r.get('steps'):
+                p(f"| {r['target']} | {r.get('direction')} | {r.get('guard')} | - | error: {r['error'][:200]} | - | - | - | - | - |")
+            for x in r.get('steps', []):
+                txt = state(x, str(x.get('result')))
+                if 'alive_10s_later' in x and x['alive_10s_later']:
+                    txt += ', alive 10 s later'
+                ms = x.get('ms')
+                per = round(ms / x['sizeMb'], 1) if ms and x.get('result') == 'ok' else '-'
+                p(f"| {r['target']} | {x['direction']} | {x['guard']} | {x['sizeMb']} | {txt} | {ms} | {per} | {fails_txt(x.get('fails'))} | "
+                  f"{roles(x.get('peak_private_mb'))} | {roles(x.get('peak_commit_mb'))} |")
+        p('')
+    for r in rows:
+        if r.get('test') != 'degraded':
+            continue
+        sw = r.get('switch') or {}
+        p(f"### IPC after the fallback to postMessage ({r['target']})")
+        p(f"tiny call: {sw.get('tiny_protocol_ms')} ms via the custom protocol, {sw.get('tiny_postmessage_ms')} ms via postMessage; "
+          f"IPC fetches after the switch: {sw.get('ipc_fetches_after_switch')} (1 = every later call went through postMessage)")
+        p('| path | MB | write ms | read ms | read as | read ok | peak private MB host / browser / renderer | peak commit MB host / browser / renderer |')
+        p('|---|---|---|---|---|---|---|---|')
+        for phase in ('protocol', 'postmessage'):
+            for x in r.get(phase, []):
+                ok = state(x, x.get('read_ok'))
+                p(f"| {phase} | {x['sizeMb']} | {x.get('write_ms')} | {x.get('read_ms')} | {x.get('read_type')} | {ok} | "
+                  f"{roles(x.get('peak_private_mb'))} | {roles(x.get('peak_commit_mb'))} |")
+        p('')
+    pm = [r for r in rows if r.get('postmortem')]
+    if pm:
+        p('### processes that died')
+        for r in pm:
+            x = r['postmortem']
+            p(f"- {r['test']} {r['target']} {r.get('tag')}: exited `{json.dumps(x.get('gone'))}`, host return code {x.get('host_returncode')}, "
+              f"{len(x.get('dumps') or [])} dump(s)")
+            for e in (x.get('events') or [])[:4]:
+                p(f'  - event: `{e[:400]}`')
+            al = ' | '.join(l for l in (x.get('app_log') or '').splitlines() if l.strip())[-400:]
+            if al:
+                p(f'  - app stderr: `{al}`')
+        p('')
+    for r in rows:
+        if r.get('test') == 'dumps':
+            p(f"### crash dumps ({r['n']}; cdb {'ran' if r.get('cdb') else 'not installed'})")
+            for d in r.get('dumps', []):
+                p(f"- `{d['file']}` ({d['kb']} KB)" + (': ' + '; '.join(d['summary'])[:700] if d.get('summary') else ''))
+            p('')
     text = '\n'.join(out)
     print(text)
     with open(os.path.join(WORK, 'summary.md'), 'w') as f:
