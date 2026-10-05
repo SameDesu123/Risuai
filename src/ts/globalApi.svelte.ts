@@ -5,7 +5,8 @@ import {
     exists,
     mkdir,
     readDir,
-    remove
+    remove,
+    copyFile
 } from "@tauri-apps/plugin-fs"
 import { changeFullscreen, checkNullish, sleep } from "./util"
 import { convertFileSrc, invoke } from "@tauri-apps/api/core"
@@ -453,7 +454,11 @@ export async function saveDb() {
             const dbData = new Uint8Array(encoded)
             if (isTauri) {
                 await writeFile('database/database.bin', dbData, { baseDir: BaseDirectory.AppData });
-                await writeFile(`database/dbbackup-${(Date.now() / 100).toFixed()}.bin`, dbData, { baseDir: BaseDirectory.AppData });
+                // copied on the Rust side: sending the save over IPC a second time costs as much as the first write
+                await copyFile('database/database.bin', `database/dbbackup-${(Date.now() / 100).toFixed()}.bin`, {
+                    fromPathBaseDir: BaseDirectory.AppData,
+                    toPathBaseDir: BaseDirectory.AppData
+                });
             }
             else {
 
