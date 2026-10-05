@@ -1,6 +1,11 @@
 // Used by .github/workflows/windows-perf-bench.yml. Run from the repo root after pnpm install (needs msgpackr).
 // Generates a legacy-format RisuAI save (magic header + msgpack) with one "complex bot" and filler characters.
 // usage: node gen_db.cjs <out.bin> <heavyMsgs> <fillerChars> <fillerMsgsPerChar>
+// msgpackr 1.10 calls buf.utf8Write(str, pos, 0xffffffff); Node 24 rejects lengths past the end of the buffer
+const utf8Write = Buffer.prototype.utf8Write;
+Buffer.prototype.utf8Write = function (str, offset, length) {
+    return utf8Write.call(this, str, offset, Math.min(length, this.length - offset));
+};
 const { Packr } = require('msgpackr');
 const fs = require('fs');
 const crypto = require('crypto');
