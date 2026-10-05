@@ -8,6 +8,9 @@
 #
 # usage: python bench.py suite <stream|tick|micro> [--quick]
 #        python bench.py summarize
+#
+# Every desktop run starts from an empty profile by deleting the app's data folders (%APPDATA% and %LOCALAPPDATA%
+# \co.aiclient.risu). Outside GitHub Actions the harness refuses to start while they exist; BENCH_WIPE_APPDATA=1 overrides.
 import argparse, json, os, re, shutil, socket, statistics, subprocess, sys, tempfile, threading, time, traceback, urllib.request
 
 import psutil
@@ -1011,8 +1014,22 @@ def env_info():
     return info
 
 
+def guard_appdata():
+    """Keep a real installation's data safe: the desktop runs delete the app's data folders."""
+    if os.environ.get('GITHUB_ACTIONS') == 'true' or os.environ.get('BENCH_WIPE_APPDATA') == '1':
+        return
+    if not any(os.path.isfile(os.environ.get('BENCH_EXE_' + n.upper(), '')) for n in ('patched', 'unpatched', 'shipped')):
+        return
+    dirs = [d for d in (os.path.join(os.environ.get('APPDATA', ''), IDENT), os.path.join(os.environ.get('LOCALAPPDATA', ''), IDENT))
+            if os.path.isdir(d)]
+    if dirs:
+        raise SystemExit('the desktop runs delete ' + ' and '.join(dirs) + ' (RisuAI data on this machine). '
+                         'Back them up or move them away first, or set BENCH_WIPE_APPDATA=1 to let the harness delete them.')
+
+
 def suite(name, quick=False):
     from playwright.sync_api import sync_playwright
+    guard_appdata()
     if IS_WIN:
         kill_strays()
     emit({'test': 'env', 'suite': name, **env_info()})
