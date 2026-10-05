@@ -31,6 +31,24 @@ WV2_FEATURES = 'msWebOOUI,msPdfOOUI,msSmartScreenProtection'
 # keep a covered/unfocused window rendering normally, for both the WebView2 and the Edge window
 NO_OCCLUSION = ['--disable-backgrounding-occluded-windows']
 NOPROXY = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+# An elevated WebView2 host (GitHub's Windows runners run everything elevated) ignores WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS
+# and HKCU overrides but honors the machine-wide HKLM policy, so the workflow opts in to passing the arguments there.
+WV2_POLICY = IS_WIN and os.environ.get('BENCH_WV2_POLICY') == '1'
+WV2_POLICY_KEY = r'SOFTWARE\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments'
+
+
+def wv2_policy(names, args=None):
+    """Set, or with args=None remove, the HKLM AdditionalBrowserArguments policy value for these app names."""
+    import winreg
+    with winreg.CreateKeyEx(winreg.HKEY_LOCAL_MACHINE, WV2_POLICY_KEY, 0, winreg.KEY_SET_VALUE | winreg.KEY_WOW64_64KEY) as k:
+        for n in names:
+            if args is None:
+                try:
+                    winreg.DeleteValue(k, n)
+                except FileNotFoundError:
+                    pass
+            else:
+                winreg.SetValueEx(k, n, 0, winreg.REG_SZ, args)
 
 
 def elevated():
@@ -470,6 +488,7 @@ class Session:
         self.port = free_port()
         self.proc = self.browser = self.page = self.cdp = None
         self.udd = self.app_out = self.app_log = self.wv2_log = None
+        self.policy_names = ()
         self.console = []
         self.crashed = False
 
@@ -498,6 +517,10 @@ class Session:
             env['WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS'] = args
             env['RUST_BACKTRACE'] = '1'
             exe = os.environ['BENCH_EXE_' + self.target.upper()]
+            if WV2_POLICY:
+                # WebView2 looks the value up by app user model ID, then executable name, then '*'
+                self.policy_names = (os.path.basename(exe), IDENT, '*')
+                wv2_policy(self.policy_names, args)
             # a release build has no console; its panic message still reaches an inherited stderr handle
             self.app_log = os.path.join(WORK, f'app_{self.target}_{self.port}.log')
             self.app_out = open(self.app_log, 'w')
@@ -577,6 +600,10 @@ class Session:
         raise TimeoutError(f'no page starting with {prefix}: {[p.url for c in self.browser.contexts for p in c.pages]}')
 
     def stop(self):
+        if self.policy_names:
+            # only read when the app creates its WebView2 environment, so removing it leaves the running app alone
+            wv2_policy(self.policy_names)
+            self.policy_names = ()
         try:
             if self.browser:
                 self.browser.close()
@@ -966,7 +993,7 @@ def probe(pw, target):
     except Exception as e:
         res['ok'] = False
         res['error'] = f'{type(e).__name__}: {e}'[:1500]
-        if elevated():
+        if elevated() and not WV2_POLICY:
             res['error'] += ' (this process is elevated, and WebView2 ignores WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS for elevated hosts)'
         res['diag'] = s.diag()
         log('!! probe failed', res['error'])
@@ -994,7 +1021,7 @@ def start_servers():
 
 def env_info():
     info = {'python': sys.version.split()[0], 'cpu_count': psutil.cpu_count(), 'ram_gb': round(psutil.virtual_memory().total / 2**30, 1),
-            'elevated': elevated()}
+            'elevated': elevated(), 'wv2_policy': WV2_POLICY}
     if IS_WIN:
         import winreg
         for name, key in [('webview2', r'SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'),

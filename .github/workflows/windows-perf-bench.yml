@@ -182,6 +182,8 @@ jobs:
           BENCH_EXE_PATCHED: ${{ github.workspace }}\out\bin\RisuAI_patched.exe
           BENCH_EXE_UNPATCHED: ${{ github.workspace }}\out\bin\RisuAI_unpatched.exe
           BENCH_EXE_SHIPPED: ${{ github.workspace }}\out\bin\RisuAI_shipped.exe
+          # the runner is elevated, so WebView2 only takes the debugging port from the machine-wide HKLM policy
+          BENCH_WV2_POLICY: '1'
         run: python bench/windows/bench.py suite ${{ matrix.suite }} ${{ inputs.quick && '--quick' || '' }}
 
       - name: summary
