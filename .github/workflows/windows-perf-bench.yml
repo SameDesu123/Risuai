@@ -17,7 +17,7 @@ on:
         type: string
         default: ''
       suites:
-        description: 'JSON list of suites to run (stream, tick, micro, probe, ipcdiag, bigsave)'
+        description: 'JSON list of suites to run (stream, tick, micro, probe, ipcdiag, bigsave, cdpab)'
         type: string
         default: '["stream","tick","micro"]'
   push:
@@ -137,7 +137,8 @@ jobs:
         with:
           python-version: '3.12'
       - name: install harness dependencies
-        run: pip install playwright==1.63.0 psutil pillow  # bench.py patches this version's driver (cap_post_data)
+        # bench.py patches this Playwright version's driver (cap_post_data); websocket-client is the bare CDP connection (cdpab)
+        run: pip install playwright==1.63.0 psutil pillow websocket-client==1.9.2
       - uses: actions/download-artifact@v4
         if: ${{ !inputs.bundle_run }}
         with:

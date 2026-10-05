@@ -6,12 +6,12 @@
 # web build on the same Chromium engine. Each result is one JSON object per line in $BENCH_WORK/results.jsonl
 # (also printed with a "RESULT " prefix).
 #
-# usage: python bench.py suite <stream|tick|micro|probe|ipcdiag|bigsave> [--quick]
+# usage: python bench.py suite <stream|tick|micro|probe|ipcdiag|bigsave|cdpab> [--quick]
 #        python bench.py summarize
 #
 # Every desktop run starts from an empty profile by deleting the app's data folders (%APPDATA% and %LOCALAPPDATA%
 # \co.aiclient.risu). Outside GitHub Actions the harness refuses to start while they exist; BENCH_WIPE_APPDATA=1 overrides.
-import argparse, json, os, re, shutil, socket, statistics, subprocess, sys, tempfile, threading, time, traceback, urllib.request
+import argparse, base64, json, os, re, shutil, socket, statistics, subprocess, sys, tempfile, threading, time, traceback, urllib.request
 
 import psutil
 
@@ -813,11 +813,98 @@ def classify(s, e):
 
 # ---------------------------------------------------------------- sessions
 
-class Session:
-    """One running app (Tauri exe) or browser (Edge + web build) with a Playwright page attached over CDP."""
+class RawPage:
+    """The app's page over a bare CDP connection that only runs Runtime.evaluate, with no CDP domain enabled
+    (Playwright enables Network, Page, Runtime and more on every page it sees), to tell the debugging connection's
+    own time and memory from the app's. Covers the part of Playwright's Page that boot() and the IPC ramp use."""
 
-    def __init__(self, pw, target, db=None, bench_assets=False):
-        self.pw, self.target, self.db, self.bench_assets = pw, target, db, bench_assets
+    def __init__(self, port, prefix, timeout=120):
+        import websocket  # websocket-client; only this connection needs it
+        t0 = time.time()
+        ws_url = None
+        while time.time() - t0 < timeout:
+            try:
+                with NOPROXY.open(f'http://127.0.0.1:{port}/json/list', timeout=2) as r:
+                    pages = [t for t in json.load(r) if t.get('type') == 'page' and t.get('url', '').startswith(prefix)]
+                if pages:
+                    ws_url, self.url = pages[0]['webSocketDebuggerUrl'], pages[0]['url']
+                    break
+            except Exception:
+                pass
+            time.sleep(0.3)
+        if not ws_url:
+            raise TimeoutError(f'no page starting with {prefix}')
+        # no Origin header: Chromium refuses websocket origins that --remote-allow-origins does not list
+        self.ws = websocket.create_connection(ws_url, timeout=600, suppress_origin=True)
+        self.id = 0
+        self.closed = False
+
+    def send(self, method, params=None):
+        if self.closed:
+            raise RuntimeError('Target page, context or browser has been closed')
+        self.id += 1
+        mid = self.id
+        try:
+            self.ws.send(json.dumps({'id': mid, 'method': method, 'params': params or {}}))
+            while True:
+                d = json.loads(self.ws.recv())
+                if d.get('id') == mid:
+                    break
+        except Exception as e:
+            self.closed = True
+            raise RuntimeError(f'Target page, context or browser has been closed ({type(e).__name__}: {e})') from e
+        if 'error' in d:
+            raise RuntimeError(f"{method}: {d['error'].get('message')}")
+        return d.get('result') or {}
+
+    def evaluate(self, expression, arg=None):
+        # Playwright's rule: an expression that evaluates to a function is called with arg
+        src = f'(async () => {{ const v = (\n{expression}\n); return typeof v === "function" ? await v({json.dumps(arg)}) : await v; }})()'
+        r = self.send('Runtime.evaluate', {'expression': src, 'awaitPromise': True, 'returnByValue': True})
+        if 'exceptionDetails' in r:
+            ex = r['exceptionDetails']
+            raise RuntimeError(((ex.get('exception') or {}).get('description') or ex.get('text') or 'exception')[:500])
+        return (r.get('result') or {}).get('value')
+
+    def wait_for_function(self, expression, arg=None, timeout=30000, polling=100):
+        t0 = time.time()
+        while True:
+            try:
+                if self.evaluate(expression, arg):
+                    return True
+            except RuntimeError:
+                if self.closed:
+                    raise
+                # a navigation replaced the execution context; poll again, as Playwright does
+            if (time.time() - t0) * 1000 > timeout:
+                raise TimeoutError(f'wait_for_function: {timeout} ms exceeded')
+            time.sleep(polling / 1000)
+
+    def wait_for_timeout(self, ms):
+        time.sleep(ms / 1000)
+
+    def is_closed(self):
+        return self.closed
+
+    def screenshot(self, path, timeout=None):
+        r = self.send('Page.captureScreenshot', {'format': 'png'})
+        with open(path, 'wb') as f:
+            f.write(base64.b64decode(r['data']))
+
+    def close(self):
+        self.closed = True
+        try:
+            self.ws.close()
+        except Exception:
+            pass
+
+
+class Session:
+    """One running app (Tauri exe) or browser (Edge + web build) with a Playwright page attached over CDP
+    (raw: a RawPage instead, and no Playwright connection at all)."""
+
+    def __init__(self, pw, target, db=None, bench_assets=False, raw=False):
+        self.pw, self.target, self.db, self.bench_assets, self.raw = pw, target, db, bench_assets, raw
         self.kind = 'web' if target == 'web' else 'tauri'
         self.port = free_port()
         self.proc = self.browser = self.page = self.cdp = None
@@ -869,6 +956,9 @@ class Session:
                                           '--window-size=1040,808', *EXTRA_ARGS, f'--app={WEB_URL}'])
             prefix = (WEB_URL.rstrip('/'),)
         self._wait_cdp()
+        if self.raw:
+            self.page = self.cdp = RawPage(self.port, prefix)
+            return self
         self.browser = self.pw.chromium.connect_over_cdp(f'http://127.0.0.1:{self.port}')
         self.page = self._find_page(prefix)
         self.page.on('console', self._on_console)
@@ -951,6 +1041,8 @@ class Session:
         try:
             if self.browser:
                 self.browser.close()
+            elif self.raw and self.page:
+                self.page.close()
         except Exception:
             pass
         kill_tree(self.proc.pid if self.proc else None)
@@ -1161,10 +1253,10 @@ def mon_summary(mon):
     }
 
 
-def run_test(pw, kind, fn, target, db=None, tag='', bench_assets=False, **kw):
-    res = {'test': kind, 'target': target, 'db': db, 'tag': tag, **kw}
-    log(f'== {kind} {target} {db or ""} {kw}')
-    s = Session(pw, target, db, bench_assets)
+def run_test(pw, kind, fn, target, db=None, tag='', bench_assets=False, raw=False, **kw):
+    res = {'test': kind, 'target': target, 'db': db, 'tag': tag, 'cdp': 'bare' if raw else 'playwright', **kw}
+    log(f'== {kind} {target} {db or ""} {"bare CDP " if raw else ""}{kw}')
+    s = Session(pw, target, db, bench_assets, raw)
     t_start = time.time()
     try:
         s.start()
@@ -1697,6 +1789,21 @@ def suite(name, quick=False):
                 if hot and usable(pw, 'patched'):
                     run_test(pw, 'tick', t_tick, 'patched', hot[0], hot[0][3:-4] + '_degraded', ticks=4 if quick else 8, degrade=True)
                 analyze_dumps()
+            elif name == 'cdpab':
+                # the guarded IPC ramp over a bare CDP connection that only evaluates scripts and with Playwright attached
+                # (Network domain on, post data capped), alternated on one machine: what the debugging connection itself
+                # adds to the time and to each process's memory
+                if usable(pw, 'patched'):
+                    sizes = [16, 64] if quick else [16, 64, 128, 256]
+                    for direction in ('write', 'read'):
+                        for rep in (1, 2):
+                            for raw in (True, False):
+                                run_test(pw, 'ipcramp', t_ipcramp, 'patched', 'db_simple.bin', f"{direction}_{'bare' if raw else 'playwright'}_{rep}",
+                                         raw=raw, direction=direction, guard=True, sizes=sizes)
+                    # plugin-http request bodies (JSON number arrays) the same way
+                    for raw in (True, False):
+                        run_test(pw, 'micro', t_micro, 'patched', 'db_simple.bin', f"micro_http_body_{'bare' if raw else 'playwright'}",
+                                 bench_assets=True, raw=raw, section='http_body', quick=quick)
             else:
                 raise SystemExit('unknown suite ' + name)
     finally:
@@ -1780,33 +1887,41 @@ def summarize():
     merged = {}
     for r in rows:
         if r.get('test') == 'micro':
-            d = merged.setdefault(r['target'], {k: [] for k in MICRO_SECTIONS})
+            d = merged.setdefault(r['target'] + (', bare CDP' if r.get('cdp') == 'bare' else ''), {k: [] for k in (*MICRO_SECTIONS, 'commit')})
             for k in MICRO_SECTIONS:
                 d[k] += r.get(k) or []
+            c = (r.get('mem_peak') or {}).get('peak_commit_by_role_mb') or {}
+            d['commit'].append(f"{r.get('tag')} " + ' / '.join(str(round(c[k])) if k in c else '-' for k in ('host', 'browser', 'renderer')))
     for t, r in merged.items():
         p(f'### micro ({t})')
-        p('| MB | tauri write ms | tauri read ms | asset fetch ms | idb put ms | idb get ms | peak private MB |')
-        p('|---|---|---|---|---|---|---|')
-        for x in r['ipc']:
-            p(f"| {x['sizeMb']} | {x['tauri_write_ms']} | {x['tauri_read_ms']} | {x['asset_fetch_ms']} | {x['idb_put_ms']} | {x['idb_get_ms']} | {x.get('peak_private_mb')} |")
-        p('')
-        p('| save MB | 2x write_file + read_dir ms | per call ms | IPC ping max ms (idle max) | host UI thread max ms / blocked s | frame max ms | '
-          'IndexedDB put ms (ping max) |')
-        p('|---|---|---|---|---|---|---|')
-        for x in r['save_stall']:
-            h = x.get('hostping') or {}
-            p(f"| {x['sizeMb']} | {x['save']['dur_ms']} | {x['save']['out']} | {x['save']['ping_max']} ({x['idle']['ping_max']}) | "
-              f"{h.get('max_ms')} / {h.get('blocked_s')} | {x['save']['frame_max']} | {x['idb_same_size']['out']} ({x['idb_same_size']['ping_max']}) |")
-        p('')
-        p('| body MB | Array.from ms | invoke fetch ms | send ms | plain fetch ms | peak private MB |')
-        p('|---|---|---|---|---|---|')
-        for x in r['http_body']:
-            p(f"| {x['sizeMb']} | {x['array_from_ms']} | {x['ipc_fetch_ms']} | {x['send_ms']} | {x['plain_fetch_ms']} | {x.get('peak_private_mb')} |")
-        p('')
-        p('| kind | variant | median ms | p90 ms | requests | ping max ms | frame max ms |')
-        p('|---|---|---|---|---|---|---|')
-        for x in r['assets']:
-            p(f"| {x['kind']} | {x['variant']} | {x['median_ms']} | {x['p90_ms']} | {x['asset_requests']} | {x['ping_max']} | {x['frame_max']} |")
+        if r['ipc']:
+            p('| MB | tauri write ms | tauri read ms | asset fetch ms | idb put ms | idb get ms | peak private MB |')
+            p('|---|---|---|---|---|---|---|')
+            for x in r['ipc']:
+                p(f"| {x['sizeMb']} | {x['tauri_write_ms']} | {x['tauri_read_ms']} | {x['asset_fetch_ms']} | {x['idb_put_ms']} | {x['idb_get_ms']} | {x.get('peak_private_mb')} |")
+            p('')
+        if r['save_stall']:
+            p('| save MB | 2x write_file + read_dir ms | per call ms | IPC ping max ms (idle max) | host UI thread max ms / blocked s | frame max ms | '
+              'IndexedDB put ms (ping max) |')
+            p('|---|---|---|---|---|---|---|')
+            for x in r['save_stall']:
+                h = x.get('hostping') or {}
+                p(f"| {x['sizeMb']} | {x['save']['dur_ms']} | {x['save']['out']} | {x['save']['ping_max']} ({x['idle']['ping_max']}) | "
+                  f"{h.get('max_ms')} / {h.get('blocked_s')} | {x['save']['frame_max']} | {x['idb_same_size']['out']} ({x['idb_same_size']['ping_max']}) |")
+            p('')
+        if r['http_body']:
+            p('| body MB | Array.from ms | invoke fetch ms | send ms | plain fetch ms | peak private MB |')
+            p('|---|---|---|---|---|---|')
+            for x in r['http_body']:
+                p(f"| {x['sizeMb']} | {x['array_from_ms']} | {x['ipc_fetch_ms']} | {x['send_ms']} | {x['plain_fetch_ms']} | {x.get('peak_private_mb')} |")
+            p('')
+        if r['assets']:
+            p('| kind | variant | median ms | p90 ms | requests | ping max ms | frame max ms |')
+            p('|---|---|---|---|---|---|---|')
+            for x in r['assets']:
+                p(f"| {x['kind']} | {x['variant']} | {x['median_ms']} | {x['p90_ms']} | {x['asset_requests']} | {x['ping_max']} | {x['frame_max']} |")
+            p('')
+        p('peak commit MB host / browser / renderer per section (one app session each): ' + '; '.join(r['commit']))
         p('')
 
     def roles(d):
@@ -1848,12 +1963,14 @@ def summarize():
           'Peak commit is each process\'s peak so far in that session.')
         p('host UI thread: longest WM_NULL round trip to the app window during the call (wry reads request bodies there); '
           'page main thread: longest gap of a 10 ms timer.')
-        p('| target | direction | guard | MB | result | ms | ms/MB | host UI thread max ms / blocked s | page main thread max gap ms | IPC fetch failure | '
+        p('CDP: playwright = Playwright attached (Network domain on, post data capped at 64 KB); bare = one connection that only runs Runtime.evaluate.')
+        p('| target | CDP | direction | guard | MB | result | ms | ms/MB | host UI thread max ms / blocked s | page main thread max gap ms | IPC fetch failure | '
           'peak private MB host / browser / renderer | peak commit MB host / browser / renderer |')
-        p('|---|---|---|---|---|---|---|---|---|---|---|---|')
+        p('|---|---|---|---|---|---|---|---|---|---|---|---|---|')
         for r in rm:
+            cdp = r.get('cdp', 'playwright')
             if r.get('error') and not r.get('steps'):
-                p(f"| {r['target']} | {r.get('direction')} | {r.get('guard')} | - | error: {r['error'][:200]} | - | - | - | - | - | - | - |")
+                p(f"| {r['target']} | {cdp} | {r.get('direction')} | {r.get('guard')} | - | error: {r['error'][:200]} | - | - | - | - | - | - | - |")
             for x in r.get('steps', []):
                 txt = state(x, str(x.get('result')))
                 if 'alive_10s_later' in x and x['alive_10s_later']:
@@ -1862,7 +1979,7 @@ def summarize():
                 per = round(ms / x['sizeMb'], 1) if ms and x.get('result') == 'ok' else '-'
                 hu = x.get('host_ui') or {}
                 host = f"{hu.get('max_ms')} / {hu.get('blocked_s')}" if hu else '-'
-                p(f"| {r['target']} | {x['direction']} | {x['guard']} | {x['sizeMb']} | {txt} | {ms} | {per} | {host} | {x.get('page_gap_max_ms', '-')} | "
+                p(f"| {r['target']} | {cdp} | {x['direction']} | {x['guard']} | {x['sizeMb']} | {txt} | {ms} | {per} | {host} | {x.get('page_gap_max_ms', '-')} | "
                   f"{fails_txt(x.get('fails'))} | {roles(x.get('peak_private_mb'))} | {roles(x.get('peak_commit_mb'))} |")
         p('')
     for r in rows:
