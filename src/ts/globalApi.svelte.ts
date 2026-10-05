@@ -27,6 +27,7 @@ import { characterURLImport, hubURL } from "./characterCards";
 import { defaultJailbreak, defaultMainPrompt, oldJailbreak, oldMainPrompt } from "./storage/defaultPrompts";
 import { loadRisuAccountData } from "./drive/accounter";
 import { decodeRisuSave, encodeRisuSaveLegacy, RisuSaveEncoder, type toSaveType } from "./storage/risuSave";
+import { replaceFileInChunks } from "./storage/tauriWrite";
 import { AutoStorage } from "./storage/autoStorage";
 import { updateAnimationSpeed } from "./gui/animation";
 import { updateColorScheme, updateTextThemeAndCSS } from "./gui/colorscheme";
@@ -453,7 +454,7 @@ export async function saveDb() {
             }
             const dbData = new Uint8Array(encoded)
             if (isTauri) {
-                await writeFile('database/database.bin', dbData, { baseDir: BaseDirectory.AppData });
+                await replaceFileInChunks('database/database.bin', dbData);
                 // copied on the Rust side: sending the save over IPC a second time costs as much as the first write
                 await copyFile('database/database.bin', `database/dbbackup-${(Date.now() / 100).toFixed()}.bin`, {
                     fromPathBaseDir: BaseDirectory.AppData,
