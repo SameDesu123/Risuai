@@ -412,6 +412,10 @@ class HostPing:
         if IS_WIN and s.proc and s.proc.poll() is None:
             self.p = subprocess.Popen([sys.executable, os.path.join(HERE, 'hostping.py'), str(s.proc.pid)],
                                       stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+            # wait for its "ready" line, so a short measurement is not over before the first ping
+            th = threading.Thread(target=self.p.stdout.readline, daemon=True)
+            th.start()
+            th.join(15)
 
     def result(self):
         if not self.p:
@@ -727,6 +731,9 @@ if (direction === 'write') {
     .then((a) => { const n = a.byteLength !== undefined ? a.byteLength : a.length; return n === sizeMb * 1048576 ? 'ok' : 'short read: ' + n; });
 }
 let iv, timer;
+// longest stretch the page's main thread could not run a 10 ms timer while the call was in flight
+let last = performance.now(), gapMax = 0;
+const gap = setInterval(() => { const now = performance.now(); gapMax = Math.max(gapMax, now - last); last = now; }, 10);
 const t0 = performance.now();
 const racers = [
   call().catch((e) => 'rejected: ' + (e instanceof ArrayBuffer ? 'ArrayBuffer(' + e.byteLength + ')' : String(e).slice(0, 300))),
@@ -735,8 +742,10 @@ const racers = [
 // guarded: a failed call never settles, so stop at the recorded failure
 if (D.guard) racers.push(new Promise((res) => { iv = setInterval(() => { if (D.fails.length > nf) res('ipc-fail'); }, 25); }));
 const result = await Promise.race(racers);
-clearInterval(iv); clearTimeout(timer);
-return {direction, sizeMb, guard: D.guard, result, ms: Math.round(performance.now() - t0), fails: D.fails.slice(nf), warns: D.warns.slice(nw, nw + 4)};
+const ms = Math.round(performance.now() - t0);
+clearInterval(iv); clearTimeout(timer); clearInterval(gap);
+gapMax = Math.max(gapMax, performance.now() - last);
+return {direction, sizeMb, guard: D.guard, result, ms, page_gap_max_ms: Math.round(gapMax), fails: D.fails.slice(nf), warns: D.warns.slice(nw, nw + 4)};
 """
 
 # switch the page to postMessage IPC the way a failed call does, and time tiny calls on both paths
@@ -1367,7 +1376,7 @@ def t_micro(s, res, section, quick=False):
         res['ipc_fails'] = fails
 
 
-RAMP = [16, 24, 32, 40, 48, 56, 64, 96, 128]
+RAMP = [16, 24, 32, 40, 48, 56, 64, 96, 128, 192, 256]
 
 
 def make_read_files(sizes):
@@ -1398,6 +1407,7 @@ def t_ipcramp(s, res, direction, guard, sizes=RAMP, timeout_s=90):
     bad = 0
     for n in sizes:
         r = {'direction': direction, 'sizeMb': n, 'guard': guard}
+        hp = HostPing(s)  # wry reads request bodies on the app's UI thread
         with Sampler(s) as smp:
             try:
                 r.update(ev(s.page, DIAG_STEP, direction, n, timeout_s * 1000))
@@ -1409,6 +1419,9 @@ def t_ipcramp(s, res, direction, guard, sizes=RAMP, timeout_s=90):
                 k, msg = classify(s, e)
                 r[k] = msg
         r.update(peaks(smp))
+        h = hp.result()
+        if h:
+            r['host_ui'] = {k: h.get(k) for k in ('max_ms', 'p99_ms', 'over_100', 'blocked_s', 'err')}
         res['steps'].append(r)
         log(f'   {direction} {n} MB guard={guard}:', json.dumps(r)[:1500])
         if 'died' in r:
@@ -1588,12 +1601,49 @@ def guard_appdata():
                          'Back them up or move them away first, or set BENCH_WIPE_APPDATA=1 to let the harness delete them.')
 
 
+POST_DATA_CAP = 65536
+
+
+def cap_post_data():
+    """Playwright enables the CDP Network domain on every page without maxPostDataSize, so Chromium copies each
+    request body into Network.requestWillBeSent: JSON-escaped (about 4 bytes per byte of binary data) plus base64.
+    For the app's IPC writes, which are request bodies, that is work and memory no user has: with Chromium 141 a 40 MB
+    POST of random bytes takes 2.5 s instead of 0.14 s, blocks the page's main thread all along, adds about 500 MB to
+    both the renderer and the browser process, and past 256 MB of event JSON the debugging connection is closed while
+    the app keeps running. Cap the copied body at 64 KB, as the DevTools window itself does, by patching the
+    Chromium network manager in Playwright's driver. Returns the number of patched call sites (0: not comparable)."""
+    import playwright
+    root = os.path.join(os.path.dirname(playwright.__file__), 'driver', 'package', 'lib')
+    done = f'"Network.enable", {{ maxPostDataSize: {POST_DATA_CAP} }})'
+    # only the Chromium network manager's call: it is followed by the request interception setup
+    pat = re.compile(r'(\.send\()(["\'])Network\.enable\2\)(?=[\s\S]{0,400}?_updateProtocolRequestInterceptionForSession)')
+    n = 0
+    for d, _, files in os.walk(root):
+        for f in files:
+            if not f.endswith('.js'):
+                continue
+            p = os.path.join(d, f)
+            with open(p, encoding='utf-8') as fh:
+                src = fh.read()
+            n += src.count(done)
+            new, k = pat.subn(lambda m: m.group(1) + done, src)
+            if k:
+                with open(p, 'w', encoding='utf-8') as fh:
+                    fh.write(new)
+                n += k
+    if not n:
+        log('!! could not cap CDP post data: big IPC writes are measured with the DevTools copy (not comparable)')
+    return n
+
+
 def suite(name, quick=False):
+    from importlib.metadata import version
+    capped = cap_post_data()  # before the Playwright driver starts
     from playwright.sync_api import sync_playwright
     guard_appdata()
     if IS_WIN:
         kill_strays()
-    emit({'test': 'env', 'suite': name, **env_info()})
+    emit({'test': 'env', 'suite': name, 'playwright': version('playwright'), 'cdp_post_data_cap_sites': capped, **env_info()})
     srv = start_servers()
     try:
         with sync_playwright() as pw:
@@ -1796,19 +1846,24 @@ def summarize():
         p('### IPC size ramp: one plugin:fs write_file / read_file of N MB')
         p("guarded: a failed IPC fetch is held, so the page keeps the custom protocol; unguarded: the app's own fallback to postMessage. "
           'Peak commit is each process\'s peak so far in that session.')
-        p('| target | direction | guard | MB | result | ms | ms/MB | IPC fetch failure | peak private MB host / browser / renderer | peak commit MB host / browser / renderer |')
-        p('|---|---|---|---|---|---|---|---|---|---|')
+        p('host UI thread: longest WM_NULL round trip to the app window during the call (wry reads request bodies there); '
+          'page main thread: longest gap of a 10 ms timer.')
+        p('| target | direction | guard | MB | result | ms | ms/MB | host UI thread max ms / blocked s | page main thread max gap ms | IPC fetch failure | '
+          'peak private MB host / browser / renderer | peak commit MB host / browser / renderer |')
+        p('|---|---|---|---|---|---|---|---|---|---|---|---|')
         for r in rm:
             if r.get('error') and not r.get('steps'):
-                p(f"| {r['target']} | {r.get('direction')} | {r.get('guard')} | - | error: {r['error'][:200]} | - | - | - | - | - |")
+                p(f"| {r['target']} | {r.get('direction')} | {r.get('guard')} | - | error: {r['error'][:200]} | - | - | - | - | - | - | - |")
             for x in r.get('steps', []):
                 txt = state(x, str(x.get('result')))
                 if 'alive_10s_later' in x and x['alive_10s_later']:
                     txt += ', alive 10 s later'
                 ms = x.get('ms')
                 per = round(ms / x['sizeMb'], 1) if ms and x.get('result') == 'ok' else '-'
-                p(f"| {r['target']} | {x['direction']} | {x['guard']} | {x['sizeMb']} | {txt} | {ms} | {per} | {fails_txt(x.get('fails'))} | "
-                  f"{roles(x.get('peak_private_mb'))} | {roles(x.get('peak_commit_mb'))} |")
+                hu = x.get('host_ui') or {}
+                host = f"{hu.get('max_ms')} / {hu.get('blocked_s')}" if hu else '-'
+                p(f"| {r['target']} | {x['direction']} | {x['guard']} | {x['sizeMb']} | {txt} | {ms} | {per} | {host} | {x.get('page_gap_max_ms', '-')} | "
+                  f"{fails_txt(x.get('fails'))} | {roles(x.get('peak_private_mb'))} | {roles(x.get('peak_commit_mb'))} |")
         p('')
     for r in rows:
         if r.get('test') != 'degraded':

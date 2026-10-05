@@ -2,7 +2,8 @@
 # How long a window's UI thread is unavailable: sends WM_NULL with SendMessageTimeout every 20 ms to the largest visible
 # top-level window of a process and records the round trips. On the desktop build that window belongs to the thread
 # wry runs IPC and custom-protocol handlers on. Runs in its own process so the harness's threads cannot skew it.
-# Started by bench.py; prints one JSON line after a line on stdin (or EOF).
+# Started by bench.py; prints "ready" once it pings (or gave up finding the window), then one JSON line after a line on
+# stdin (or EOF).
 # usage: python hostping.py <pid>
 import ctypes, json, sys, threading, time
 from ctypes import wintypes
@@ -50,6 +51,7 @@ def main():
             time.sleep(0.2)
     lat, stalls, timeouts, err = [], [], 0, None
     res = ctypes.c_size_t()
+    print('ready', flush=True)  # bench.py waits for this before starting what it measures
     start = time.time()
     while hwnd and not stop.is_set():
         t = time.perf_counter()
