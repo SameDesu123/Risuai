@@ -6,7 +6,7 @@
 # web build on the same Chromium engine. Each result is one JSON object per line in $BENCH_WORK/results.jsonl
 # (also printed with a "RESULT " prefix).
 #
-# usage: python bench.py suite <stream|tick|micro> [--quick]
+# usage: python bench.py suite <stream|tick|micro|probe> [--quick]
 #        python bench.py summarize
 #
 # Every desktop run starts from an empty profile by deleting the app's data folders (%APPDATA% and %LOCALAPPDATA%
@@ -1048,6 +1048,9 @@ def suite(name, quick=False):
                 for db, tag in (('db_small.bin', 'small'), ('db_big.bin', 'big')):
                     for t in usable(pw, 'web', 'patched', 'shipped'):
                         run_test(pw, 'tick', t_tick, t, db, tag, ticks=4 if quick else 12)
+            elif name == 'probe':
+                for t in targets('patched', 'unpatched', 'shipped'):
+                    probe(pw, t)
             elif name == 'micro':
                 for t in usable(pw, 'patched', 'shipped'):
                     run_test(pw, 'micro', t_micro, t, 'db_simple.bin', 'micro', bench_assets=True, quick=quick)

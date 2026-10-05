@@ -12,6 +12,14 @@ on:
         description: 'Fewer iterations (smoke test)'
         type: boolean
         default: false
+      bundle_run:
+        description: 'Reuse the bench-bundle of this earlier run ID instead of building (empty: build)'
+        type: string
+        default: ''
+      suites:
+        description: 'JSON list of suites to run (stream, tick, micro, probe)'
+        type: string
+        default: '["stream","tick","micro"]'
   push:
     branches:
       - 'ccr-36f42df4-t3jv95'
@@ -21,6 +29,7 @@ on:
 
 permissions:
   contents: read
+  actions: read  # download-artifact from an earlier run (bundle_run)
 
 concurrency:
   group: windows-perf-bench-${{ github.ref }}
@@ -28,6 +37,7 @@ concurrency:
 
 jobs:
   build:
+    if: ${{ !inputs.bundle_run }}
     runs-on: windows-latest
     timeout-minutes: 120
     env:
@@ -114,12 +124,13 @@ jobs:
 
   bench:
     needs: build
+    if: ${{ !cancelled() && (needs.build.result == 'success' || needs.build.result == 'skipped') }}
     runs-on: windows-latest
     timeout-minutes: 150
     strategy:
       fail-fast: false
       matrix:
-        suite: [stream, tick, micro]
+        suite: ${{ fromJSON(inputs.suites || '["stream","tick","micro"]') }}
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
@@ -128,9 +139,17 @@ jobs:
       - name: install harness dependencies
         run: pip install playwright psutil pillow
       - uses: actions/download-artifact@v4
+        if: ${{ !inputs.bundle_run }}
         with:
           name: bench-bundle
           path: out
+      - uses: actions/download-artifact@v4
+        if: ${{ inputs.bundle_run }}
+        with:
+          name: bench-bundle
+          path: out
+          run-id: ${{ inputs.bundle_run }}
+          github-token: ${{ github.token }}
 
       - name: prepare machine
         shell: pwsh
