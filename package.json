@@ -80,7 +80,7 @@
     "postcss-selector-parser": "^7.1.1",
     "pyodide": "^0.27.7",
     "rfdc": "^1.4.1",
-    "sortablejs": "^1.15.6",
+    "sortablejs": "^1.15.7",
     "streamsaver": "^2.0.6",
     "sucrase": "^3.35.1",
     "sv": "^0.11.0",
