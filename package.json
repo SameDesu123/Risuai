@@ -49,7 +49,7 @@
     "@types/markdown-it": "^14.1.2",
     "@types/trusted-types": "^2.0.7",
     "acorn": "^8.15.0",
-    "acorn-walk": "^8.3.4",
+    "acorn-walk": "^8.3.5",
     "astring": "^1.9.0",
     "buffer": "^6.0.3",
     "codemirror": "^6.0.2",
