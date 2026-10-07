@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { AccessibilityIcon, ActivityIcon, PackageIcon, BotIcon, BoxIcon, CodeIcon, ContactIcon, LanguagesIcon, MonitorIcon, Sailboat, UserIcon, CircleXIcon, KeyboardIcon, SparkleIcon } from "@lucide/svelte";
+    import { AccessibilityIcon, ActivityIcon, PackageIcon, BotIcon, BoxIcon, CodeIcon, ContactIcon, LanguagesIcon, MonitorIcon, Sailboat, UserIcon, CircleXIcon, KeyboardIcon, SparkleIcon, CloudIcon } from "@lucide/svelte";
     import { language } from "src/lang";
     import DisplaySettings from "./Pages/DisplaySettings.svelte";
     import UserSettings from "./Pages/UserSettings.svelte";
@@ -23,6 +23,8 @@
   import { isLite } from "src/ts/lite";
     import HotkeySettings from "./Pages/HotkeySettings.svelte";
     import PluginDefinedIcon from "../Others/PluginDefinedIcon.svelte";
+    import CloudflaredSettings from "./Pages/CloudflaredSettings.svelte";
+    import { isNodeServer } from "src/ts/platform";
 
     let openLoreList = $state(false)
     if(window.innerWidth >= 900 && $SettingsMenuIndex === -1 && !$MobileGUI){
@@ -133,6 +135,17 @@
                         <KeyboardIcon />
                         <span>{language.hotkey}</span>
                     </button>
+                {#if isNodeServer}
+                    <button class="flex gap-2 items-center hover:text-textcolor"
+                        class:text-textcolor={$SettingsMenuIndex === 17}
+                        class:text-textcolor2={$SettingsMenuIndex !== 17}
+                        onclick={() => {
+                        $SettingsMenuIndex = 17
+                    }}>
+                        <CloudIcon />
+                        <span>{language.cloudflaredTunnel}</span>
+                    </button>
+                {/if}
                 {#if !$isLite}
                     <button class="flex gap-2 items-center hover:text-textcolor"
                         class:text-textcolor={$SettingsMenuIndex === 6}
@@ -229,6 +242,8 @@
                         }}/>
                     {:else if $SettingsMenuIndex === 15 && window.innerWidth >= 768}
                         <HotkeySettings/>
+                    {:else if $SettingsMenuIndex === 17 && isNodeServer}
+                        <CloudflaredSettings/>
                     {:else if $SettingsMenuIndex === 77}
                         <ThanksPage/>
                     {/if}

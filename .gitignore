@@ -10,6 +10,7 @@ package-lock.json
 node_modules
 dist/
 save/
+server/node/bin/
 dist-web/
 dist-ssr
 *.local

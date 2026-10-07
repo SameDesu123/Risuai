@@ -21,6 +21,7 @@ const https = require('https');
 const sslPath = path.join(process.cwd(), 'server/node/ssl/certificate');
 const hubURL = 'https://sv.risuai.xyz'; 
 const openid = require('openid-client');
+const cloudflared = require('./cloudflared.cjs');
 
 let password = ''
 let knownPublicKeysHashes = []
@@ -1397,6 +1398,12 @@ app.get('/api/oauth_callback', async (req, res) => {
             
 })
 
+cloudflared.registerCloudflaredRoutes(app, {
+    checkAuth,
+    limiter: authenticatedRouteLimiter,
+    savePath,
+});
+
 async function getHttpsOptions() {
 
     const keyPath = path.join(sslPath, 'server.key');
@@ -1510,6 +1517,7 @@ async function startServer() {
             server.listen(port, () => {
                 console.log("[Server] HTTPS server is running.");
                 console.log(`[Server] https://localhost:${port}/`);
+                cloudflared.onServerListening({ port, https: true });
             });
         } else {
             // HTTP
@@ -1518,6 +1526,7 @@ async function startServer() {
             server.listen(port, () => {
                 console.log("[Server] HTTP server is running.");
                 console.log(`[Server] http://localhost:${port}/`);
+                cloudflared.onServerListening({ port, https: false });
             });
         }
     } catch (error) {
