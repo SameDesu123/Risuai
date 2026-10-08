@@ -1702,8 +1702,8 @@ export const languageEnglish = {
     // Model Grid
     modelGridCouldNotLoad: "Could not load model list. Check your API key.",
     gridModelSlotModel: "Model for this slot",
-    gridModelUseGlobal: "Same as global",
-    gridModelUseGlobalDesc: "Leave blank to use the global model setting of this provider.",
+    gridModelSameAsMain: "Same as main model",
+    gridModelSameAsMainDesc: "Leave blank to use the same model as the main model.",
     modelGridNoModelsMatch: (q: string) => `No models match "${q}"`,
     modelGridContext: (n: string) => `Context: ${n}`,
     loadouts: "Loadouts",

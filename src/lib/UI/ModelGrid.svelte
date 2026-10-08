@@ -55,7 +55,7 @@
             return showSubBadge ? `${selectedLabelOverride} [SUB]` : selectedLabelOverride
         }
         const pinned = pinnedItems.find(p => p.id === value)
-        if (pinned) return `${pinned.providerName} / ${pinned.displayName}`
+        if (pinned) return pinned.providerName ? `${pinned.providerName} / ${pinned.displayName}` : pinned.displayName
         const item = items.find(m => m.id === value)
         if (item) {
             const label = `${item.providerName} / ${item.displayName}`

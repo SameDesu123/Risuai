@@ -7,6 +7,7 @@
     import { getNanoGPTModels, getNanoGPTSubscriptionModels, toModelGridItem as ngToGridItem } from 'src/ts/model/nanogpt'
     import { getOllamaModels } from 'src/ts/model/ollama'
     import {
+        getGridModel,
         isGridModelProvider,
         setGridModelOverride,
         type GridModelSlot,
@@ -21,22 +22,30 @@
 
     let { modelSlot, provider }: Props = $props()
 
-    let useGlobalItem: ModelGridPinnedItem = $derived({ id: '', displayName: language.gridModelUseGlobal, providerName: 'Risu' })
+    // An empty override falls back to the provider's shared selection, which is
+    // what the main model uses. Only offer that choice when it really is the main model.
+    let sameAsMain = $derived(DBState.db.aiModel === provider)
+    let sameAsMainItems: ModelGridPinnedItem[] = $derived(
+        sameAsMain ? [{ id: '', displayName: language.gridModelSameAsMain, providerName: '' }] : []
+    )
     let openrouterPinnedItems: ModelGridPinnedItem[] = $derived([
-        useGlobalItem,
+        ...sameAsMainItems,
         { id: 'risu/free',       displayName: 'Free Auto',       providerName: 'Risu'       },
         { id: 'openrouter/auto', displayName: 'OpenRouter Auto', providerName: 'OpenRouter' },
     ])
 
     let override = $derived(isGridModelProvider(provider) ? DBState.db.gridModelOverrides?.[modelSlot]?.[provider] : undefined)
+    let sharedId = $derived(isGridModelProvider(provider) ? getGridModel(DBState.db, provider).id : '')
 
     function setValue(id: string, name?: string) {
         if (!isGridModelProvider(provider)) return
         setGridModelOverride(DBState.db, modelSlot, provider, id, name)
     }
 
-    const getId = () => override?.id ?? ''
+    // Without the "same as main" choice, show the model the slot actually sends
+    const getId = () => override?.id || (sameAsMain ? '' : sharedId)
     const setId = (id: string) => setValue(id)
+    const getTextId = () => override?.id ?? ''
 </script>
 
 {#if isGridModelProvider(provider)}
@@ -50,29 +59,29 @@
             {/await}
         {:else if provider === 'nanogpt'}
             {#await DBState.db.nanogptUseSubscriptionEndpoint ? getNanoGPTSubscriptionModels(DBState.db.nanogptKey) : getNanoGPTModels()}
-                <ModelGrid bind:value={getId, setId} pinnedItems={[useGlobalItem]} loading={true} />
+                <ModelGrid bind:value={getId, setId} pinnedItems={sameAsMainItems} loading={true} />
             {:then m}
                 <ModelGrid
                     bind:value={getId, setId}
                     items={(m ?? []).map(ngToGridItem)}
-                    pinnedItems={[useGlobalItem]}
+                    pinnedItems={sameAsMainItems}
                     showSubBadge={DBState.db.nanogptUseSubscriptionEndpoint}
                     onselect={(id, name) => setValue(id, name)}
                 />
             {/await}
         {:else if provider === 'ollama-cloud' && DBState.db.ollamaInputMode === 'list'}
             {#await getOllamaModels(DBState.db.ollamaURL, 'cloud', DBState.db.ollamaApiKey)}
-                <ModelGrid bind:value={getId, setId} pinnedItems={[useGlobalItem]} loading={true} />
+                <ModelGrid bind:value={getId, setId} pinnedItems={sameAsMainItems} loading={true} />
             {:then cloudModels}
                 <ModelGrid
                     bind:value={getId, setId}
                     items={cloudModels ?? []}
-                    pinnedItems={[useGlobalItem]}
+                    pinnedItems={sameAsMainItems}
                     onselect={(id, name) => setValue(id, name)}
                 />
             {/await}
         {:else}
-            <TextInput marginBottom={false} size={"sm"} bind:value={getId, setId} placeholder={language.gridModelUseGlobalDesc} />
+            <TextInput marginBottom={false} size={"sm"} bind:value={getTextId, setId} placeholder={sameAsMain ? language.gridModelSameAsMainDesc : sharedId} />
         {/if}
     </div>
 {/if}
