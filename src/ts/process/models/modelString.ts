@@ -1,24 +1,24 @@
 import { getDatabase } from "src/ts/storage/database.svelte";
+import { getGridModel } from "src/ts/model/gridModels";
 
 export function getGenerationModelString(name?:string){
     const db = getDatabase()
-    switch (name ?? db.aiModel){
+    const model = name ?? db.aiModel
+    switch (model){
         case 'reverse_proxy':
             return 'custom-' + (db.reverseProxyOobaMode ? 'ooba' : db.customProxyRequestModel)
         case 'openrouter':
-            return 'openrouter-' + db.openrouterRequestModel
+            return 'openrouter-' + getGridModel(db, 'openrouter').id
         case 'nanogpt': {
-            const modelLabel = db.nanogptRequestModelName || db.nanogptRequestModel
-            return 'NanoGPT ' + modelLabel + (db.nanogptUseSubscriptionEndpoint ? ' [SUB]' : '')
+            const selected = getGridModel(db, 'nanogpt')
+            return 'NanoGPT ' + (selected.name || selected.id) + (db.nanogptUseSubscriptionEndpoint ? ' [SUB]' : '')
         }
         case 'ollama-hosted':
         case 'ollama-cloud': {
-            const modelLabel = name === 'ollama-cloud'
-                ? db.ollamaCloudModelName || db.ollamaCloudModel
-                : db.ollamaModelName || db.ollamaModel
-            return `Ollama ${name === 'ollama-cloud' ? 'Cloud' : 'Local'} ${modelLabel}`
+            const selected = getGridModel(db, model)
+            return `Ollama ${model === 'ollama-cloud' ? 'Cloud' : 'Local'} ${selected.name || selected.id}`
         }
         default:
-            return name ?? db.aiModel
+            return model
     }
 }

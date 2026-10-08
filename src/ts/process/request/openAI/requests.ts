@@ -18,6 +18,7 @@ import { applyAdditionalParameters, applyParameters, getAdditionalParameters } f
 import type { Contents, OpenAIChatExtra, OpenAIChatFull, ToolCall } from './types'
 
 import { getLocalNetworkRequestOptions, type LocalNetworkRequestOptions } from './shared'
+import { resolveGridModelId } from '../../../model/gridModels'
 export { requestOpenAIResponseAPI, __testResponsesAPI } from './responses'
 function isOfficialOpenAIURL(url: string): boolean {
     try {
@@ -204,18 +205,17 @@ export async function requestOpenAI(arg:RequestDataArgumentExtended):Promise<req
 
 
     let requestModel = (aiModel === 'reverse_proxy' || aiModel === 'openrouter') ? db.proxyRequestModel : aiModel
-    const gridModelOverride = arg.gridModelOverride?.id
-    let openrouterRequestModel = gridModelOverride || db.openrouterRequestModel
-    const nanogptRequestModel = gridModelOverride || db.nanogptRequestModel
+    // Model picked from the OpenRouter/NanoGPT grid, empty for other providers
+    let gridModelId = resolveGridModelId(db, aiModel, arg.gridModelOverride)
     if(aiModel === 'reverse_proxy'){
         requestModel = db.customProxyRequestModel
     }
     if(aiModel === 'nanogpt'){
-        requestModel = nanogptRequestModel
+        requestModel = gridModelId
     }
 
-    if(aiModel === 'openrouter' && openrouterRequestModel === 'risu/free'){
-        openrouterRequestModel = await getFreeOpenRouterModels()
+    if(aiModel === 'openrouter' && gridModelId === 'risu/free'){
+        gridModelId = await getFreeOpenRouterModels()
     }
 
     if(arg.modelInfo.flags.includes(LLMFlags.DeveloperRole)){
@@ -351,8 +351,7 @@ export async function requestOpenAI(arg:RequestDataArgumentExtended):Promise<req
     let body:{
         [key:string]:any
     } = ({
-        model: aiModel === 'nanogpt' ? nanogptRequestModel :
-            aiModel === 'openrouter' ? openrouterRequestModel :
+        model: (aiModel === 'nanogpt' || aiModel === 'openrouter') ? gridModelId :
             requestModel ===  'gpt35' ? 'gpt-3.5-turbo'
             : requestModel ===  'gpt35_0613' ? 'gpt-3.5-turbo-0613'
             : requestModel ===  'gpt35_16k' ? 'gpt-3.5-turbo-16k'

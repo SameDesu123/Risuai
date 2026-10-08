@@ -20,7 +20,7 @@ import { requestClaude } from './anthropic';
 import { requestGoogleCloudVertex } from './google';
 import { requestOpenAI, requestOpenAILegacyInstruct, requestOpenAIResponseAPI } from "./openAI/requests";
 import { applyAdditionalParameters, applyParameters, getAdditionalParameters, type ModelModeExtended } from './shared';
-import { getGridModelOverride, resolveGridModelSlot, type GridModelOverride } from 'src/ts/model/gridModelOverride';
+import { getGridModelOverride, resolveGridModelId, resolveGridModelSlot, type GridModelSelection } from 'src/ts/model/gridModels';
 
 export type ToolCall = {
     name: string;
@@ -64,7 +64,7 @@ export interface RequestDataArgumentExtended extends requestDataArgument{
     key?:string
     additionalOutput?:string
     saveSignatures?:boolean
-    gridModelOverride?:GridModelOverride|null
+    gridModelOverride?:GridModelSelection|null
 }
 
 export type requestDataResponse = {
@@ -1123,7 +1123,7 @@ async function requestOllama(arg:RequestDataArgumentExtended):Promise<requestDat
     const db = getDatabase()
     const isCloud = arg.aiModel === 'ollama-cloud'
     const requestFormat = isCloud ? db.ollamaRequestFormat : LLMFormat.Ollama
-    const ollamaModel = arg.gridModelOverride?.id || (isCloud ? db.ollamaCloudModel : db.ollamaModel)
+    const ollamaModel = resolveGridModelId(db, arg.aiModel, arg.gridModelOverride)
     const ollamaThinkMode = getOllamaThinkMode(db.ollamaThinkingMode)
 
     if(isCloud && requestFormat === LLMFormat.OpenAICompatible){

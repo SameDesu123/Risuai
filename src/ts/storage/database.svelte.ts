@@ -374,10 +374,7 @@ export function setDatabase(data:Database){
     data.ooba ??= safeStructuredClone(defaultOoba)
     data.ainconfig ??= safeStructuredClone(defaultAIN)
     data.openrouterKey ??= ''
-    data.openrouterRequestModel ??= 'openai/gpt-3.5-turbo'
     data.nanogptKey ??= ''
-    data.nanogptRequestModel ??= ''
-    data.nanogptRequestModelName ??= ''
     data.nanogptProvider ??= ''
     data.nanogptSubscriptionState ??= ''
     data.nanogptUseSubscriptionEndpoint ??= false
@@ -458,19 +455,13 @@ export function setDatabase(data:Database){
     data.antiClaudeOverload ??= false
     data.maxSupaChunkSize ??= 1200
     data.ollamaURL ??= ''
-    data.ollamaModel ??= ''
     data.ollamaModelSource ??= data.aiModel === 'ollama-cloud' || data.subModel === 'ollama-cloud' ? 'cloud' : 'local'
     data.ollamaInputMode ??= 'manual'
     data.ollamaRequestFormat ??= LLMFormat.Ollama
     data.ollamaApiKey ??= ''
-    data.ollamaModelName ??= ''
-    data.ollamaCloudModel ??= ''
-    data.ollamaCloudModelName ??= ''
     data.ollamaThinkingMode ??= 'auto'
-    if ((data.aiModel === 'ollama-cloud' || data.subModel === 'ollama-cloud') && !data.ollamaCloudModel) {
-        data.ollamaCloudModel = data.ollamaModel
-        data.ollamaCloudModelName = data.ollamaModelName
-    }
+    // Legacy per-provider fields (openrouterRequestModel etc.) are left in place for older app versions
+    data.gridModels ??= migrateLegacyGridModels(data as Database & LegacyGridModelFields)
     data.autoContinueChat ??= false
     data.autoContinueMinTokens ??= 0
     data.repetition_penalty ??= 1
@@ -954,12 +945,9 @@ export interface Database{
     ooba:OobaSettings
     ainconfig: AINsettings
     personaPrompt:string
-    openrouterRequestModel:string
     openrouterKey:string
     openrouterMiddleOut:boolean
     nanogptKey:string
-    nanogptRequestModel:string
-    nanogptRequestModelName:string
     nanogptProvider:string
     nanogptSubscriptionState:string
     nanogptUseSubscriptionEndpoint:boolean
@@ -1040,14 +1028,10 @@ export interface Database{
     antiClaudeOverload:boolean
     maxSupaChunkSize:number
     ollamaURL:string
-    ollamaModel:string
     ollamaModelSource:'local'|'cloud'
     ollamaInputMode:'list'|'manual'
     ollamaRequestFormat:LLMFormat
     ollamaApiKey:string
-    ollamaModelName:string
-    ollamaCloudModel:string
-    ollamaCloudModelName:string
     ollamaThinkingMode:'auto'|'off'|'on'|'low'|'medium'|'high'
     autoContinueChat:boolean
     autoContinueMinTokens:number
@@ -1191,6 +1175,7 @@ export interface Database{
         otherAx: string
     }
     doNotChangeSeperateModels:boolean
+    gridModels:GridModelSelections
     gridModelOverrides:GridModelOverrides
     modelTools: string[]
     hotkeys:Hotkey[]
@@ -1625,7 +1610,9 @@ export interface botPreset{
     promptPreprocess: boolean,
     bias: [string, number][]
     proxyRequestModel?:string
+    /** @deprecated legacy presets only; use gridModels.openrouter */
     openrouterRequestModel?:string
+    gridModels?:Pick<GridModelSelections, 'openrouter'>
     proxyKey?:string
     ooba: OobaSettings
     ainconfig: AINsettings
@@ -2092,7 +2079,7 @@ export function saveCurrentPreset(){
         ooba: safeStructuredClone(db.ooba),
         ainconfig: safeStructuredClone(db.ainconfig),
         proxyRequestModel: db.proxyRequestModel,
-        openrouterRequestModel: db.openrouterRequestModel,
+        gridModels: { openrouter: safeStructuredClone(getGridModel(db, 'openrouter')) },
         NAISettings: safeStructuredClone(db.NAIsettings),
         promptTemplate: normalizePromptTemplate(db.promptTemplate) ?? null,
         NAIadventure: db.NAIadventure ?? false,
@@ -2204,7 +2191,10 @@ export function setPreset(db:Database, newPres: botPreset){
     db.proxyKey = newPres.proxyKey ?? db.proxyKey
     db.ooba = safeStructuredClone(newPres.ooba ?? db.ooba)
     db.ainconfig = safeStructuredClone(newPres.ainconfig ?? db.ainconfig)
-    db.openrouterRequestModel = newPres.openrouterRequestModel ?? db.openrouterRequestModel
+    const presetOpenRouterModel = newPres.gridModels?.openrouter?.id ?? newPres.openrouterRequestModel
+    if(presetOpenRouterModel){
+        setGridModel(db, 'openrouter', presetOpenRouterModel, newPres.gridModels?.openrouter?.name)
+    }
     db.proxyRequestModel = newPres.proxyRequestModel ?? db.proxyRequestModel
     db.NAIsettings = newPres.NAISettings ?? db.NAIsettings
     db.autoSuggestPrompt = newPres.autoSuggestPrompt ?? db.autoSuggestPrompt
@@ -2321,7 +2311,7 @@ import type { SerializableHypaV3Data } from '../process/memory/hypav3';
 import { defaultHotkeys, type Hotkey } from '../defaulthotkeys';
 import type { OpenAIChat } from '../process/index.svelte';
 import type { Loadout } from '../loadout';
-import type { GridModelOverrides } from '../model/gridModelOverride';
+import { getGridModel, migrateLegacyGridModels, setGridModel, type GridModelOverrides, type GridModelSelections, type LegacyGridModelFields } from '../model/gridModels';
 
 export async function downloadPreset(id:number, type:'json'|'risupreset'|'return' = 'json'){
     saveCurrentPreset()

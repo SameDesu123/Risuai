@@ -19,7 +19,7 @@ const mocks = vi.hoisted(() => ({
         newOAIHandle: true,
         nanogptKey: 'nanogpt-key',
         nanogptProvider: '',
-        nanogptRequestModel: 'nanogpt-model',
+        gridModels: { nanogpt: { id: 'nanogpt-model' } } as Record<string, { id: string }>,
         nanogptUseSubscriptionEndpoint: false,
         openAIKey: 'openai-key',
         proxyKey: 'proxy-key',
@@ -188,7 +188,7 @@ describe('OpenAI Responses API helpers', () => {
         mocks.db.modelTools = []
         mocks.db.customModels = []
         mocks.db.nanogptProvider = ''
-        mocks.db.nanogptRequestModel = 'nanogpt-model'
+        mocks.db.gridModels = { nanogpt: { id: 'nanogpt-model' } }
         mocks.db.nanogptUseSubscriptionEndpoint = false
         mocks.db.reasoningEffort = 2
         mocks.db.simplifiedToolUse = false

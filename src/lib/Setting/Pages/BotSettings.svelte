@@ -43,25 +43,36 @@
     import SeparateParametersSection from "./SeparateParametersSection.svelte";
     import AuxModelSelectors from './Model/AuxModelSelectors.svelte'
     import GridModelOverridePicker from "src/lib/UI/GridModelOverridePicker.svelte";
+    import { clearGridModelEverywhere, getGridModel, setGridModel } from "src/ts/model/gridModels";
     
     const openrouterPinnedItems: ModelGridPinnedItem[] = [
         { id: 'risu/free',       displayName: 'Free Auto',       providerName: 'Risu'       },
         { id: 'openrouter/auto', displayName: 'OpenRouter Auto', providerName: 'OpenRouter' },
     ]
 
+    // Bindings for the global model of each grid provider; setting an id clears its display name
+    const getOpenRouterModel = () => getGridModel(DBState.db, 'openrouter').id
+    const setOpenRouterModel = (id: string) => setGridModel(DBState.db, 'openrouter', id)
+    const getNanoGPTModel = () => getGridModel(DBState.db, 'nanogpt').id
+    const setNanoGPTModel = (id: string) => setGridModel(DBState.db, 'nanogpt', id)
+    const getOllamaLocalModel = () => getGridModel(DBState.db, 'ollama-hosted').id
+    const setOllamaLocalModel = (id: string) => setGridModel(DBState.db, 'ollama-hosted', id)
+    const getOllamaCloudModel = () => getGridModel(DBState.db, 'ollama-cloud').id
+    const setOllamaCloudModel = (id: string) => setGridModel(DBState.db, 'ollama-cloud', id)
+
     // Reset model selection and display name when subscription mode toggles
     let _nanogptSubModeInitialized = false
     $effect(() => {
         const _sub = DBState.db.nanogptUseSubscriptionEndpoint
         if (!_nanogptSubModeInitialized) { _nanogptSubModeInitialized = true; return }
-        DBState.db.nanogptRequestModel = ''
-        DBState.db.nanogptRequestModelName = ''
+        // Model ids differ between the regular and subscription endpoints
+        clearGridModelEverywhere(DBState.db, 'nanogpt')
     })
 
     // Reset provider selection to Auto when the model or subscription mode changes
     let _nanogptProviderResetInitialized = false
     $effect(() => {
-        const _model = DBState.db.nanogptRequestModel
+        const _model = DBState.db.gridModels?.nanogpt?.id
         const _sub   = DBState.db.nanogptUseSubscriptionEndpoint
         if (!_nanogptProviderResetInitialized) { _nanogptProviderResetInitialized = true; return }
         DBState.db.nanogptProvider = ''
@@ -75,8 +86,7 @@
         if (!_key) {
             DBState.db.nanogptUseSubscriptionEndpoint = false
             DBState.db.nanogptSubscriptionState = ''
-            DBState.db.nanogptRequestModel = ''
-            DBState.db.nanogptRequestModelName = ''
+            clearGridModelEverywhere(DBState.db, 'nanogpt')
             DBState.db.nanogptProvider = ''
         }
     })
@@ -115,13 +125,12 @@
     let submenu = $state(DBState.db.useLegacyGUI ? -1 : 0)
     let modelInfo = $derived(getModelInfo(DBState.db.aiModel))
     let subModelInfo = $derived(getModelInfo(DBState.db.subModel))
-    let nanogptInputMode = $state<'list' | 'manual'>(DBState.db.nanogptRequestModel && !DBState.db.nanogptRequestModelName ? 'manual' : 'list')
+    let nanogptInputMode = $state<'list' | 'manual'>(DBState.db.gridModels?.nanogpt?.id && !DBState.db.gridModels?.nanogpt?.name ? 'manual' : 'list')
     // svelte-ignore state_referenced_locally
     let prevNanogptInputMode = nanogptInputMode;
     $effect(() => {
         if (nanogptInputMode !== prevNanogptInputMode) {
-            DBState.db.nanogptRequestModel = '';
-            DBState.db.nanogptRequestModelName = '';
+            setGridModel(DBState.db, 'nanogpt', '');
             prevNanogptInputMode = nanogptInputMode;
         }
     });
@@ -277,18 +286,18 @@
         />
 
         {#if DBState.db.ollamaInputMode === 'manual'}
-            <TextInput marginBottom={false} size={"sm"} bind:value={DBState.db.ollamaCloudModel} placeholder="Model" oninput={() => DBState.db.ollamaCloudModelName = ''} />
+            <TextInput marginBottom={false} size={"sm"} bind:value={getOllamaCloudModel, setOllamaCloudModel} placeholder="Model" />
         {:else}
             {#await getOllamaModels(DBState.db.ollamaURL, 'cloud', DBState.db.ollamaApiKey)}
-                <ModelGrid bind:value={DBState.db.ollamaCloudModel} loading={true} />
+                <ModelGrid bind:value={getOllamaCloudModel, setOllamaCloudModel} loading={true} />
             {:then cloudModels}
                 <ModelGrid
-                    bind:value={DBState.db.ollamaCloudModel}
+                    bind:value={getOllamaCloudModel, setOllamaCloudModel}
                     items={cloudModels ?? []}
-                    selectedLabelOverride={DBState.db.ollamaCloudModel ? `Cloud / ${DBState.db.ollamaCloudModelName || DBState.db.ollamaCloudModel}` : undefined}
-                    onselect={(_id, name) => {
+                    selectedLabelOverride={getOllamaCloudModel() ? `Cloud / ${DBState.db.gridModels?.['ollama-cloud']?.name || getOllamaCloudModel()}` : undefined}
+                    onselect={(id, name) => {
                         DBState.db.ollamaModelSource = 'cloud'
-                        DBState.db.ollamaCloudModelName = name
+                        setGridModel(DBState.db, 'ollama-cloud', id, name)
                     }}
                 />
             {/await}
@@ -322,7 +331,7 @@
 
         {#if usesOllamaLocal}
         <span class="text-textcolor mt-4">Ollama Model</span>
-        <TextInput marginBottom={false} size={"sm"} bind:value={DBState.db.ollamaModel} placeholder="Model" oninput={() => { DBState.db.ollamaModelSource = 'local'; DBState.db.ollamaModelName = '' }} />
+        <TextInput marginBottom={false} size={"sm"} bind:value={getOllamaLocalModel, setOllamaLocalModel} placeholder="Model" oninput={() => { DBState.db.ollamaModelSource = 'local' }} />
         {/if}
 
         {#if usesOllamaLocal || (usesOllamaCloud && DBState.db.ollamaRequestFormat === LLMFormat.Ollama)}
@@ -372,22 +381,22 @@
         />
 
         {#if nanogptInputMode === 'manual'}
-            <TextInput marginBottom={false} size={"sm"} bind:value={DBState.db.nanogptRequestModel} placeholder={(language as any).nanoGPTManualModelSelect || "Manual Model Select"} oninput={() => DBState.db.nanogptRequestModelName = ''}/>
+            <TextInput marginBottom={false} size={"sm"} bind:value={getNanoGPTModel, setNanoGPTModel} placeholder={(language as any).nanoGPTManualModelSelect || "Manual Model Select"}/>
         {:else}
             {#await Promise.all([getNanoGPTModels(), getNanoGPTSubscriptionModels(DBState.db.nanogptKey)])}
-                <ModelGrid bind:value={DBState.db.nanogptRequestModel} loading={true} />
+                <ModelGrid bind:value={getNanoGPTModel, setNanoGPTModel} loading={true} />
             {:then [regular, sub]}
                 <ModelGrid
-                    bind:value={DBState.db.nanogptRequestModel}
+                    bind:value={getNanoGPTModel, setNanoGPTModel}
                     items={DBState.db.nanogptUseSubscriptionEndpoint ? (sub ?? []).map(ngToGridItem) : (regular ?? []).map(ngToGridItem)}
                     showSubBadge={DBState.db.nanogptUseSubscriptionEndpoint}
-                    selectedLabelOverride={DBState.db.nanogptRequestModel && !DBState.db.nanogptRequestModelName ? DBState.db.nanogptRequestModel : undefined}
-                    onselect={(_id, name) => { DBState.db.nanogptRequestModelName = name }}
+                    selectedLabelOverride={getNanoGPTModel() && !DBState.db.gridModels?.nanogpt?.name ? getNanoGPTModel() : undefined}
+                    onselect={(id, name) => { setGridModel(DBState.db, 'nanogpt', id, name) }}
                 />
                 {#if !DBState.db.nanogptUseSubscriptionEndpoint}
                     <NanoGPTProviderPicker
                         apiKey={DBState.db.nanogptKey}
-                        modelId={DBState.db.nanogptRequestModel}
+                        modelId={getNanoGPTModel()}
                         bind:value={DBState.db.nanogptProvider}
                     />
                 {/if}
@@ -400,9 +409,9 @@
 
         <span class="text-textcolor mt-4">OpenRouter {language.model}</span>
         {#await getOpenRouterModels()}
-            <ModelGrid bind:value={DBState.db.openrouterRequestModel} pinnedItems={openrouterPinnedItems} loading={true} />
+            <ModelGrid bind:value={getOpenRouterModel, setOpenRouterModel} pinnedItems={openrouterPinnedItems} loading={true} />
         {:then m}
-            <ModelGrid bind:value={DBState.db.openrouterRequestModel} items={(m ?? []).map(orToGridItem)} pinnedItems={openrouterPinnedItems} />
+            <ModelGrid bind:value={getOpenRouterModel, setOpenRouterModel} items={(m ?? []).map(orToGridItem)} pinnedItems={openrouterPinnedItems} />
         {/await}
     {/if}
     {#if DBState.db.aiModel === 'openrouter' || DBState.db.aiModel === 'reverse_proxy'}

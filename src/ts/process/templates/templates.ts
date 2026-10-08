@@ -82,7 +82,7 @@ export const prebuiltPresets = {
       "top_k": 140
     },
     "proxyRequestModel": "",
-    "openrouterRequestModel": "openai/gpt-3.5-turbo",
+    "gridModels": { "openrouter": { "id": "openai/gpt-3.5-turbo" } },
     "NAISettings": {
       "topK": 15,
       "topP": 0.85,
@@ -299,7 +299,7 @@ export const prebuiltPresets = {
       "top_k": 140
     },
     "proxyRequestModel": "claude-sonnet-4-6",
-    "openrouterRequestModel": "anthropic/claude-2",
+    "gridModels": { "openrouter": { "id": "anthropic/claude-2" } },
     "NAISettings": {
       "topK": 12,
       "topP": 0.85,

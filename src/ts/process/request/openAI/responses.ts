@@ -13,6 +13,7 @@ import { applyAdditionalParameters, applyParameters, getAdditionalParameters, is
 
 import type { OpenAIChatExtra, ResponseFunctionCallItem, ResponseInputItem, ResponseItem, ResponseOutputItem } from './types'
 import { getLocalNetworkRequestOptions, type LocalNetworkRequestOptions } from './shared'
+import { resolveGridModelId } from '../../../model/gridModels'
 
 function responseTextContentToString(content:any):string{
     if(typeof content === 'string'){
@@ -250,7 +251,7 @@ function buildResponsesHeaders(arg:RequestDataArgumentExtended, risuIdentify:boo
 function getResponsesRequestModel(arg:RequestDataArgumentExtended):string{
     const db = getDatabase()
     if(arg.aiModel === 'nanogpt'){
-        return arg.gridModelOverride?.id || db.nanogptRequestModel || arg.modelInfo.internalID || arg.aiModel
+        return resolveGridModelId(db, arg.aiModel, arg.gridModelOverride) || arg.modelInfo.internalID || arg.aiModel
     }
     return arg.modelInfo.internalID || arg.aiModel || 'gpt-4.1'
 }

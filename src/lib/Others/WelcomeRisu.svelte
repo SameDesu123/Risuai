@@ -8,6 +8,7 @@
     import { updateTextThemeAndCSS } from "src/ts/gui/colorscheme";
     import { alertError } from "src/ts/alert";
     import Airisu from '../../etc/Airisu.webp'
+    import { setGridModel } from 'src/ts/model/gridModels'
 
     const airisuStyle = `background: url("${Airisu}");background-size: cover;`
     let step = $state(0)
@@ -113,7 +114,7 @@
                 if(provider === 'openrouter'){
                     DBState.db.aiModel = 'openrouter'
                     DBState.db.subModel = 'openrouter'
-                    DBState.db.openrouterRequestModel = 'risu/free'
+                    setGridModel(DBState.db, 'openrouter', 'risu/free')
                 }
                 if(provider === 'horde'){
                     DBState.db.aiModel = 'horde:::auto'

@@ -10,7 +10,7 @@
         isGridModelProvider,
         setGridModelOverride,
         type GridModelSlot,
-    } from 'src/ts/model/gridModelOverride'
+    } from 'src/ts/model/gridModels'
     import type { ModelGridPinnedItem } from 'src/ts/model/modelGrid'
 
     interface Props {
