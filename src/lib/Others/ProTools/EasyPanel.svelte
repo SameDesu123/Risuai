@@ -13,6 +13,7 @@
     import { XIcon } from "@lucide/svelte";
     import TextInput from "src/lib/UI/GUI/TextInput.svelte";
     import CustomModelsSettings from "src/lib/Setting/Pages/Advanced/CustomModelsSettings.svelte";
+    import GridModelOverridePicker from "src/lib/UI/GridModelOverridePicker.svelte";
 
     let selectedOption = $state('models');
     let selectedParameterOption = $state('memory')
@@ -83,23 +84,28 @@
                 <div class="col-span-1">
                     <span class="text-textcolor">{language.submodel}</span>
                     <ModelList bind:value={DBState.db.subModel} blankable excludesPrefix="plugin"/>
+                    <GridModelOverridePicker modelSlot="submodel" provider={DBState.db.subModel} />
                 </div>
                 <div class="col-span-1">
                     <span class="text-textcolor">{language.longTermMemory}</span>
                     <ModelList bind:value={DBState.db.seperateModels.memory} blankable excludesPrefix="plugin"/>
+                    <GridModelOverridePicker modelSlot="memory" provider={DBState.db.seperateModels.memory} />
                 </div>
                 <div class="col-span-1">
                     <span class="text-textcolor">{language.translator}</span>
                     <ModelList bind:value={DBState.db.seperateModels.translate} blankable excludesPrefix="plugin"/>
+                    <GridModelOverridePicker modelSlot="translate" provider={DBState.db.seperateModels.translate} />
                 </div>
                 <div class="col-span-1">
                     <span class="text-textcolor">{language.emotionImage}</span>
                     <ModelList bind:value={DBState.db.seperateModels.emotion} blankable excludesPrefix="plugin"/>
+                    <GridModelOverridePicker modelSlot="emotion" provider={DBState.db.seperateModels.emotion} />
                 </div>
 
                 <div class="col-span-1">
                     <span class="text-textcolor">{language.others}</span>
                     <ModelList bind:value={DBState.db.seperateModels.otherAx} blankable excludesPrefix="plugin"/>
+                    <GridModelOverridePicker modelSlot="otherAx" provider={DBState.db.seperateModels.otherAx} />
                 </div>
                 
             </div>

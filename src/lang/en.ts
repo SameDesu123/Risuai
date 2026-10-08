@@ -1701,6 +1701,9 @@ export const languageEnglish = {
     nanoGPTUseSubscriptionEndpoint: "Use subscription endpoint & models",
     // Model Grid
     modelGridCouldNotLoad: "Could not load model list. Check your API key.",
+    gridModelSlotModel: "Model for this slot",
+    gridModelUseGlobal: "Same as global",
+    gridModelUseGlobalDesc: "Leave blank to use the global model setting of this provider.",
     modelGridNoModelsMatch: (q: string) => `No models match "${q}"`,
     modelGridContext: (n: string) => `Context: ${n}`,
     loadouts: "Loadouts",

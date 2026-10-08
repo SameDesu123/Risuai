@@ -204,15 +204,17 @@ export async function requestOpenAI(arg:RequestDataArgumentExtended):Promise<req
 
 
     let requestModel = (aiModel === 'reverse_proxy' || aiModel === 'openrouter') ? db.proxyRequestModel : aiModel
-    let openrouterRequestModel = db.openrouterRequestModel
+    const gridModelOverride = arg.gridModelOverride?.id
+    let openrouterRequestModel = gridModelOverride || db.openrouterRequestModel
+    const nanogptRequestModel = gridModelOverride || db.nanogptRequestModel
     if(aiModel === 'reverse_proxy'){
         requestModel = db.customProxyRequestModel
     }
     if(aiModel === 'nanogpt'){
-        requestModel = db.nanogptRequestModel
+        requestModel = nanogptRequestModel
     }
 
-    if(aiModel === 'openrouter' && db.openrouterRequestModel === 'risu/free'){
+    if(aiModel === 'openrouter' && openrouterRequestModel === 'risu/free'){
         openrouterRequestModel = await getFreeOpenRouterModels()
     }
 
@@ -349,7 +351,7 @@ export async function requestOpenAI(arg:RequestDataArgumentExtended):Promise<req
     let body:{
         [key:string]:any
     } = ({
-        model: aiModel === 'nanogpt' ? db.nanogptRequestModel :
+        model: aiModel === 'nanogpt' ? nanogptRequestModel :
             aiModel === 'openrouter' ? openrouterRequestModel :
             requestModel ===  'gpt35' ? 'gpt-3.5-turbo'
             : requestModel ===  'gpt35_0613' ? 'gpt-3.5-turbo-0613'
@@ -556,7 +558,8 @@ export async function requestOpenAI(arg:RequestDataArgumentExtended):Promise<req
         headers["X-Title"] = 'RisuAI'
         headers["HTTP-Referer"] = 'https://risuai.xyz'
     }
-    if(aiModel === 'nanogpt' && db.nanogptProvider){
+    // The provider pick belongs to the global NanoGPT model, so it is skipped for per-slot models
+    if(aiModel === 'nanogpt' && db.nanogptProvider && !arg.gridModelOverride){
         headers["X-Provider"] = db.nanogptProvider
     }
     if(risuIdentify){

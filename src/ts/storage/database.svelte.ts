@@ -625,6 +625,7 @@ export function setDatabase(data:Database){
         model: data.hypaCustomSettings?.model ?? ""     
     }
     data.doNotChangeSeperateModels ??= false
+    data.gridModelOverrides ??= {}
     data.modelTools ??= []
     data.enableScrollToActiveChar ??= true
     
@@ -1190,6 +1191,7 @@ export interface Database{
         otherAx: string
     }
     doNotChangeSeperateModels:boolean
+    gridModelOverrides:GridModelOverrides
     modelTools: string[]
     hotkeys:Hotkey[]
     fallbackModels: {
@@ -1690,6 +1692,7 @@ export interface botPreset{
         translate: string
         otherAx: string
     }
+    gridModelOverrides?:GridModelOverrides
     modelTools?:string[]
     fallbackModels?: {
         memory: string[],
@@ -2135,6 +2138,7 @@ export function saveCurrentPreset(){
         outputImageModal: db.outputImageModal ?? false,
         seperateModelsForAxModels: db.doNotChangeSeperateModels ? false : db.seperateModelsForAxModels ?? false,
         seperateModels: db.doNotChangeSeperateModels ? null : safeStructuredClone(db.seperateModels),
+        gridModelOverrides: safeStructuredClone(db.gridModelOverrides ?? {}),
         modelTools: safeStructuredClone(db.modelTools),
         fallbackModels: safeStructuredClone(db.fallbackModels),
         fallbackWhenBlankResponse: db.fallbackWhenBlankResponse ?? false,
@@ -2266,6 +2270,15 @@ export function setPreset(db:Database, newPres: botPreset){
             otherAx: ''
         }
     }
+    {
+        // The submodel slot follows the preset like subModel does; aux slots follow seperateModels
+        const presetOverrides = safeStructuredClone(newPres.gridModelOverrides ?? {})
+        const kept = db.doNotChangeSeperateModels ? db.gridModelOverrides ?? {} : presetOverrides
+        db.gridModelOverrides = {
+            ...kept,
+            submodel: presetOverrides.submodel ?? {}
+        }
+    }
     if(!db.doNotChangeFallbackModels){
         db.fallbackModels = safeStructuredClone(newPres.fallbackModels) ?? {
             memory: [],
@@ -2308,6 +2321,7 @@ import type { SerializableHypaV3Data } from '../process/memory/hypav3';
 import { defaultHotkeys, type Hotkey } from '../defaulthotkeys';
 import type { OpenAIChat } from '../process/index.svelte';
 import type { Loadout } from '../loadout';
+import type { GridModelOverrides } from '../model/gridModelOverride';
 
 export async function downloadPreset(id:number, type:'json'|'risupreset'|'return' = 'json'){
     saveCurrentPreset()

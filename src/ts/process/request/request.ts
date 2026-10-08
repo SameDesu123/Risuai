@@ -20,6 +20,7 @@ import { requestClaude } from './anthropic';
 import { requestGoogleCloudVertex } from './google';
 import { requestOpenAI, requestOpenAILegacyInstruct, requestOpenAIResponseAPI } from "./openAI/requests";
 import { applyAdditionalParameters, applyParameters, getAdditionalParameters, type ModelModeExtended } from './shared';
+import { getGridModelOverride, resolveGridModelSlot, type GridModelOverride } from 'src/ts/model/gridModelOverride';
 
 export type ToolCall = {
     name: string;
@@ -63,6 +64,7 @@ export interface RequestDataArgumentExtended extends requestDataArgument{
     key?:string
     additionalOutput?:string
     saveSignatures?:boolean
+    gridModelOverride?:GridModelOverride|null
 }
 
 export type requestDataResponse = {
@@ -445,6 +447,7 @@ export async function requestChatDataMain(arg:requestDataArgument, model:ModelMo
             targ.modelInfo = getModelInfo(targ.aiModel)
         }
     }
+    targ.gridModelOverride = getGridModelOverride(db, resolveGridModelSlot(db, model, arg.staticModel), targ.aiModel)
 
     if(arg.blockPlugins && targ.modelInfo.id.startsWith('pluginmodel:::')){
         return {
@@ -1120,7 +1123,7 @@ async function requestOllama(arg:RequestDataArgumentExtended):Promise<requestDat
     const db = getDatabase()
     const isCloud = arg.aiModel === 'ollama-cloud'
     const requestFormat = isCloud ? db.ollamaRequestFormat : LLMFormat.Ollama
-    const ollamaModel = isCloud ? db.ollamaCloudModel : db.ollamaModel
+    const ollamaModel = arg.gridModelOverride?.id || (isCloud ? db.ollamaCloudModel : db.ollamaModel)
     const ollamaThinkMode = getOllamaThinkMode(db.ollamaThinkingMode)
 
     if(isCloud && requestFormat === LLMFormat.OpenAICompatible){

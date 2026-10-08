@@ -1524,6 +1524,9 @@ export const languageKorean = {
     "nanoGPTProviderCacheRead": "캐시 읽기",
     "nanoGPTUseSubscriptionEndpoint": "구독 엔드포인트 및 모델 사용",
     "modelGridCouldNotLoad": "모델 목록을 불러올 수 없습니다. API 키를 확인해 주세요.",
+    "gridModelSlotModel": "이 슬롯의 모델",
+    "gridModelUseGlobal": "전역 설정 사용",
+    "gridModelUseGlobalDesc": "비워 두면 이 프로바이더의 전역 모델 설정을 사용합니다.",
     "modelGridNoModelsMatch": (q: string) => `"${q}"에 맞는 모델이 없습니다`,
     "modelGridContext": (n: string) => `컨텍스트: ${n}`,
 

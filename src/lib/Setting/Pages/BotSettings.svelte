@@ -42,6 +42,7 @@
     import { allBasicParameterItems } from "src/ts/setting/botSettingsParamsData";
     import SeparateParametersSection from "./SeparateParametersSection.svelte";
     import AuxModelSelectors from './Model/AuxModelSelectors.svelte'
+    import GridModelOverridePicker from "src/lib/UI/GridModelOverridePicker.svelte";
     
     const openrouterPinnedItems: ModelGridPinnedItem[] = [
         { id: 'risu/free',       displayName: 'Free Auto',       providerName: 'Risu'       },
@@ -132,8 +133,13 @@
         }
     });
 
-    let usesOllamaLocal = $derived(DBState.db.aiModel === 'ollama-hosted' || DBState.db.subModel === 'ollama-hosted')
-    let usesOllamaCloud = $derived(DBState.db.aiModel === 'ollama-cloud' || DBState.db.subModel === 'ollama-cloud')
+    // Includes separated aux models, so their provider settings stay reachable
+    function usesModel(id: string): boolean {
+        return DBState.db.aiModel === id || DBState.db.subModel === id
+            || (DBState.db.seperateModelsForAxModels && Object.values(DBState.db.seperateModels ?? {}).includes(id))
+    }
+    let usesOllamaLocal = $derived(usesModel('ollama-hosted'))
+    let usesOllamaCloud = $derived(usesModel('ollama-cloud'))
 </script>
 <h2 class="mb-2 text-2xl font-bold mt-2">{language.chatBot}</h2>
 
@@ -168,6 +174,7 @@
 
     <span class="text-textcolor mt-2">{language.submodel} <Help key="submodel"/></span>
     <ModelList bind:value={DBState.db.subModel}/>
+    <GridModelOverridePicker modelSlot="submodel" provider={DBState.db.subModel} />
 
     {#if modelInfo.provider === LLMProvider.GoogleCloud || subModelInfo.provider === LLMProvider.GoogleCloud}
         <span class="text-textcolor">GoogleAI API Key</span>
@@ -342,7 +349,7 @@
         </SelectInput>
         {/if}
     {/if}
-    {#if DBState.db.aiModel === 'nanogpt' || DBState.db.subModel === 'nanogpt'}
+    {#if usesModel('nanogpt')}
         <span class="text-textcolor mt-4">NanoGPT {language.apiKey}</span>
         <TextInput hideText={DBState.db.hideApiKey} marginBottom={false} size={"sm"} bind:value={DBState.db.nanogptKey} />
 
@@ -387,7 +394,7 @@
             {/await}
         {/if}
     {/if}
-    {#if DBState.db.aiModel === 'openrouter' || DBState.db.subModel === 'openrouter'}
+    {#if usesModel('openrouter')}
         <span class="text-textcolor mt-4">OpenRouter {language.apiKey}</span>
         <TextInput hideText={DBState.db.hideApiKey} marginBottom={false} size={"sm"} bind:value={DBState.db.openrouterKey} />
 

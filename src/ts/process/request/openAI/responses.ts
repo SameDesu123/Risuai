@@ -240,7 +240,7 @@ function buildResponsesHeaders(arg:RequestDataArgumentExtended, risuIdentify:boo
     if(risuIdentify){
         headers["X-Proxy-Risu"] = 'RisuAI'
     }
-    if(aiModel === 'nanogpt' && db.nanogptProvider && !db.nanogptUseSubscriptionEndpoint){
+    if(aiModel === 'nanogpt' && db.nanogptProvider && !db.nanogptUseSubscriptionEndpoint && !arg.gridModelOverride){
         headers["X-Provider"] = db.nanogptProvider
     }
 
@@ -250,7 +250,7 @@ function buildResponsesHeaders(arg:RequestDataArgumentExtended, risuIdentify:boo
 function getResponsesRequestModel(arg:RequestDataArgumentExtended):string{
     const db = getDatabase()
     if(arg.aiModel === 'nanogpt'){
-        return db.nanogptRequestModel || arg.modelInfo.internalID || arg.aiModel
+        return arg.gridModelOverride?.id || db.nanogptRequestModel || arg.modelInfo.internalID || arg.aiModel
     }
     return arg.modelInfo.internalID || arg.aiModel || 'gpt-4.1'
 }
