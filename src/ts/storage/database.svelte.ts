@@ -15,6 +15,7 @@ import { type HypaV3Settings, type HypaV3Preset, createHypaV3Preset } from '../p
 import { normalizeTranslatorPresetState, type TranslatorPreset } from '../translator/presets'
 import { isTauri, isNodeServer } from "src/ts/platform"
 import { safeStructuredClone } from '../polyfill';
+import { generateAttributionSecret, isValidAttributionSecret, type CardAttribution } from '../cardAttribution';
 import {
     DEFAULT_CHAT_LOAD_ADDITIONAL_PAGES,
     DEFAULT_CHAT_LOAD_INITIAL_PAGES,
@@ -608,6 +609,10 @@ export function setDatabase(data:Database){
     data.returnCSSError ??= true
     data.realmDirectOpen ??= false
     data.blockedRealmCreators ??= []
+    if(!isValidAttributionSecret(data.cardAttributionSecret)){
+        data.cardAttributionSecret = generateAttributionSecret()
+    }
+    data.cardAttributionName ??= ''
     data.checkCorruption ??= false
     data.toggleConfirmRecommendedPreset ??= false
     data.useExperimentalGoogleTranslator ??= false
@@ -972,6 +977,10 @@ export interface Database{
     NAIsettings:NAISettings
     hideRealm:boolean
     blockedRealmCreators:BlockedRealmCreator[]
+    /** Local secret identifying this user as a card creator. Never written into cards; only its hash is. */
+    cardAttributionSecret?:string
+    /** Display name written into exported cards as Original/Fork Creator. */
+    cardAttributionName?:string
     colorScheme:ColorScheme
     colorSchemeName:string
     customColorScheme:ColorScheme
@@ -1488,6 +1497,8 @@ export interface character{
     vits?: OnnxModelFiles
     realmId?:string
     imported?:boolean
+    /** Original/Fork creator history. Read-only in the UI; see cardAttribution.ts. */
+    attribution?:CardAttribution
     trashTime?:number
     nickname?:string
     source?:string[]

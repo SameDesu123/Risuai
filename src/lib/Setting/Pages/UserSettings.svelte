@@ -15,6 +15,10 @@
     import { exportAsDataset } from "src/ts/storage/exportAsDataset";
     import { loginToSionyw, testSionywLogin } from "src/ts/sionyw";
     import { cleanColdStorage } from "src/ts/process/coldstorage.svelte";
+    import TextInput from "src/lib/UI/GUI/TextInput.svelte";
+    import { alertError, alertInput, alertNormal } from "src/ts/alert";
+    import { attributionFingerprint, isValidAttributionSecret, peekLocalAttributionIdentity } from "src/ts/cardAttribution";
+    const attributionIdentity = $derived(peekLocalAttributionIdentity(DBState.db))
     let openIframe = $state(false)
     let openIframeURL = $state('')
     let popup:Window = null
@@ -185,6 +189,41 @@
     {/if}
     <!-- <Button onclick={autoServerBackup}>Auto Server Backups</Button> -->
 
+</div>
+<div class="bg-darkbg p-3 rounded-md mb-2 flex flex-col items-start mt-2">
+    <h1 class="text-2xl font-black min-w-0 mb-2">{language.cardAttribution}</h1>
+    <span class="text-textcolor">{language.cardAttributionName}</span>
+    <span class="text-textcolor2 text-xs mb-1">{language.cardAttributionNameDesc}</span>
+    <TextInput size="sm" autocomplete="off" fullwidth bind:value={DBState.db.cardAttributionName} />
+    {#if attributionIdentity}
+        <span class="text-textcolor mt-2">{language.cardAttributionFingerprint}</span>
+        <span class="text-textcolor2 font-mono text-sm">{attributionFingerprint(attributionIdentity.id)}</span>
+    {/if}
+    <div class="flex gap-2 mt-2">
+        <Button size="sm" onclick={async () => {
+            if(!isValidAttributionSecret(DBState.db.cardAttributionSecret)){
+                return
+            }
+            await navigator.clipboard.writeText(DBState.db.cardAttributionSecret)
+            alertNormal(language.cardAttributionKeyCopied)
+        }}>{language.cardAttributionCopyKey}</Button>
+        <Button size="sm" onclick={async () => {
+            const key = (await alertInput(language.cardAttributionRestorePrompt))?.trim().toLowerCase()
+            if(!key){
+                return
+            }
+            if(!isValidAttributionSecret(key)){
+                alertError(language.cardAttributionInvalidKey)
+                return
+            }
+            if(key === DBState.db.cardAttributionSecret){
+                return
+            }
+            if(await alertConfirm(language.cardAttributionRestoreConfirm)){
+                DBState.db.cardAttributionSecret = key
+            }
+        }}>{language.cardAttributionRestoreKey}</Button>
+    </div>
 </div>
 {#if openIframe}
     <div class="fixed top-0 left-0 bg-black/50 w-full h-full flex justify-center items-center">

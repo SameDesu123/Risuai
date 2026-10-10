@@ -20,6 +20,7 @@ import { readFile } from "@tauri-apps/plugin-fs"
 import { onOpenUrl } from '@tauri-apps/plugin-deep-link';
 import { AccountStorage } from "./storage/accountStorage"
 import { filterBlockedRealmCards, isRealmCreatorBlocked } from "./realmBlocking"
+import { attributionForExport, attributionFromImport, getLocalAttributionIdentity } from "./cardAttribution"
 
 
 const EXTERNAL_HUB_URL = 'https://sv.risuai.xyz';
@@ -666,7 +667,7 @@ function convertOffSpecCards(charaData:OldTavernChar|CharacterCardV2Risu, imgp:s
         loreExt = a.loreExt
     }
 
-    return {
+    const char:character = {
         name: data.name ?? 'unknown name',
         firstMessage: data.first_mes ?? 'unknown first message',
         desc:  data.description ?? '',
@@ -703,9 +704,12 @@ function convertOffSpecCards(charaData:OldTavernChar|CharacterCardV2Risu, imgp:s
         additionalText: '',
         loreExt: loreExt,
         loreSettings: loresettings,
-        chatFolders: []
-        
+        chatFolders: [],
+        imported: true,
     }
+    // Old-format cards carry no attribution record: original creator is unknown.
+    char.attribution = attributionFromImport(undefined, char)
+    return char
 }
 
 export async function exportChar(charaID:number):Promise<string> {
@@ -1047,6 +1051,8 @@ async function importCharacterCardSpec<T extends boolean = false>(card:Character
         char.modification_date = card.data.modification_date ?? 0
     }
 
+    char.attribution = attributionFromImport(data?.extensions?.risuai?.attribution, char)
+
     if(returnValue){
         return char as any
     }
@@ -1245,7 +1251,8 @@ function createBaseV2(char:character) {
                     lorePlus: char.lorePlus,
                     inlayViewScreen: char.inlayViewScreen,
                     newGenData: char.newGenData,
-                    vits: {}
+                    vits: {},
+                    attribution: attributionForExport(char, getLocalAttributionIdentity(getDatabase()))
                 },
                 depth_prompt: char.depth_prompt
             }
@@ -1675,7 +1682,8 @@ export function createBaseV3(char:character){
                     prebuiltAssetStyle: char.prebuiltAssetStyle ?? '',
                     toggles: char.customModuleToggle ?? '',
                     moduleNamespace: char.moduleNamespace,
-                    hideChatIcon: char.hideChatIcon ?? false
+                    hideChatIcon: char.hideChatIcon ?? false,
+                    attribution: attributionForExport(char, getLocalAttributionIdentity(getDatabase()))
                 },
                 depth_prompt: char.depth_prompt
             },
@@ -1982,6 +1990,7 @@ type CharacterCardV2Risu = {
                     emotionInstructions: string,
                 },
                 vits?: {[key:string]:string}
+                attribution?: unknown
             }
             depth_prompt?: { depth: number, prompt: string }
         }

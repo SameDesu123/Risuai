@@ -40,6 +40,8 @@ export async function exportModule(module:RisuModule, arg:{
     const alertEnd = arg.alertEnd ?? true
 
     const char = convertModuleToCharacter(module)
+    // Modules are outside card attribution; don't credit the exporter as the original creator.
+    char.imported = true
     if(!char.image){
         const res = await fetch('/none.webp')
         const data = new Uint8Array(await res.arrayBuffer())

@@ -34,6 +34,7 @@
     import SliderInput from "../UI/GUI/SliderInput.svelte";
     import Toggles from "./Toggles.svelte";
     import { convertCharacterToModule } from "src/ts/interchangeability";
+    import CardAttributionDetails from "../Others/CardAttributionDetails.svelte";
 
     let iconRemoveMode = $state(false)
     let viewSubMenu = $state(0)
@@ -1137,6 +1138,11 @@
 
         <span class="text-textcolor">{language.creator}</span>
         <TextInput size="sm" autocomplete="off" bind:value={DBState.db.characters[$selectedCharID].additionalData.creator} />
+
+        <CardAttributionDetails
+            attribution={(DBState.db.characters[$selectedCharID] as character).attribution}
+            imported={(DBState.db.characters[$selectedCharID] as character).imported}
+        />
 
         <span class="text-textcolor">{language.CharVersion}</span>
         <TextInput size="sm" bind:value={DBState.db.characters[$selectedCharID].additionalData.character_version}/>
