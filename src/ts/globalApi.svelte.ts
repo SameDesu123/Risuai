@@ -14,7 +14,7 @@ import { appDataDir, join } from "@tauri-apps/api/path";
 import { get } from "svelte/store";
 import { open } from '@tauri-apps/plugin-shell'
 import streamSaver from 'streamsaver';
-import { setDatabase, type Database, defaultSdDataFunc, getDatabase, appVer, getCurrentCharacter, type character, type groupChat } from "./storage/database.svelte";
+import { setDatabase, type Database, defaultSdDataFunc, getDatabase, appVer, getCurrentCharacter, type character, type groupChat, appSubVer } from "./storage/database.svelte";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { checkRisuUpdate } from "./update";
 import { MobileGUI, botMakerMode, selectedCharID, loadedStore, DBState, LoadingStatusState, selIdState, ReloadGUIPointer, bodyIntercepterStore } from "./stores.svelte";
@@ -1078,28 +1078,28 @@ export function replaceDbResources(db: Database, replacer: { [key: string]: stri
  */
 export function checkCharOrder() {
     DBState.db.characterOrder = DBState.db.characterOrder ?? []
-    let ordered = []
+    const ordered = new Set<string>()
     for (let i = 0; i < DBState.db.characterOrder.length; i++) {
         const folder = DBState.db.characterOrder[i]
         if (typeof (folder) !== 'string' && folder) {
             for (const f of folder.data) {
-                ordered.push(f)
+                ordered.add(f)
             }
         }
         if (typeof (folder) === 'string') {
-            ordered.push(folder)
+            ordered.add(folder)
         }
     }
 
-    let charIdList: string[] = []
+    const charIdSet = new Set<string>()
 
     for (let i = 0; i < DBState.db.characters.length; i++) {
         const char = DBState.db.characters[i]
         const charId = char.chaId
         if (!char.trashTime) {
-            charIdList.push(charId)
+            charIdSet.add(charId)
         }
-        if (!ordered.includes(charId)) {
+        if (!ordered.has(charId)) {
             if (charId !== '§temp' && charId !== '§playground' && !char.trashTime) {
                 DBState.db.characterOrder.push(charId)
             }
@@ -1122,7 +1122,7 @@ export function checkCharOrder() {
             }
             for (let i2 = 0; i2 < data.data.length; i2++) {
                 const data2 = data.data[i2]
-                if (!charIdList.includes(data2)) {
+                if (!charIdSet.has(data2)) {
                     data.data.splice(i2, 1)
                     i2--;
                 }
@@ -1130,7 +1130,7 @@ export function checkCharOrder() {
             DBState.db.characterOrder[i] = data
         }
         else {
-            if (!charIdList.includes(data)) {
+            if (!charIdSet.has(data)) {
                 DBState.db.characterOrder.splice(i, 1)
                 i--;
             }
@@ -2181,8 +2181,11 @@ export function getLanguageCodes() {
 
 export function getVersionString(): string {
     let versionString = appVer
-    if (window.location.hostname === 'nightly.risuai.xyz') {
-        versionString = 'Nightly Build'
+    if(appSubVer) {
+        versionString += '-' + appSubVer
+    }
+    if (import.meta.env.VITE_RISU_NIGHTLY_BUILD === 'TRUE') {
+        versionString = 'Nightly Build ' + import.meta.env.VITE_RISU_BUILD_TIME
     }
     if (window.location.hostname === 'stable.risuai.xyz') {
         versionString += ' (Stable)';

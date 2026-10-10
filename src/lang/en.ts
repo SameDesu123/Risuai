@@ -278,7 +278,7 @@ export const languageEnglish = {
             "- **Playground**: Embedding testing in Playground",
         keepSessionAlive:
             "Keeps the tab active and prevents the session from expiring due to inactivity in browsers. This may require refresh to take effect.\n\n" +
-            "- **Via Sound**: Plays a silent audio at regular intervals to keep the session alive. This method is known as most compatible and effective in most browsers.\n",
+            "- **Via Sound**: Loops an inaudible low-frequency tone to keep the session alive. This method is known as most compatible and effective in most browsers. On Android, a media notification is shown while it is active, and other music apps may pause.\n",
         reSummarizationPrompt:
             "The prompt used when merging multiple selected summaries into one via bulk edit. If blank, the default prompt is used.",
         hypaV3MemoryTokensRatio:
@@ -959,6 +959,7 @@ export const languageEnglish = {
     account: "Account",
     remove: "Remove",
     able: "Able",
+    close: "Close",
     assetWidth: "Asset Images Max Width",
     animationSpeed: "Animation Speed",
     screenshot: "Screenshot",
@@ -1015,6 +1016,14 @@ export const languageEnglish = {
     ifRandom: "If random",
     ifValue: "If Value",
     hideRealm: "Hide RisuRealm",
+    blockRealmCreator: "Block Creator",
+    blockRealmCreatorConfirm: "Block all RisuRealm content from {{creator}}?",
+    realmCreatorBlocked: "Content from this blocked RisuRealm creator is unavailable.",
+    realmCreatorBlockedSuccess: "Creator blocked.",
+    manageBlockedRealmCreators: "Manage Blocked Creators",
+    blockedRealmCreators: "Blocked RisuRealm Creators",
+    noBlockedRealmCreators: "No RisuRealm creators are blocked.",
+    unblockRealmCreator: "Unblock",
     hideAllImages: "Hide All Images",
     popularityLevel: "{} Popularity",
     colorScheme: "Color Scheme",
@@ -1602,6 +1611,8 @@ export const languageEnglish = {
     mainDomAccessConsent: "Plugin {} is requesting to access the main Document, which may expose sensitive information. Do you want to allow this?",
     replacerPermissionConsent: "Plugin {} is requesting permission to replace content in the chat, which may be used to manipulate the conversation. Do you want to allow this?",
     providerPermissionConsent: "Plugin {} is requesting permission to access the provider, which may allow it to make unauthorized API calls. Do you want to allow this?",
+    providerPermissionDenied: "Plugin provider permission denied by user.",
+    inlayPermissionConsent: "Plugin {} is requesting permission to access the inlay, which may allow it to read, write or edit the inlay content. Do you want to allow this?",
     sendChatConsent: "Plugin {} is requesting permission to send chat messages on your behalf, which will trigger AI responses. Do you want to allow this?",
     pluginV2Warning: "Plugin V2 and V2.1 is considered unsafe and will stop working in future versions. **Please do not use these versions of plugins.**. If you are the developer of this plugin, please update to V3 as soon as possible.",
     createFolderOnBranch: "Create Folder on Branch",
@@ -1707,6 +1718,7 @@ export const languageEnglish = {
     convertToModule: "Convert to Module",
     skipSavingAssetsOnWebSync: "Skip Saving Assets on Web Sync",
     applyAdditionalParamsToAll: "Apply Additional Parameters to All Models",
+    localToggles: "Local Toggles",
 } satisfies I18nTranslation;
 
 type I18nTranslationFunction = (...args: any[]) => string;
