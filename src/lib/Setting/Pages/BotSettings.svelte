@@ -3,6 +3,7 @@
     import Check from "src/lib/UI/GUI/CheckInput.svelte";
     import { language } from "src/lang";
     import Help from "src/lib/Others/Help.svelte";
+    import { untrack } from "svelte";
     
     import { DBState } from 'src/ts/stores.svelte';
     import { customProviderStore } from "src/ts/plugins/plugins.svelte";
@@ -65,8 +66,9 @@
     $effect(() => {
         const _sub = DBState.db.nanogptUseSubscriptionEndpoint
         if (!_nanogptSubModeInitialized) { _nanogptSubModeInitialized = true; return }
-        // Model ids differ between the regular and subscription endpoints
-        clearGridModelEverywhere(DBState.db, 'nanogpt')
+        // Model ids differ between the regular and subscription endpoints.
+        // Untracked so the overrides it reads don't re-trigger this effect.
+        untrack(() => clearGridModelEverywhere(DBState.db, 'nanogpt'))
     })
 
     // Reset provider selection to Auto when the model or subscription mode changes
@@ -149,6 +151,8 @@
     }
     let usesOllamaLocal = $derived(usesModel('ollama-hosted'))
     let usesOllamaCloud = $derived(usesModel('ollama-cloud'))
+    // Streaming options only concern the main and sub models
+    let chatUsesOllamaCloud = $derived(DBState.db.aiModel === 'ollama-cloud' || DBState.db.subModel === 'ollama-cloud')
 </script>
 <h2 class="mb-2 text-2xl font-bold mt-2">{language.chatBot}</h2>
 
@@ -438,7 +442,7 @@
     {/if}
 
     <div class="py-2 flex flex-col gap-2 mb-4">
-        {#if !usesOllamaCloud && (modelInfo.flags.includes(LLMFlags.hasStreaming) || subModelInfo.flags.includes(LLMFlags.hasStreaming))}
+        {#if !chatUsesOllamaCloud && (modelInfo.flags.includes(LLMFlags.hasStreaming) || subModelInfo.flags.includes(LLMFlags.hasStreaming))}
             <Check bind:check={DBState.db.useStreaming} name={`Response ${language.streaming}`}/>
             
             {#if DBState.db.useStreaming && (modelInfo.flags.includes(LLMFlags.geminiThinking) || subModelInfo.flags.includes(LLMFlags.geminiThinking))}
