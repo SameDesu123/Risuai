@@ -57,7 +57,61 @@ export interface AttributionContentSource {
     creatorNotes?: string
     alternateGreetings?: string[]
     backgroundHTML?: string
-    globalLore?: { content?: string }[]
+    globalLore?: AttributionLoreSource[]
+    loreSettings?: {
+        scanDepth?: number
+        tokenBudget?: number
+        recursiveScanning?: boolean
+        fullWordMatching?: boolean
+    }
+}
+
+/** Lorebook fields that survive v2, v3 and charx export/import unchanged. */
+export interface AttributionLoreSource {
+    key?: string
+    secondkey?: string
+    content?: string
+    comment?: string
+    mode?: string
+    insertorder?: number
+    alwaysActive?: boolean
+    selective?: boolean
+    activationPercent?: number | null
+    extentions?: { risu_case_sensitive?: boolean } & Record<string, unknown>
+}
+
+// Export splits keys on ',' and trims; import joins with ', '. Hash the split form so both sides agree.
+function splitKeys(keys: string | undefined): string[] {
+    return (keys ?? '').split(',').map((k) => k.trim())
+}
+
+function loreHashPayload(l: AttributionLoreSource) {
+    return {
+        key: splitKeys(l?.key),
+        // Secondary keys are only exported for selective entries.
+        secondkey: l?.selective ? splitKeys(l?.secondkey) : [],
+        content: l?.content ?? '',
+        comment: l?.comment ?? '',
+        mode: l?.mode ?? 'normal',
+        insertorder: l?.insertorder ?? null,
+        alwaysActive: !!l?.alwaysActive,
+        selective: !!l?.selective,
+        caseSensitive: !!l?.extentions?.risu_case_sensitive,
+        activationPercent: l?.activationPercent ?? null,
+    }
+}
+
+function loreSettingsHashPayload(s: AttributionContentSource['loreSettings']) {
+    // Import only restores lore settings when all three core values are present.
+    if (!s || s.scanDepth == null || s.tokenBudget == null || s.recursiveScanning == null) {
+        return null
+    }
+    return {
+        scanDepth: s.scanDepth,
+        tokenBudget: s.tokenBudget,
+        recursiveScanning: s.recursiveScanning,
+        fullWordMatching: !!s.fullWordMatching,
+    }
 }
 
 function toHex(bytes: Uint8Array): string {
@@ -121,7 +175,8 @@ export function computeContentHash(char: AttributionContentSource): string {
         creatorNotes: char.creatorNotes ?? '',
         alternateGreetings: char.alternateGreetings ?? [],
         backgroundHTML: char.backgroundHTML ?? '',
-        lore: (char.globalLore ?? []).map((l) => l?.content ?? ''),
+        lore: (char.globalLore ?? []).map(loreHashPayload),
+        loreSettings: loreSettingsHashPayload(char.loreSettings),
     }))
 }
 
@@ -201,10 +256,14 @@ function seal(attr: Omit<CardAttribution, 'integrity' | 'signature'>): CardAttri
 
 /**
  * Builds the record to keep on a freshly imported character.
- * `raw` is whatever the card carried (or undefined), `char` is the imported character.
+ * `raw` is whatever the card carried (or undefined), `char` is the character exactly as imported.
+ * `baseline` is the same character after the automatic migrations Risuai applies later
+ * (e.g. lorebook format updates). The record is verified against `char`, but `baseline`
+ * becomes the reference for detecting user edits, so a migration alone never counts as a fork.
  */
-export function attributionFromImport(raw: unknown, char: AttributionContentSource): CardAttribution {
-    const contentHash = computeContentHash(char)
+export function attributionFromImport(raw: unknown, char: AttributionContentSource, baseline: AttributionContentSource = char): CardAttribution {
+    const importedHash = computeContentHash(char)
+    const contentHash = baseline === char ? importedHash : computeContentHash(baseline)
     if (raw === undefined || raw === null) {
         return seal({ version: ATTRIBUTION_VERSION, original: null, forks: [], contentHash, unverified: false })
     }
@@ -213,7 +272,7 @@ export function attributionFromImport(raw: unknown, char: AttributionContentSour
         // A record was present but malformed: original creator is unknown and we remember that it looked tampered.
         return seal({ version: ATTRIBUTION_VERSION, original: null, forks: [], contentHash, unverified: true })
     }
-    const matches = parsed.contentHash === contentHash && computeIntegrity(parsed) === parsed.integrity
+    const matches = parsed.contentHash === importedHash && computeIntegrity(parsed) === parsed.integrity
     return seal({
         version: ATTRIBUTION_VERSION,
         original: parsed.original,

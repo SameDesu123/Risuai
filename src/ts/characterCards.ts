@@ -4,7 +4,7 @@ import { defaultSdDataFunc, type character, setDatabase, type customscript, type
 import { checkNullish, decryptBuffer, isKnownUri, selectFileByDom, sleep } from "./util"
 import { language } from "src/lang"
 import { v4 as uuidv4, v4 } from 'uuid';
-import { changeChar, characterFormatUpdate } from "./characters"
+import { changeChar, characterFormatUpdate, updateLorebooks } from "./characters"
 import { AppendableBuffer, BlankWriter, checkCharOrder, downloadFile, forageStorage, loadAsset, LocalWriter, openURL, readImage, saveAsset, VirtualWriter } from "./globalApi.svelte"
 import { isTauri, isNodeServer } from "src/ts/platform"
 import { compressImage, getImageType } from "./media"
@@ -20,7 +20,39 @@ import { readFile } from "@tauri-apps/plugin-fs"
 import { onOpenUrl } from '@tauri-apps/plugin-deep-link';
 import { AccountStorage } from "./storage/accountStorage"
 import { filterBlockedRealmCards, isRealmCreatorBlocked } from "./realmBlocking"
-import { attributionForExport, attributionFromImport, getLocalAttributionIdentity } from "./cardAttribution"
+import { attributionForExport, attributionFromImport, getLocalAttributionIdentity, type CardAttribution } from "./cardAttribution"
+
+/**
+ * Builds the attribution for a freshly imported character. The record is verified against the
+ * character as imported, but the reference for later edit detection is the character after the
+ * lorebook migration that characterFormatUpdate applies on first selection.
+ */
+function importedAttribution(raw: unknown, char: character): CardAttribution {
+    const migrated = {
+        ...char,
+        globalLore: updateLorebooks(safeStructuredClone(char.globalLore ?? [])),
+    }
+    return attributionFromImport(raw, char, migrated)
+}
+
+/**
+ * After a successful export, keep the record that went into the card on the local character,
+ * so later exports build on it (e.g. the original creator stays fixed even if the identity key changes).
+ */
+function persistExportedAttribution(chaId: string, attribution: unknown) {
+    if(!chaId || !attribution || typeof attribution !== 'object'){
+        return
+    }
+    const target = DBState.db.characters.find((c) => c.chaId === chaId)
+    if(!target || target.type === 'group'){
+        return
+    }
+    const next = attribution as CardAttribution
+    if(target.attribution?.integrity === next.integrity){
+        return
+    }
+    target.attribution = safeStructuredClone(next)
+}
 
 
 const EXTERNAL_HUB_URL = 'https://sv.risuai.xyz';
@@ -708,7 +740,7 @@ function convertOffSpecCards(charaData:OldTavernChar|CharacterCardV2Risu, imgp:s
         imported: true,
     }
     // Old-format cards carry no attribution record: original creator is unknown.
-    char.attribution = attributionFromImport(undefined, char)
+    char.attribution = importedAttribution(undefined, char)
     return char
 }
 
@@ -1051,7 +1083,7 @@ async function importCharacterCardSpec<T extends boolean = false>(card:Character
         char.modification_date = card.data.modification_date ?? 0
     }
 
-    char.attribution = attributionFromImport(data?.extensions?.risuai?.attribution, char)
+    char.attribution = importedAttribution(data?.extensions?.risuai?.attribution, char)
 
     if(returnValue){
         return char as any
@@ -1292,6 +1324,7 @@ export async function exportCharacterCard(char:character, type:'png'|'json'|'cha
             const ext = nameExt[type]
             await (localWriter as LocalWriter).init(ext[0], [ext[1]])
         }
+        let exportedAttribution: unknown = undefined
         const writer = (type === 'charx' || type === 'charxJpeg') ? (new CharXWriter(localWriter)) : type === 'json' ? (new BlankWriter()) : (new PngChunk.streamWriter(img, localWriter))
         await writer.init()
         if(writer instanceof CharXWriter && type === 'charxJpeg'){
@@ -1300,6 +1333,7 @@ export async function exportCharacterCard(char:character, type:'png'|'json'|'cha
         let assetIndex = 0
         if(spec === 'v2'){
             const card = await createBaseV2(char)
+            exportedAttribution = card.data.extensions.risuai.attribution
             if(card.data.extensions.risuai.emotions && card.data.extensions.risuai.emotions.length > 0){
                 for(let i=0;i<card.data.extensions.risuai.emotions.length;i++){
                     alertStore.set({
@@ -1351,6 +1385,7 @@ export async function exportCharacterCard(char:character, type:'png'|'json'|'cha
             }
             if(type === 'json'){
                 await downloadFile(`${char.name.replace(/[<>:"/\\|?*\.\,]/g, "")}_export.json`, Buffer.from(JSON.stringify(card, null, 4), 'utf-8'))
+                persistExportedAttribution(char.chaId, exportedAttribution)
                 alertNormal(language.successExport)
                 return
             }
@@ -1365,6 +1400,7 @@ export async function exportCharacterCard(char:character, type:'png'|'json'|'cha
         }
         else if(spec === 'v3'){
             const card = createBaseV3(char)
+            exportedAttribution = card.data.extensions.risuai.attribution
             const seenPaths = new Set<string>()
             if(card.data.assets && card.data.assets.length > 0){
                 for(let i=0;i<card.data.assets.length;i++){
@@ -1507,6 +1543,7 @@ export async function exportCharacterCard(char:character, type:'png'|'json'|'cha
             }
             if(type === 'json'){
                 await downloadFile(`${char.name.replace(/[<>:"/\\|?*\.\,]/g, "")}_export.json`, Buffer.from(JSON.stringify(card, null, 4), 'utf-8'))
+                persistExportedAttribution(char.chaId, exportedAttribution)
                 alertNormal(language.successExport)
                 return
             }
@@ -1539,6 +1576,7 @@ export async function exportCharacterCard(char:character, type:'png'|'json'|'cha
             }
         }
         await writer.end()
+        persistExportedAttribution(char.chaId, exportedAttribution)
 
         await sleep(10)
 

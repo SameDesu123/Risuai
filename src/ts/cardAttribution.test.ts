@@ -3,6 +3,7 @@ import {
     attributionForExport,
     attributionFromImport,
     canonicalJSON,
+    computeContentHash,
     computeIntegrity,
     identityIdFromSecret,
     MAX_FORK_ENTRIES,
@@ -167,5 +168,75 @@ describe("card attribution", () => {
         expect(exported.forks.length).toBe(MAX_FORK_ENTRIES)
         expect(exported.forks[exported.forks.length - 1].name).toBe(`F${MAX_FORK_ENTRIES + 3}`)
         expect(exported.original).toEqual(alice)
+    })
+
+    describe("lorebook settings", () => {
+        const lore = {
+            key: "castle, gate",
+            secondkey: "night",
+            content: "The castle is old.",
+            comment: "Castle",
+            insertorder: 100,
+            alwaysActive: false,
+            selective: true,
+        }
+        const base = { ...makeChar(), globalLore: [lore] }
+
+        it.each([
+            ["activation keys", { key: "castle, gate, tower" }],
+            ["secondary keys", { secondkey: "day" }],
+            ["always active", { alwaysActive: true }],
+            ["insertion order", { insertorder: 50 }],
+            ["selective", { selective: false }],
+            ["name", { comment: "Fortress" }],
+            ["case sensitivity", { extentions: { risu_case_sensitive: true } }],
+        ])("detects a change to %s", (_label, patch) => {
+            expect(computeContentHash({ ...base, globalLore: [{ ...lore, ...patch }] })).not.toBe(computeContentHash(base))
+        })
+
+        it("ignores key spacing that the export/import round trip normalizes", () => {
+            const joined = { ...lore, key: "castle,gate", secondkey: " night " }
+            expect(computeContentHash({ ...base, globalLore: [joined] })).toBe(computeContentHash(base))
+        })
+
+        it("ignores secondary keys on non-selective entries (they are not exported)", () => {
+            const a = { ...lore, selective: false, secondkey: "x" }
+            const b = { ...lore, selective: false, secondkey: "y" }
+            expect(computeContentHash({ ...base, globalLore: [a] })).toBe(computeContentHash({ ...base, globalLore: [b] }))
+        })
+
+        it("detects lore setting changes but ignores incomplete settings that import drops", () => {
+            const withSettings = { ...base, loreSettings: { scanDepth: 5, tokenBudget: 800, recursiveScanning: false } }
+            expect(computeContentHash({ ...withSettings, loreSettings: { ...withSettings.loreSettings, scanDepth: 10 } }))
+                .not.toBe(computeContentHash(withSettings))
+            expect(computeContentHash({ ...base, loreSettings: { scanDepth: 5 } })).toBe(computeContentHash(base))
+        })
+
+        it("records a fork when only lorebook settings were edited", () => {
+            const atBob = transfer(base, attributionForExport(base, alice))
+            const edited = { ...atBob, globalLore: [{ ...lore, alwaysActive: true }] }
+            expect(attributionForExport(edited, bob).forks).toEqual([bob])
+        })
+    })
+
+    describe("migration baseline", () => {
+        const imported = { ...makeChar(), globalLore: [{ key: "a", content: "<char> waves." }] }
+        const migrated = { ...imported, globalLore: [{ key: "a", content: "{{char}} waves." }] }
+
+        it("verifies against the imported form but uses the migrated form as the edit baseline", () => {
+            const exported = JSON.parse(JSON.stringify(attributionForExport(imported, alice)))
+            const attr = attributionFromImport(exported, imported, migrated)
+            expect(attr.unverified).toBe(false)
+            const reExport = attributionForExport({ ...migrated, imported: true, attribution: attr }, bob)
+            expect(reExport.forks).toEqual([])
+            expect(reExport.original).toEqual(alice)
+        })
+
+        it("still records a fork for real edits after migration", () => {
+            const exported = JSON.parse(JSON.stringify(attributionForExport(imported, alice)))
+            const attr = attributionFromImport(exported, imported, migrated)
+            const edited = { ...migrated, desc: "changed", imported: true, attribution: attr }
+            expect(attributionForExport(edited, bob).forks).toEqual([bob])
+        })
     })
 })
