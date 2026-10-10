@@ -1,6 +1,6 @@
 <script lang="ts">
     import { language } from "src/lang";
-    import type { CardAttribution } from "src/ts/cardAttribution";
+    import { attributionFingerprint, type CardAttribution } from "src/ts/cardAttribution";
 
     interface Props {
         attribution?: CardAttribution;
@@ -15,7 +15,9 @@
             return null;
         }
         const [before, after = ''] = language.cardForkNotice.split('{{original}}');
-        return { before, name: original.name || language.attributionAnonymous, after };
+        // Nameless creators are told apart by fingerprint.
+        const name = original.name || `${language.originalCreatorUnknown} (${attributionFingerprint(original.id)})`;
+        return { before, name, after };
     });
 </script>
 

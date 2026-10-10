@@ -25,7 +25,7 @@
 </script>
 
 {#snippet entry(e: AttributionEntry)}
-    <span class="text-textcolor">{e.name || language.attributionAnonymous}</span>
+    <span class="text-textcolor">{e.name || language.originalCreatorUnknown}</span>
     <span class="text-textcolor2 font-mono text-xs ml-1">{attributionFingerprint(e.id)}</span>
     {#if e.id === me?.id}
         <span class="text-textcolor2 text-xs ml-1">({language.attributionYou})</span>

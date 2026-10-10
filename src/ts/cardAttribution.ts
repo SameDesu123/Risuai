@@ -17,7 +17,7 @@ const ID_PREFIX = 'risu-card-attribution:'
 const HEX64 = /^[0-9a-f]{64}$/
 
 export interface AttributionEntry {
-    /** Display name chosen by the creator. Free text, never trusted as identity. */
+    /** Display name. Risuai writes an empty string (shown as "Unknown"); free text, never trusted as identity. */
     name: string
     /** SHA-256 of the creator's local secret. This is the actual identity. */
     id: string
@@ -351,25 +351,27 @@ export function attributionFingerprint(id: string): string {
 
 /**
  * Reads (and if needed creates) the local identity from a database-like object.
+ * The identity is handled entirely in the background: there is no display name, so exported
+ * entries carry an empty name and are shown as "Unknown" plus the fingerprint.
  * Mutates `db` only to create a missing secret.
  */
-export function getLocalAttributionIdentity(db: { cardAttributionSecret?: string, cardAttributionName?: string }): AttributionIdentity {
+export function getLocalAttributionIdentity(db: { cardAttributionSecret?: string }): AttributionIdentity {
     if (!isValidAttributionSecret(db.cardAttributionSecret)) {
         db.cardAttributionSecret = generateAttributionSecret()
     }
     return {
-        name: normalizeCreatorName(db.cardAttributionName),
+        name: '',
         id: identityIdFromSecret(db.cardAttributionSecret),
     }
 }
 
 /** Like getLocalAttributionIdentity but never mutates; returns null when no secret exists yet. Safe inside derived state. */
-export function peekLocalAttributionIdentity(db: { cardAttributionSecret?: string, cardAttributionName?: string }): AttributionIdentity | null {
+export function peekLocalAttributionIdentity(db: { cardAttributionSecret?: string }): AttributionIdentity | null {
     if (!isValidAttributionSecret(db.cardAttributionSecret)) {
         return null
     }
     return {
-        name: normalizeCreatorName(db.cardAttributionName),
+        name: '',
         id: identityIdFromSecret(db.cardAttributionSecret),
     }
 }

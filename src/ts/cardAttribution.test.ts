@@ -5,6 +5,7 @@ import {
     canonicalJSON,
     computeContentHash,
     computeIntegrity,
+    getLocalAttributionIdentity,
     identityIdFromSecret,
     MAX_FORK_ENTRIES,
     type AttributionIdentity,
@@ -237,6 +238,21 @@ describe("card attribution", () => {
             const attr = attributionFromImport(exported, imported, migrated)
             const edited = { ...migrated, desc: "changed", imported: true, attribution: attr }
             expect(attributionForExport(edited, bob).forks).toEqual([bob])
+        })
+    })
+
+    describe("local identity", () => {
+        it("creates a secret in the background and never carries a name", () => {
+            const db: { cardAttributionSecret?: string } = {}
+            const me = getLocalAttributionIdentity(db)
+            expect(db.cardAttributionSecret).toMatch(/^[0-9a-f]{64}$/)
+            expect(me).toEqual({ name: "", id: identityIdFromSecret(db.cardAttributionSecret!) })
+            expect(getLocalAttributionIdentity(db)).toEqual(me)
+        })
+
+        it("writes an empty name for a card made here", () => {
+            const me = getLocalAttributionIdentity({ cardAttributionSecret: "d".repeat(64) })
+            expect(attributionForExport(makeChar(), me).original).toEqual({ name: "", id: me.id })
         })
     })
 })

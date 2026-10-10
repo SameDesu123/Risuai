@@ -612,7 +612,6 @@ export function setDatabase(data:Database){
     if(!isValidAttributionSecret(data.cardAttributionSecret)){
         data.cardAttributionSecret = generateAttributionSecret()
     }
-    data.cardAttributionName ??= ''
     data.checkCorruption ??= false
     data.toggleConfirmRecommendedPreset ??= false
     data.useExperimentalGoogleTranslator ??= false
@@ -977,10 +976,8 @@ export interface Database{
     NAIsettings:NAISettings
     hideRealm:boolean
     blockedRealmCreators:BlockedRealmCreator[]
-    /** Local secret identifying this user as a card creator. Never written into cards; only its hash is. */
+    /** Local secret identifying this user as a card creator. Generated automatically; never written into cards, only its hash is. */
     cardAttributionSecret?:string
-    /** Display name written into exported cards as Original/Fork Creator. */
-    cardAttributionName?:string
     colorScheme:ColorScheme
     colorSchemeName:string
     customColorScheme:ColorScheme
