@@ -256,3 +256,19 @@ describe("card attribution", () => {
         })
     })
 })
+
+describe("import bounds", () => {
+    it("trims oversized foreign records after verifying them", () => {
+        const char = { name: "X", desc: "d" }
+        const long = "N".repeat(5000)
+        const forks = Array.from({ length: 1000 }, (_, i) => ({ name: long, id: identityIdFromSecret(i.toString(16).padStart(64, "0")) }))
+        const body = { version: 1, original: { name: long, id: identityIdFromSecret("a".repeat(64)) }, forks, contentHash: computeContentHash(char), unverified: false }
+        const raw = { ...body, integrity: computeIntegrity(body), signature: null }
+        const rec = attributionFromImport(raw, char)
+        expect(rec.unverified).toBe(false)
+        expect(rec.forks.length).toBe(MAX_FORK_ENTRIES)
+        expect(rec.forks[rec.forks.length - 1].id).toBe(forks[999].id)
+        expect(rec.original!.name.length).toBe(64)
+        expect(rec.forks.every((f) => f.name.length <= 64)).toBe(true)
+    })
+})

@@ -11,7 +11,7 @@ import { Sha256 } from "@aws-crypto/sha256-js"
  */
 
 export const ATTRIBUTION_VERSION = 1
-export const MAX_FORK_ENTRIES = 16
+export const MAX_FORK_ENTRIES = 8
 const MAX_NAME_LENGTH = 64
 const ID_PREFIX = 'risu-card-attribution:'
 const HEX64 = /^[0-9a-f]{64}$/
@@ -242,6 +242,10 @@ export function parseAttribution(raw: unknown): CardAttribution | null {
     }
 }
 
+function boundEntry(e: AttributionEntry): AttributionEntry {
+    return { name: normalizeCreatorName(e.name), id: e.id }
+}
+
 function seal(attr: Omit<CardAttribution, 'integrity' | 'signature'>): CardAttribution {
     return {
         version: attr.version,
@@ -273,10 +277,11 @@ export function attributionFromImport(raw: unknown, char: AttributionContentSour
         return seal({ version: ATTRIBUTION_VERSION, original: null, forks: [], contentHash, unverified: true })
     }
     const matches = parsed.contentHash === importedHash && computeIntegrity(parsed) === parsed.integrity
+    // Bound foreign records only after verifying them, so trimming never looks like tampering.
     return seal({
         version: ATTRIBUTION_VERSION,
-        original: parsed.original,
-        forks: parsed.forks,
+        original: parsed.original ? boundEntry(parsed.original) : null,
+        forks: parsed.forks.slice(-MAX_FORK_ENTRIES).map(boundEntry),
         contentHash,
         unverified: parsed.unverified || !matches,
     })

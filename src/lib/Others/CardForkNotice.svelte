@@ -15,14 +15,14 @@
             return null;
         }
         const [before, after = ''] = language.cardForkNotice.split('{{original}}');
-        // Nameless creators are told apart by fingerprint.
-        const name = original.name || `${language.originalCreatorUnknown} (${attributionFingerprint(original.id)})`;
+        // Risuai never writes names, so a name came from outside; always show the fingerprint next to it.
+        const name = `${original.name || language.originalCreatorUnknown} (${attributionFingerprint(original.id)})`;
         return { before, name, after };
     });
 </script>
 
 {#if attribution && attribution.forks.length > 0}
-    <p class="text-textcolor2 text-xs">
+    <p class="text-textcolor2 text-xs break-words">
         {#if parts}
             {parts.before}<span class="font-semibold">{parts.name}</span>{parts.after}
         {:else}
