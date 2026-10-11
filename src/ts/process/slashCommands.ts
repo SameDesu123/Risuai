@@ -5,9 +5,9 @@ import { getModules } from "./modules";
 import {
     getCommandFlag,
     getCommandNameFromInput,
+    getFlagMetas,
     getRegexArgNames,
     getScriptRegexFlags,
-    hasRegexFlag,
     isValidCommandName,
 } from "./slashCommandFlags";
 
@@ -143,7 +143,7 @@ export function findSlashCommand(commands:SlashCommandEntry[], name:string){
 
 function scriptMatches(script:customscript, input:string){
     let regexIn = script.in
-    if(hasRegexFlag(script.flag, '<cbs>')){
+    if(getFlagMetas(script.flag).includes('cbs')){
         regexIn = risuChatParser(regexIn)
     }
     try {
@@ -157,8 +157,9 @@ function scriptMatches(script:customscript, input:string){
     }
 }
 
-// Returns the command whose IN rejected the input, or null when sending may continue
-export function findSlashCommandMismatch(char:character|groupChat, input:string):SlashCommandEntry|null{
+// Returns the command whose IN rejected the input with the usage of every script sharing its name,
+// or null when sending may continue
+export function findSlashCommandMismatch(char:character|groupChat, input:string):{name:string, usages:string[]}|null{
     const name = getCommandNameFromInput(input)
     if(!name || isBuiltinCommandName(name)){
         return null
@@ -171,5 +172,8 @@ export function findSlashCommandMismatch(char:character|groupChat, input:string)
     if(candidates.some((c) => scriptMatches(c.script, input))){
         return null
     }
-    return candidates[0]
+    return {
+        name: candidates[0].name,
+        usages: [...new Set(candidates.map((c) => c.usage))],
+    }
 }

@@ -94,10 +94,18 @@ describe("slash commands", () => {
         ]);
         expect(findSlashCommandMismatch(c, "/roll 2d6")).toBeNull();
         expect(findSlashCommandMismatch(c, "/roll")).toBeNull();
-        expect(findSlashCommandMismatch(c, "/roll abc")?.name).toBe("roll");
+        expect(findSlashCommandMismatch(c, "/roll abc")).toEqual({ name: "roll", usages: ["/roll"] });
         expect(findSlashCommandMismatch(c, "/unknown abc")).toBeNull();
         expect(findSlashCommandMismatch(c, "/send hi")).toBeNull();
         expect(findSlashCommandMismatch(c, "hello")).toBeNull();
+    });
+
+    it("lists the usage of every script sharing the rejected name", () => {
+        const c = char([
+            script({ in: "^/roll (?<count>\\d+)d(?<sides>\\d+)$", flag: "g<command roll>" }),
+            script({ in: "^/roll$", flag: "g<command roll>" }),
+        ]);
+        expect(findSlashCommandMismatch(c, "/roll x")?.usages).toEqual(["/roll <count> <sides>", "/roll"]);
     });
 
     it("respects the case flag and CBS parsing of IN", () => {
@@ -108,6 +116,11 @@ describe("slash commands", () => {
         expect(findSlashCommandMismatch(c, "/SHOUT")).toBeNull();
         expect(findSlashCommandMismatch(c, "/roll 3")).toBeNull();
         expect(findSlashCommandMismatch(c, "/roll x")?.name).toBe("roll");
+    });
+
+    it("reads cbs from combined flag tags like processScript does", () => {
+        const c = char([script({ in: "{{prefix}} \\d+", flag: "gi<command roll><order 1, cbs>" })]);
+        expect(findSlashCommandMismatch(c, "/roll 3")).toBeNull();
     });
 
     it("does not block sending when IN is not a valid regex", () => {

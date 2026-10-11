@@ -41,17 +41,21 @@ function isCommandMeta(meta:string){
     return meta === 'command' || meta.startsWith('command ')
 }
 
-export function getCommandFlag(flag:string|undefined|null):string|null{
-    if(!flag){
-        return null
+// Every meta inside <...> tags, split on commas the same way processScript does
+export function getFlagMetas(flag:string|undefined|null){
+    const metas:string[] = []
+    for(const match of (flag ?? '').matchAll(/<(.+?)>/g)){
+        metas.push(...match[1].split(',').map((v) => v.trim()))
     }
-    for(const match of flag.matchAll(/<(.+?)>/g)){
-        for(const meta of match[1].split(',').map((v) => v.trim())){
-            if(meta.startsWith('command ')){
-                const name = meta.substring(8).trim()
-                if(name){
-                    return name
-                }
+    return metas
+}
+
+export function getCommandFlag(flag:string|undefined|null):string|null{
+    for(const meta of getFlagMetas(flag)){
+        if(meta.startsWith('command ')){
+            const name = meta.substring(8).trim()
+            if(name){
+                return name
             }
         }
     }

@@ -164,7 +164,7 @@
             }
             const mismatched = findSlashCommandMismatch(DBState.db.characters[selectedChar], messageInput)
             if(mismatched){
-                alertToast(language.slashCommandUsageError(mismatched.usage))
+                alertToast(language.slashCommandUsageError(mismatched.usages.join(', ')))
                 return
             }
         }
