@@ -1,6 +1,7 @@
 <script lang="ts">
 
     import Suggestion from './Suggestion.svelte';
+    import SlashCommandPopup from './SlashCommandPopup.svelte';
     import { CameraIcon, DatabaseIcon, DicesIcon, GlobeIcon, ImagePlusIcon, LanguagesIcon, Laugh, MenuIcon, MicOffIcon, PackageIcon, Plus, RefreshCcwIcon, ReplyIcon, Send, StepForwardIcon, XIcon, BrainIcon, ArrowDown, SparkleIcon } from "@lucide/svelte";
     import { selectedCharID, PlaygroundStore, createSimpleCharacter, hypaV3ModalOpen, ScrollToMessageStore, additionalChatMenu, additionalFloatingActionButtons, easyPanelStore, chatPanelStore } from "../../ts/stores.svelte";
     import { tick } from 'svelte';
@@ -12,7 +13,7 @@
     import { sleep } from "../../ts/util";
     import { language } from "../../lang";
     import { isExpTranslator, translate } from "../../ts/translator/translator";
-    import { alertError, alertNormal, alertWait, showHypaV2Alert } from "../../ts/alert";
+    import { alertError, alertNormal, alertToast, alertWait, showHypaV2Alert } from "../../ts/alert";
     import sendSound from '../../etc/send.mp3'
     import { processScript } from "src/ts/process/scripts";
     import CreatorQuote from "./CreatorQuote.svelte";
@@ -24,6 +25,8 @@
     import { v4 } from 'uuid';
     import { PreUnreroll, Prereroll } from 'src/ts/process/prereroll';
     import { processMultiCommand } from 'src/ts/process/command';
+    import { filterSlashCommands, findSlashCommand, findSlashCommandMismatch, getSlashCommands, type SlashCommandEntry } from 'src/ts/process/slashCommands';
+    import { getCommandNameFromInput } from 'src/ts/process/slashCommandFlags';
     import { postChatFile } from 'src/ts/process/files/multisend';
     import { getInlayAsset } from 'src/ts/process/files/inlays';
     import { ConnectionOpenStore } from 'src/ts/sync/multiuser';
@@ -157,6 +160,11 @@
             const commandProcessed = await processMultiCommand(messageInput)
             if(commandProcessed !== false){
                 messageInput = ''
+                return
+            }
+            const mismatched = findSlashCommandMismatch(DBState.db.characters[selectedChar], messageInput)
+            if(mismatched){
+                alertToast(language.slashCommandUsageError(mismatched.usage))
                 return
             }
         }
@@ -381,6 +389,76 @@
         updateInputTranslateSize()
     }
 
+    let inputFocused = $state(false)
+    let slashSelected = $state(0)
+    let slashDismissed = $state(false)
+    let slashCommands = $derived(messageInput.startsWith('/') ? getSlashCommands(currentCharacter) : [])
+    // null once the command name is finished, e.g. after "/roll "
+    let slashQuery = $derived(/^\/\S*$/.test(messageInput) ? messageInput.substring(1) : null)
+    let slashMatches = $derived(
+        !inputFocused || slashDismissed || slashQuery === null ? [] : filterSlashCommands(slashCommands, slashQuery)
+    )
+    let slashHint = $derived.by(() => {
+        if(!inputFocused || slashDismissed || slashQuery !== null){
+            return null
+        }
+        const name = getCommandNameFromInput(messageInput)
+        return name ? findSlashCommand(slashCommands, name) : null
+    })
+
+    $effect(() => {
+        slashQuery
+        slashSelected = 0
+    })
+
+    $effect(() => {
+        if(!messageInput.startsWith('/')){
+            slashDismissed = false
+        }
+    })
+
+    async function applySlashCommand(command:SlashCommandEntry){
+        messageInput = `/${command.name} `
+        await tick()
+        if(inputEle){
+            inputEle.focus()
+            inputEle.setSelectionRange(messageInput.length, messageInput.length)
+        }
+        updateInputSizeAll()
+    }
+
+    // Returns true when the key was used by the command popup
+    function handleSlashKeydown(e:KeyboardEvent){
+        if(e.isComposing || e.keyCode === 229){
+            return false
+        }
+        if(e.key === 'Escape' && (slashMatches.length > 0 || slashHint)){
+            slashDismissed = true
+            return true
+        }
+        if(slashMatches.length === 0){
+            return false
+        }
+        if(e.key === 'ArrowDown'){
+            slashSelected = (slashSelected + 1) % slashMatches.length
+            return true
+        }
+        if(e.key === 'ArrowUp'){
+            slashSelected = (slashSelected - 1 + slashMatches.length) % slashMatches.length
+            return true
+        }
+        if(e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)){
+            const command = slashMatches[slashSelected] ?? slashMatches[0]
+            // Enter on a fully typed name sends it as usual
+            if(e.key === 'Enter' && slashQuery?.toLocaleLowerCase() === command.name.toLocaleLowerCase()){
+                return false
+            }
+            applySlashCommand(command)
+            return true
+        }
+        return false
+    }
+
     function updateInputTranslateSize() {
         if(inputTranslateEle) {
             inputTranslateEle.style.height = "0";
@@ -584,7 +662,7 @@
             }
         }}>
             <div
-                    class="{DBState.db.fixedChatTextarea ? 'sticky pt-2 pb-2 right-0 bottom-0 bg-bgcolor' : 'mt-2 mb-2'} flex items-stretch w-full"
+                    class="{DBState.db.fixedChatTextarea ? 'sticky pt-2 pb-2 right-0 bottom-0 bg-bgcolor' : 'relative mt-2 mb-2'} flex items-stretch w-full"
                     style="{DBState.db.fixedChatTextarea ? 'z-index:29;' : ''}"
             >
                 {#if DBState.db.useChatSticker && currentCharacter.type !== 'group'}
@@ -594,11 +672,19 @@
                     </div>
                 {/if}
 
+                <SlashCommandPopup commands={slashMatches} hint={slashHint} bind:selected={slashSelected} onSelect={applySlashCommand} />
+
                 <textarea class="peer text-input-area focus:border-textcolor transition-colors outline-hidden text-textcolor p-2 min-w-0 border border-r-0 bg-transparent rounded-md rounded-r-none input-text text-xl grow ml-4 border-darkborderc resize-none overflow-y-hidden overflow-x-hidden max-w-full placeholder:text-sm"
                           bind:value={messageInput}
                           bind:this={inputEle}
+                          onfocus={() => { inputFocused = true }}
+                          onblur={() => { inputFocused = false }}
                           onkeydown={(e) => {
-                        if(e.key.toLocaleLowerCase() === "enter" && !e.isComposing){
+                        if(handleSlashKeydown(e)){
+                            e.preventDefault()
+                            return
+                        }
+                        if(e.key.toLocaleLowerCase() === "enter" && !e.isComposing && e.keyCode !== 229){
                             if(DBState.db.sendWithEnter && (!e.shiftKey)){
                                 send()
                                 e.preventDefault()

@@ -11,6 +11,8 @@
     import OptionInput from "../../UI/GUI/OptionInput.svelte";
     import Accordion from "src/lib/UI/Accordion.svelte";
   import NumberInput from "src/lib/UI/GUI/NumberInput.svelte";
+  import { getCommandFlag, hasRegexFlag, isAnchoredToCommand, isValidCommandName, setCommandFlag, toggleRegexFlag } from "src/ts/process/slashCommandFlags";
+  import { isBuiltinCommandName } from "src/ts/process/slashCommands";
   
 interface Props {
     value: customscript;
@@ -29,21 +31,29 @@ interface Props {
   }: Props = $props();
 
     const checkFlagContain = (flag:string, matchFlag:string) => {
-        if(flag.length === 1){
-            matchFlag = value.flag.replace(/<(.+?)>/g, '')
-        }
-        return matchFlag.includes(flag)
+        return hasRegexFlag(matchFlag, flag)
     }
 
     const toggleFlag = (flag:string) => {
-        console.log(flag, checkFlagContain(flag, value.flag), value.flag)
-        if(checkFlagContain(flag, value.flag)){
-            value.flag = value.flag.replace(flag, '')
-        }
-        else{
-            value.flag += flag
-        }
+        value.flag = toggleRegexFlag(value.flag, flag)
     }
+
+    let commandName = $derived(getCommandFlag(value.flag) ?? '')
+    let commandWarning = $derived.by(() => {
+        if(!commandName){
+            return ''
+        }
+        if(!isValidCommandName(commandName)){
+            return language.slashCommandInvalidName
+        }
+        if(isBuiltinCommandName(commandName)){
+            return language.slashCommandBuiltinConflict
+        }
+        if(!isAnchoredToCommand(value.in ?? '', commandName)){
+            return language.slashCommandNotAnchored(commandName)
+        }
+        return ''
+    })
 
     const getOrder = (flag:string) => {
         const order = flag.match(/<order (-?\d+)>/)?.[1]
@@ -154,6 +164,21 @@ interface Props {
                     <NumberInput value={getOrder(value.flag)} onChange={(e)=>{
                         changeOrder(parseInt(e.currentTarget.value))
                     }} />
+
+                    {#if value.type === 'editinput'}
+                        <span class="text-textcolor mt-3">{language.slashCommand}</span>
+                        <TextInput size="sm" placeholder="hello" value={commandName} onchange={(e) => {
+                            value.flag = setCommandFlag(value.flag, e.currentTarget.value)
+                            const name = getCommandFlag(value.flag)
+                            if(name && !value.in){
+                                value.in = `^/${name}`
+                            }
+                        }} />
+                        <span class="text-textcolor2 text-xs mt-1">{language.slashCommandFlagDesc}</span>
+                        {#if commandWarning}
+                            <span class="text-draculared text-xs mt-1">{commandWarning}</span>
+                        {/if}
+                    {/if}
                     
                 </Accordion>
             {/if}
