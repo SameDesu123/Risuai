@@ -1678,6 +1678,40 @@ function sanitizeSummaryContent(content: string): string {
     return content.replace(inlayTokenRegex, "[Image]");
 }
 
+function getMemoryModelName(db: ReturnType<typeof getDatabase>): string {
+    if (db.seperateModelsForAxModels && db.seperateModels?.memory) {
+        return db.seperateModels.memory;
+    }
+
+    return db.subModel || "unknown model";
+}
+
+async function collectStreamText(
+    stream: ReadableStream<{ [key: string]: string }>
+): Promise<string> {
+    const reader = stream.getReader();
+    let text = "";
+
+    while (true) {
+        const { done, value } = await reader.read();
+
+        if (value) {
+            // Each chunk holds the accumulated text so far, keyed by generation index
+            const chunk = value["0"] ?? value[Object.keys(value)[0]];
+
+            if (typeof chunk === "string") {
+                text = chunk;
+            }
+        }
+
+        if (done) {
+            break;
+        }
+    }
+
+    return text;
+}
+
 export async function summarize(oaiMessages: OpenAIChat[], isResummarize: boolean = false): Promise<string> {
     const db = getDatabase();
     const settings = getCurrentHypaV3Preset().settings;
@@ -1719,24 +1753,45 @@ export async function summarize(oaiMessages: OpenAIChat[], isResummarize: boolea
             "memory"
         );
 
-        if (response.type === "streaming" || response.type === "multiline") {
-            throw new Error("Unexpected response type");
+        const modelLabel = response.model || getMemoryModelName(db);
+
+        let responseText: string;
+
+        if (response.type === "streaming") {
+            // Plugin providers and Claude batching can return a stream even when streaming is disabled
+            try {
+                responseText = await collectStreamText(response.result);
+            } catch (error) {
+                throw new Error(
+                    `[${modelLabel}] Failed while reading streamed response: ${error?.message || error}`
+                );
+            }
+        } else if (response.type === "multiline") {
+            throw new Error(
+                `[${modelLabel}] Unexpected response type "multiline". This model returns multi-speaker output and cannot be used for summarization. Please choose another auxiliary model.`
+            );
+        } else if (response.type === "fail") {
+            throw new Error(`[${modelLabel}] Request failed: ${response.result}`);
+        } else if (response.type === "success") {
+            responseText = response.result;
+        } else {
+            throw new Error(
+                `[${modelLabel}] Unexpected response type "${(response as { type?: string }).type}"`
+            );
         }
 
-        if (response.type === "fail") {
-            throw new Error(response.result);
-        }
-
-        if (!response.result || response.result.trim().length === 0) {
-            throw new Error("Empty summary returned");
+        if (!responseText || responseText.trim().length === 0) {
+            throw new Error(`[${modelLabel}] Empty summary returned`);
         }
 
         // Remove thoughts content for API
         const thoughtsRegex = /<Thoughts>[\s\S]*?<\/Thoughts>/g;
-        const result = response.result.replace(thoughtsRegex, "").trim();
+        const result = responseText.replace(thoughtsRegex, "").trim();
 
         if (result.length === 0) {
-            throw new Error("Empty summary after removing thoughts content");
+            throw new Error(
+                `[${modelLabel}] Empty summary after removing thoughts content (raw length: ${responseText.length})`
+            );
         }
 
         return result;
