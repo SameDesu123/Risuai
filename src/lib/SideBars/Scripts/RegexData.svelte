@@ -13,6 +13,7 @@
   import NumberInput from "src/lib/UI/GUI/NumberInput.svelte";
   import { getCommandFlag, hasRegexFlag, isAnchoredToCommand, isValidCommandName, setCommandFlag, toggleRegexFlag } from "src/ts/process/slashCommandFlags";
   import { isBuiltinCommandName } from "src/ts/process/slashCommands";
+  import Help from "src/lib/Others/Help.svelte";
   
 interface Props {
     value: customscript;
@@ -166,7 +167,7 @@ interface Props {
                     }} />
 
                     {#if value.type === 'editinput'}
-                        <span class="text-textcolor mt-3">{language.slashCommand}</span>
+                        <span class="text-textcolor mt-3">{language.slashCommand} <Help key="slashCommand" name={language.slashCommand} /></span>
                         <TextInput size="sm" placeholder="hello" value={commandName} onchange={(e) => {
                             value.flag = setCommandFlag(value.flag, e.currentTarget.value)
                             const name = getCommandFlag(value.flag)
@@ -174,7 +175,6 @@ interface Props {
                                 value.in = `^/${name}`
                             }
                         }} />
-                        <span class="text-textcolor2 text-xs mt-1">{language.slashCommandFlagDesc}</span>
                         {#if commandWarning}
                             <span class="text-draculared text-xs mt-1">{commandWarning}</span>
                         {/if}

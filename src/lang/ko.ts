@@ -39,6 +39,7 @@ export const languageKorean = {
     },
     "showHelp": "도움말 보기",
     "help": {
+        "slashCommand": "`^`나 `/` 없이 `hello`처럼 이름만 입력하세요. 그러면 `/` 명령어 목록에 표시됩니다.\n\n스크립트 이름이 설명으로 쓰이고, IN의 `(?<개수>\\d+)` 같은 이름 있는 그룹은 인자 힌트가 됩니다.",
         "model": "채팅에서 사용되는 모델입니다.",
         "submodel": "보조 모델은 감정 이미지, 자동 제안등을 분석하는 데 사용되는 모델입니다. gpt3.5가 권장됩니다.",
         "oaiapikey": "OpenAI용 API 키입니다. https://platform.openai.com/account/api-keys에서 구하실 수 있습니다.",
@@ -1536,7 +1537,6 @@ export const languageKorean = {
     nanoGPTManualModelSelect: "수동 모델 선택",
     localToggles: "로컬 토글",
     slashCommand: "슬래시 명령어",
-    slashCommandFlagDesc: "^나 / 없이 hello처럼 이름만 입력하세요. 그러면 / 명령어 목록에 표시됩니다. 스크립트 이름이 설명으로 쓰이고, IN의 (?<개수>\\d+) 같은 이름 있는 그룹은 인자 힌트가 됩니다.",
     slashCommandInvalidName: "공백 없이 문자, 숫자, _, - 만 사용할 수 있습니다.",
     slashCommandBuiltinConflict: "기본 명령어와 이름이 겹쳐 기본 명령어가 대신 실행됩니다.",
     slashCommandNotAnchored: (name: string) => `IN 칸이 ^/${name} 으로 시작해야 합니다. 그렇지 않으면 목록에서 골라도 일치하지 않을 수 있습니다.`,

@@ -39,6 +39,7 @@ export const languageGerman = {
     },
     "showHelp": "Hilfe anzeigen",
     "help": {
+        "slashCommand": "Nur den Namen eingeben, z. B. `hello`, ohne `^` oder `/`. Das Skript erscheint dann in der `/`-Befehlsliste.\n\nDer Skriptname dient als Beschreibung, benannte Gruppen in IN wie `(?<count>\\d+)` werden zu Argumenthinweisen.",
         "model": "Das Hauptmodell, das im Chat verwendet wird",
         "submodel": "Ein Hilfsmodell ist ein Modell, das zur Analyse von Emotionen und automatischen Vorschlägen usw. verwendet wird, um die die Konversation dynamischer zu gestalten. GPT-3.5 wird hier empfohlen.",
         "oaiapikey": "API-Schlüssel für OpenAI. Sie können sich unter platform.openai.com unter -> account -> api-keys einen API-Schlüssel erstellen",
@@ -1486,7 +1487,6 @@ export const languageGerman = {
     nanoGPTManualInput: "Manuelle Eingabe",
     nanoGPTManualModelSelect: "Manuelle Modellauswahl",
     slashCommand: "Slash-Befehl",
-    slashCommandFlagDesc: "Nur den Namen eingeben, z. B. hello, ohne ^ oder /. Das Skript erscheint dann in der /-Befehlsliste. Der Skriptname dient als Beschreibung, benannte Gruppen in IN wie (?<count>\\d+) werden zu Argumenthinweisen.",
     slashCommandInvalidName: "Nur Buchstaben, Ziffern, _ oder - ohne Leerzeichen verwenden.",
     slashCommandBuiltinConflict: "Dieser Name gehört zu einem eingebauten Befehl, daher wird stattdessen der eingebaute Befehl ausgeführt.",
     slashCommandNotAnchored: (name: string) => `Das IN-Feld sollte mit ^/${name} beginnen, sonst passt die Auswahl aus der Liste möglicherweise nicht.`,

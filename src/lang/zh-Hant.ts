@@ -40,6 +40,7 @@ export const languageChineseTraditional = {
     },
     "showHelp": "顯示說明",
     "help": {
+        "slashCommand": "只需輸入名稱，例如 `hello`，不要加 `^` 或 `/`。此腳本會顯示在 `/` 指令清單中。\n\n腳本名稱會作為說明，IN 中 `(?<count>\\d+)` 這類具名群組會成為參數提示。",
         "model": "聊天時使用的主要模型",
         "submodel": "輔助模型用於分析情緒立繪、產生自動建議等功能",
         "oaiapikey": "OpenAI 的 API 金鑰，可在 https://platform.openai.com/account/api-keys 取得",
@@ -1717,7 +1718,6 @@ export const languageChineseTraditional = {
     "applyAdditionalParamsToAll": "將額外參數套用至所有模型",
     "localToggles": "本對話獨立設定",
     slashCommand: "斜線指令",
-    slashCommandFlagDesc: "只需輸入名稱，例如 hello，不要加 ^ 或 /。此腳本會顯示在 / 指令清單中。腳本名稱會作為說明，IN 中 (?<count>\\d+) 這類具名群組會成為參數提示。",
     slashCommandInvalidName: "只能使用字母、數字、_ 或 -，不可包含空格。",
     slashCommandBuiltinConflict: "此名稱與內建指令重複，將改為執行內建指令。",
     slashCommandNotAnchored: (name: string) => `IN 欄位應以 ^/${name} 開頭，否則從清單中選擇時可能無法匹配。`,

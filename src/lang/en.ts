@@ -40,6 +40,7 @@ export const languageEnglish = {
     },
     showHelp: "Show Help",
     help: {
+        slashCommand: "Enter only the name, like `hello`, without `^` or `/`. The script then appears in the `/` command list.\n\nThe script name is used as the description, and named groups in IN like `(?<count>\\d+)` become argument hints.",
         model: "Model option is a main model used in chat.",
         submodel: "Auxiliary Model is a model that used in analyzing emotion images and auto suggestions and etc. gpt3.5 is recommended.",
         oaiapikey: "API key for OpenAI. you can get it in https://platform.openai.com/account/api-keys",
@@ -1720,7 +1721,6 @@ export const languageEnglish = {
     applyAdditionalParamsToAll: "Apply Additional Parameters to All Models",
     localToggles: "Local Toggles",
     slashCommand: "Slash Command",
-    slashCommandFlagDesc: "Enter only the name, like hello, without ^ or /. The script then appears in the / command list. The script name is used as the description, and named groups in IN like (?<count>\\d+) become argument hints.",
     slashCommandInvalidName: "Use letters, numbers, _ or - only, without spaces.",
     slashCommandBuiltinConflict: "This name is used by a built-in command, so the built-in command runs instead.",
     slashCommandNotAnchored: (name: string) => `The IN field should start with ^/${name}, otherwise choosing it from the list may not match.`,

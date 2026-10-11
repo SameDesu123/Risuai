@@ -39,6 +39,7 @@ export const languageSpanish = {
     },
     "showHelp": "Mostrar Ayuda",
     "help": {
+        "slashCommand": "Escribe solo el nombre, como `hello`, sin `^` ni `/`. El script aparecerá en la lista de comandos `/`.\n\nEl nombre del script se usa como descripción y los grupos con nombre en IN como `(?<count>\\d+)` se convierten en pistas de argumentos.",
         "model": "La opción de modelo es el modelo principal usado en el chat.",
         "submodel": "El Modelo Auxiliar es un modelo que se utiliza para analizar imágenes de emociones, auto sugerencias, etc. Se recomienda GPT-3.5.",
         "oaiapikey": "Clave API para OpenAI. Puedes obtenerla en https://platform.openai.com/account/api-keys",
@@ -1485,7 +1486,6 @@ export const languageSpanish = {
     nanoGPTManualInput: "Entrada manual",
     nanoGPTManualModelSelect: "Selección manual de modelo",
     slashCommand: "Comando de barra",
-    slashCommandFlagDesc: "Escribe solo el nombre, como hello, sin ^ ni /. El script aparecerá en la lista de comandos /. El nombre del script se usa como descripción y los grupos con nombre en IN como (?<count>\\d+) se convierten en pistas de argumentos.",
     slashCommandInvalidName: "Usa solo letras, números, _ o -, sin espacios.",
     slashCommandBuiltinConflict: "Este nombre pertenece a un comando integrado, así que se ejecutará el comando integrado.",
     slashCommandNotAnchored: (name: string) => `El campo IN debe empezar con ^/${name}; si no, elegirlo de la lista puede no coincidir.`,

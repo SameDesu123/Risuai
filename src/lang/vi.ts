@@ -39,6 +39,7 @@ export const languageVietnamese = {
     },
     "showHelp": "Hiển thị trợ giúp",
     "help": {
+        "slashCommand": "Chỉ nhập tên, ví dụ `hello`, không kèm `^` hay `/`. Script sẽ xuất hiện trong danh sách lệnh `/`.\n\nTên script được dùng làm mô tả, các nhóm có tên trong IN như `(?<count>\\d+)` trở thành gợi ý tham số.",
         "model": "Tùy chọn mô hình là mô hình chính được sử dụng trong trò chuyện.",
         "submodel": "Mô hình phụ trợ là mô hình được sử dụng để phân tích hình ảnh cảm xúc và đề xuất tự động, v.v. Nên sử dụng gpt3.5.",
         "oaiapikey": "Khóa Api cho OpenAI. bạn có thể lấy nó ở https://platform.openai.com/account/api-keys",
@@ -1486,7 +1487,6 @@ export const languageVietnamese = {
     nanoGPTManualInput: "Nhập thủ công",
     nanoGPTManualModelSelect: "Chọn mô hình thủ công",
     slashCommand: "Lệnh gạch chéo",
-    slashCommandFlagDesc: "Chỉ nhập tên, ví dụ hello, không kèm ^ hay /. Script sẽ xuất hiện trong danh sách lệnh /. Tên script được dùng làm mô tả, các nhóm có tên trong IN như (?<count>\\d+) trở thành gợi ý tham số.",
     slashCommandInvalidName: "Chỉ dùng chữ, số, _ hoặc -, không có khoảng trắng.",
     slashCommandBuiltinConflict: "Tên này trùng với lệnh có sẵn nên lệnh có sẵn sẽ được chạy thay thế.",
     slashCommandNotAnchored: (name: string) => `Ô IN nên bắt đầu bằng ^/${name}, nếu không chọn từ danh sách có thể không khớp.`,

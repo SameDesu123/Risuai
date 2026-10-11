@@ -39,6 +39,7 @@ export const languageChinese = {
     },
     "showHelp": "显示帮助",
     "help": {
+        "slashCommand": "只需输入名称，例如 `hello`，不要加 `^` 或 `/`。此脚本将显示在 `/` 命令列表中。\n\n脚本名称用作说明，IN 中 `(?<count>\\d+)` 这样的命名分组会成为参数提示。",
         "model": "此模型是指聊天中使用的主控模型。",
         "submodel": "辅助模型是一个用于分析情感图像、产生自动建议等的模型，推荐使用 GPT-3.5。",
         "oaiapikey": "OpenAI 的 API 密钥（Key），可在 https://platform.openai.com/account/api-keys 获取。",
@@ -1486,7 +1487,6 @@ export const languageChinese = {
     nanoGPTManualInput: "手动输入",
     nanoGPTManualModelSelect: "手动模式选择",
     slashCommand: "斜杠命令",
-    slashCommandFlagDesc: "只需输入名称，例如 hello，不要加 ^ 或 /。此脚本将显示在 / 命令列表中。脚本名称用作说明，IN 中 (?<count>\\d+) 这样的命名分组会成为参数提示。",
     slashCommandInvalidName: "只能使用字母、数字、_ 或 -，不能包含空格。",
     slashCommandBuiltinConflict: "此名称与内置命令重复，将改为执行内置命令。",
     slashCommandNotAnchored: (name: string) => `IN 栏应以 ^/${name} 开头，否则从列表中选择时可能无法匹配。`,
