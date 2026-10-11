@@ -1101,7 +1101,7 @@ export async function sendChat(chatProcessIndex = -1,arg:{
         }
         else if(DBState.db.hypaV3){
             console.log("Current chat's hypaV3 Data: ", currentChat.hypaV3Data)
-            const sp = await hypaMemoryV3(chats, currentTokens, maxContextTokens, currentChat, nowChatroom, tokenizer)
+            const sp = await hypaMemoryV3(chats, currentTokens, maxContextTokens, currentChat, nowChatroom, tokenizer, abortSignal)
             if(sp.error){
                 // Save new summary
                 if (sp.memory) {
@@ -1109,6 +1109,9 @@ export async function sendChat(chatProcessIndex = -1,arg:{
                     DBState.db.characters[selectedChar].chats[selectedChat].hypaV3Data = currentChat.hypaV3Data
                 }
                 console.log(sp)
+                if(abortSignal.aborted){
+                    return false
+                }
                 throwError(sp.error)
                 return false
             }

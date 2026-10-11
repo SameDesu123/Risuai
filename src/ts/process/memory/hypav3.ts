@@ -121,7 +121,8 @@ export async function hypaMemoryV3(
     maxContextTokens: number,
     room: Chat,
     char: character | groupChat,
-    tokenizer: ChatTokenizer
+    tokenizer: ChatTokenizer,
+    abortSignal?: AbortSignal
 ): Promise<HypaV3Result> {
     const settings = getCurrentHypaV3Preset().settings;
 
@@ -135,7 +136,8 @@ export async function hypaMemoryV3(
                 maxContextTokens,
                 room,
                 char,
-                tokenizer
+                tokenizer,
+                abortSignal
             );
         }
 
@@ -145,7 +147,8 @@ export async function hypaMemoryV3(
             maxContextTokens,
             room,
             char,
-            tokenizer
+            tokenizer,
+            abortSignal
         );
     } catch (error) {
         if (error instanceof Error) {
@@ -179,7 +182,8 @@ async function hypaMemoryV3MainExp(
     maxContextTokens: number,
     room: Chat,
     char: character | groupChat,
-    tokenizer: ChatTokenizer
+    tokenizer: ChatTokenizer,
+    abortSignal?: AbortSignal
 ): Promise<HypaV3Result> {
     const db = getDatabase();
     const settings = getCurrentHypaV3Preset().settings;
@@ -402,7 +406,7 @@ async function hypaMemoryV3MainExp(
         };
 
         const summarizationTasks = toSummarizeArray.map(
-            (item) => () => summarize(item)
+            (item) => () => summarize(item, false, abortSignal)
         );
 
         // Start of performance measurement: summarize
@@ -958,7 +962,8 @@ async function hypaMemoryV3Main(
     maxContextTokens: number,
     room: Chat,
     char: character | groupChat,
-    tokenizer: ChatTokenizer
+    tokenizer: ChatTokenizer,
+    abortSignal?: AbortSignal
 ): Promise<HypaV3Result> {
     const db = getDatabase();
     const settings = getCurrentHypaV3Preset().settings;
@@ -1148,7 +1153,7 @@ async function hypaMemoryV3Main(
             );
 
             try {
-                const summarizeResult = await summarize(toSummarize);
+                const summarizeResult = await summarize(toSummarize, false, abortSignal);
 
                 data.summaries.push({
                     text: summarizeResult,
@@ -1381,7 +1386,7 @@ async function hypaMemoryV3Main(
                 );
 
                 try {
-                    const summarizeResult = await summarize(recentChats);
+                    const summarizeResult = await summarize(recentChats, false, abortSignal);
 
                     queries.push(summarizeResult);
                 } catch (error) {
@@ -1687,32 +1692,54 @@ function getMemoryModelName(db: ReturnType<typeof getDatabase>): string {
 }
 
 async function collectStreamText(
-    stream: ReadableStream<{ [key: string]: string }>
+    stream: ReadableStream<{ [key: string]: string }>,
+    abortSignal?: AbortSignal
 ): Promise<string> {
     const reader = stream.getReader();
+    const abortReader = () => {
+        void reader.cancel().catch(() => {});
+    };
     let text = "";
 
-    while (true) {
-        const { done, value } = await reader.read();
+    abortSignal?.addEventListener("abort", abortReader, { once: true });
 
-        if (value) {
-            // Each chunk holds the accumulated text so far, keyed by generation index
-            const chunk = value["0"] ?? value[Object.keys(value)[0]];
+    try {
+        while (!abortSignal?.aborted) {
+            const { done, value } = await reader.read();
 
-            if (typeof chunk === "string") {
-                text = chunk;
+            if (value) {
+                // Each chunk holds the accumulated text so far, keyed by generation index
+                const chunk = value["0"] ?? value[Object.keys(value)[0]];
+
+                if (typeof chunk === "string") {
+                    text = chunk;
+                }
+            }
+
+            if (done) {
+                break;
             }
         }
-
-        if (done) {
-            break;
+    } catch (error) {
+        if (!abortSignal?.aborted) {
+            throw error;
         }
+    } finally {
+        abortSignal?.removeEventListener("abort", abortReader);
+    }
+
+    if (abortSignal?.aborted) {
+        throw new Error("Aborted");
     }
 
     return text;
 }
 
-export async function summarize(oaiMessages: OpenAIChat[], isResummarize: boolean = false): Promise<string> {
+export async function summarize(
+    oaiMessages: OpenAIChat[],
+    isResummarize: boolean = false,
+    abortSignal?: AbortSignal
+): Promise<string> {
     const db = getDatabase();
     const settings = getCurrentHypaV3Preset().settings;
 
@@ -1750,7 +1777,8 @@ export async function summarize(oaiMessages: OpenAIChat[], isResummarize: boolea
                 useStreaming: false,
                 noMultiGen: true,
             },
-            "memory"
+            "memory",
+            abortSignal
         );
 
         const modelLabel = response.model || getMemoryModelName(db);
@@ -1760,7 +1788,7 @@ export async function summarize(oaiMessages: OpenAIChat[], isResummarize: boolea
         if (response.type === "streaming") {
             // Plugin providers and Claude batching can return a stream even when streaming is disabled
             try {
-                responseText = await collectStreamText(response.result);
+                responseText = await collectStreamText(response.result, abortSignal);
             } catch (error) {
                 throw new Error(
                     `[${modelLabel}] Failed while reading streamed response: ${error?.message || error}`
