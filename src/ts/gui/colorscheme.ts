@@ -27,7 +27,7 @@ export const defaultColorScheme: ColorScheme = {
     selected: "#44475a",
     draculared: "#ff5555",
     textcolor: "#f8f8f2",
-    textcolor2: "#64748b",
+    textcolor2: "#94a3b8",
     darkBorderc: "#4b5563",
     darkbutton: "#374151",
     type:'dark'
@@ -138,7 +138,7 @@ const colorShemes = {
         selected: "#44475a",
         draculared: "#ff5555",
         textcolor: "#f8f8f2",
-        textcolor2: "#64748b",
+        textcolor2: "#94a3b8",
         darkBorderc: "#4b5563",
         darkbutton: "#374151",
         type:'dark'
@@ -222,7 +222,7 @@ const colorShemes = {
         selected: "#475569",
         draculared: "#ff5555",
         textcolor: "#f8f8f2",
-        textcolor2: "#64748b",
+        textcolor2: "#94a3b8",
         darkBorderc: "#030712",
         darkbutton: "#374151",
         type:'dark'
@@ -351,11 +351,11 @@ export function updateTextThemeAndCSS(){
                 root.style.setProperty('--FontColorQuote2', '#FFB86C');
             }else{
                 root.style.setProperty('--FontColorStandard', '#0f172a');
-                root.style.setProperty('--FontColorItalic', '#8C8D93');
+                root.style.setProperty('--FontColorItalic', '#5f6b7a');
                 root.style.setProperty('--FontColorBold', '#0f172a');
-                root.style.setProperty('--FontColorItalicBold', '#8C8D93');
-                root.style.setProperty('--FontColorQuote1', '#8BE9FD');
-                root.style.setProperty('--FontColorQuote2', '#FFB86C');
+                root.style.setProperty('--FontColorItalicBold', '#5f6b7a');
+                root.style.setProperty('--FontColorQuote1', '#0e7490');
+                root.style.setProperty('--FontColorQuote2', '#b45309');
             }
             break
         }
@@ -370,11 +370,11 @@ export function updateTextThemeAndCSS(){
             }
             else{
                 root.style.setProperty('--FontColorStandard', '#0f172a');
-                root.style.setProperty('--FontColorItalic', '#F1FA8C');
-                root.style.setProperty('--FontColorBold', '#8BE9FD');
-                root.style.setProperty('--FontColorItalicBold', '#FFB86C');
-                root.style.setProperty('--FontColorQuote1', '#8BE9FD');
-                root.style.setProperty('--FontColorQuote2', '#FFB86C');
+                root.style.setProperty('--FontColorItalic', '#854d0e');
+                root.style.setProperty('--FontColorBold', '#155e75');
+                root.style.setProperty('--FontColorItalicBold', '#9a3412');
+                root.style.setProperty('--FontColorQuote1', '#155e75');
+                root.style.setProperty('--FontColorQuote2', '#9a3412');
             }
             break
         }

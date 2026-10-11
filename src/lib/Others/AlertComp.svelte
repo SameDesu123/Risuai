@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { tick } from "svelte";
     import { alertGenerationInfoStore } from "../../ts/alert";
     
     import { DBState } from 'src/ts/stores.svelte';
@@ -59,7 +60,8 @@
         return lines.join('\n')
     });
 
-    let btn
+    let alertPanel: HTMLElement | undefined = $state()
+    let focusBeforeAlert: HTMLElement | null = null
     let input = $state('')
     let cardExportType = $state('realm')
     let cardExportType2 = $state('')
@@ -122,9 +124,6 @@
         translatedStackTrace = '';
         stackTraceTranslationFailed = false;
         isTranslating = false;
-        if(btn){
-            btn.focus()
-        }
         if($alertStore.type !== 'input'){
             input = ''
         }
@@ -166,6 +165,41 @@
         }
     }
 
+    // Move keyboard focus into the alert so Enter/Space act on its own buttons
+    // instead of whatever was focused behind the overlay, and restore it on close.
+    const focusableAlertTypes = ['ask', 'pluginconfirm', 'tos', 'normal', 'error', 'markdown', 'input', 'select']
+    $effect(() => {
+        const type = $alertStore.type
+        const panel = alertPanel
+        if(!panel || !focusableAlertTypes.includes(type)){
+            if(type === 'none' && focusBeforeAlert){
+                const target = focusBeforeAlert
+                focusBeforeAlert = null
+                if(target.isConnected){
+                    target.focus()
+                }
+            }
+            return
+        }
+        if(!focusBeforeAlert && document.activeElement instanceof HTMLElement && !panel.contains(document.activeElement)){
+            focusBeforeAlert = document.activeElement
+        }
+        tick().then(() => {
+            let target: HTMLElement | null = null
+            if(type === 'input'){
+                target = panel.querySelector('#alert-input')
+            }
+            else if(type === 'error' || type === 'normal' || type === 'markdown'){
+                const buttons = panel.querySelectorAll('button')
+                target = buttons[buttons.length - 1] ?? null
+            }
+            else{
+                target = panel.querySelector('[data-alert-actions] button') ?? panel.querySelector('button')
+            }
+            (target ?? panel).focus()
+        })
+    })
+
     const beautifyJSON = (data:string) =>{
         try {
             return JSON.stringify(JSON.parse(data), null, 2)
@@ -188,7 +222,7 @@
 
 {#if $alertStore.type !== 'none' &&  $alertStore.type !== 'toast' &&  $alertStore.type !== 'cardexport' && $alertStore.type !== 'branches' && $alertStore.type !== 'selectModule' && $alertStore.type !== 'pukmakkurit' && $alertStore.type !== 'requestlogs'}
     <div class="absolute w-full h-full z-50 bg-black/50 flex justify-center items-center" class:vis={ $alertStore.type === 'wait2'}>
-        <div class="bg-darkbg p-4 break-any rounded-md flex flex-col max-w-3xl  max-h-full overflow-y-auto">
+        <div class="bg-darkbg p-4 break-any rounded-md flex flex-col max-w-3xl  max-h-full overflow-y-auto focus:outline-hidden" bind:this={alertPanel} tabindex="-1">
             {#if $alertStore.type === 'error'}
                 <h2 class="text-red-700 mt-0 mb-2 w-40 max-w-full">Error</h2>
             {:else if $alertStore.type === 'ask'}
@@ -296,7 +330,7 @@
             {/if}
 
             {#if $alertStore.type === 'ask' || $alertStore.type === 'pluginconfirm'}
-                <div class="flex gap-2 w-full">
+                <div class="flex gap-2 w-full" data-alert-actions>
                     <Button className="mt-4 grow" onclick={() => {
                         alertStore.set({
                             type: 'none',
@@ -311,7 +345,7 @@
                     }}>NO</Button>
                 </div>
             {:else if $alertStore.type === 'tos' && import.meta.env.VITE_RISU_LEGAL_CONFIGURED}
-                <div class="flex gap-2 w-full">
+                <div class="flex gap-2 w-full" data-alert-actions>
                     <Button className="mt-4 grow" onclick={() => {
                         alertStore.set({
                             type: 'none',

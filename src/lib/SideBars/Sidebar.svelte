@@ -481,7 +481,7 @@
     class="flex h-8 min-h-8 w-14 min-w-14 cursor-pointer text-white mt-2 items-center justify-center rounded-md bg-textcolor2 transition-colors hover:bg-blue-500"
     onclick={() => {
       menuMode = 1 - menuMode;
-    }}><ListIcon />
+    }} aria-label={language.menu} aria-expanded={menuMode === 1}><ListIcon aria-hidden="true" />
   </button>
   <div class="mt-2 border-b border-b-selected w-full relative text-white ">
     {#if menuMode === 1}
@@ -495,7 +495,7 @@
             reseter();
             settingsOpen.set(true);
           }
-        }}><Settings /></BarIcon
+        }} ariaLabel={language.settings}><Settings /></BarIcon
       >
       <div class="mt-2"></div>
       <BarIcon
@@ -504,7 +504,7 @@
           selectedCharID.set(-1)
           PlaygroundStore.set(0)
           OpenRealmStore.set(false)
-        }}><HomeIcon /></BarIcon>
+        }} ariaLabel={language.home}><HomeIcon /></BarIcon>
       <div class="mt-2"></div>
       <BarIcon
         onClick={() => {
@@ -516,6 +516,7 @@
           selectedCharID.set(-1)
           PlaygroundStore.set(1)
         }}
+        ariaLabel={language.playground.playground}
       ><ShellIcon /></BarIcon>
       {#each additionalHamburgerMenu as menu}
         <div class="mt-2"></div>
@@ -523,7 +524,7 @@
           onClick={() => {
             reseter();
             menu.callback();
-          }}>
+          }} ariaLabel={menu.name}>
             <PluginDefinedIcon ico={menu} />
           </BarIcon
         >
@@ -533,7 +534,7 @@
         onClick={() => {
           reseter();
           openGrid();
-        }}><LayoutGridIcon /></BarIcon
+        }} ariaLabel={language.grid}><LayoutGridIcon /></BarIcon
       >
     </div>
     {/if}
@@ -839,7 +840,7 @@
             reseter();
             settingsOpen.set(true);
           }
-        }}><Settings /></BarIcon
+        }} ariaLabel={language.settings}><Settings /></BarIcon
       >
       <div class="mt-2"></div>
       <BarIcon
@@ -848,7 +849,7 @@
           selectedCharID.set(-1)
           PlaygroundStore.set(0)
           OpenRealmStore.set(false)
-        }}><HomeIcon /></BarIcon>
+        }} ariaLabel={language.home}><HomeIcon /></BarIcon>
       <div class="mt-2"></div>
       <BarIcon
         onClick={() => {
@@ -860,6 +861,7 @@
           selectedCharID.set(-1)
           PlaygroundStore.set(1)
         }}
+        ariaLabel={language.playground.playground}
       ><ShellIcon /></BarIcon>
       {#each additionalHamburgerMenu as menu}
         <div class="mt-2"></div>
@@ -867,7 +869,7 @@
           onClick={() => {
             reseter();
             menu.callback();
-          }}>
+          }} ariaLabel={menu.name}>
             <PluginDefinedIcon ico={menu} />
           </BarIcon
         >
@@ -877,7 +879,7 @@
         onClick={() => {
           reseter();
           openGrid();
-        }}><LayoutGridIcon /></BarIcon
+        }} ariaLabel={language.grid}><LayoutGridIcon /></BarIcon
       >
     </div>
     {/if}
@@ -886,7 +888,7 @@
     class="flex h-8 min-h-8 w-14 min-w-14 cursor-pointer text-white mb-2 mt-2 items-center justify-center rounded-md bg-textcolor2 transition-colors hover:bg-blue-500"
     onclick={() => {
       menuMode = 1 - menuMode;
-    }}><ListIcon />
+    }} aria-label={language.menu} aria-expanded={menuMode === 1}><ListIcon aria-hidden="true" />
   </button>
   {/if}
 </div>
@@ -917,6 +919,7 @@
 >
   <button
     class="flex w-full justify-end text-textcolor"
+    aria-label={language.close}
     onclick={async () => {
       if($sideBarClosing){
         return

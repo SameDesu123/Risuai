@@ -709,7 +709,6 @@
                 </div>
                 <button
                   class="px-4 py-2 my-1 font-semibold transition-colors rounded-md sm:my-2 text-zinc-300 bg-zinc-700 hover:bg-zinc-500"
-                  tabindex="-1"
                   onclick={async () => {
                     const conversionResult = convertHypaV2ToV3();
 
@@ -777,23 +776,23 @@
               <!-- Previous Button -->
               <button
                 class="p-2 transition-colors text-zinc-400 hover:text-zinc-200"
-                tabindex="-1"
+                aria-label={language.hypaV3Modal.searchPrevLabel}
                 onclick={() => {
                   onSearch({ shiftKey: true, key: "Enter" } as KeyboardEvent);
                 }}
               >
-                <ChevronUpIcon class="w-6 h-6" />
+                <ChevronUpIcon class="w-6 h-6" aria-hidden="true" />
               </button>
 
               <!-- Next Button -->
               <button
                 class="p-2 transition-colors text-zinc-400 hover:text-zinc-200"
-                tabindex="-1"
+                aria-label={language.hypaV3Modal.searchNextLabel}
                 onclick={() => {
                   onSearch({ key: "Enter" } as KeyboardEvent);
                 }}
               >
-                <ChevronDownIcon class="w-6 h-6" />
+                <ChevronDownIcon class="w-6 h-6" aria-hidden="true" />
               </button>
             </div>
           </div>

@@ -386,6 +386,10 @@ export function setDatabase(data:Database){
     data.animationSpeed ??= 0.4
     data.colorScheme ??= safeStructuredClone(defaultColorScheme)
     data.colorSchemeName ??= 'default'
+    // Older copies of the dark presets used #64748b for secondary text, which fails WCAG contrast.
+    if(['default', 'realblack', 'lite'].includes(data.colorSchemeName) && data.colorScheme.textcolor2 === '#64748b'){
+        data.colorScheme.textcolor2 = '#94a3b8'
+    }
     data.customColorScheme ??= safeStructuredClone(data.colorSchemeName === 'custom' ? data.colorScheme : defaultColorScheme)
     data.NAIsettings.starter ??= ""
     data.hypaModel ??= 'MiniLM'

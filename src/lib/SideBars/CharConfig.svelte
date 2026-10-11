@@ -285,13 +285,13 @@
                 <div class="text-center">{language.active}</div>
                 {#each (DBState.db.characters[$selectedCharID] as groupChat).characters as char, i}
                     {#await getCharImage(findCharacterbyId(char).image, 'css')}
-                        <BarIcon onClick={() => {
+                        <BarIcon ariaLabel={`${language.remove}: ${findCharacterbyId(char).name}`} onClick={() => {
                             rmCharFromGroup(i)
                         }}>
                             <User/>
                         </BarIcon>
                     {:then im} 
-                        <BarIcon onClick={() => {
+                        <BarIcon ariaLabel={`${language.remove}: ${findCharacterbyId(char).name}`} onClick={() => {
                             rmCharFromGroup(i)
                         }} additionalStyle={im} />
                     {/await}

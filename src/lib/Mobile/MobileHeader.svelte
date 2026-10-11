@@ -10,34 +10,34 @@
     {#if $selectedCharID !== -1 && $MobileSideBar > 0}
         <button onclick={() => {
             MobileSideBar.set(0)
-        }}>
-            <ArrowLeft />
+        }} aria-label={language.back}>
+            <ArrowLeft aria-hidden="true" />
         </button>
         <span class="font-bold text-lg w-2/3 truncate">{language.menu}</span>
     {:else if $selectedCharID !== -1}
         <button onclick={() => {
             selectedCharID.set(-1)
-        }}>
-            <ArrowLeft />
+        }} aria-label={language.back}>
+            <ArrowLeft aria-hidden="true" />
         </button>
         <span class="font-bold text-lg w-2/3 truncate">{DBState.db.characters[$selectedCharID].name}</span>
         <div class="flex-1 flex justify-end">
             <button onclick={() => {
                 MobileSideBar.set(1)
-            }}>
-                <MenuIcon />
+            }} aria-label={language.menu}>
+                <MenuIcon aria-hidden="true" />
             </button>
         </div>
     {:else if $MobileGUIStack === 2 && $SettingsMenuIndex > -1}
         <button onclick={() => {
             SettingsMenuIndex.set(-1)
-        }}>
-            <ArrowLeft />
+        }} aria-label={language.back}>
+            <ArrowLeft aria-hidden="true" />
         </button>
         <span class="font-bold text-lg">Risuai</span>
     {:else if $MobileGUIStack === 1}
         <div class="flex items-stretch w-2xl max-w-full">
-            <input placeholder={language.search + '...'} bind:value={$MobileSearch} class="peer focus:border-textcolor transition-colors outline-hidden text-textcolor p-2 min-w-0 border bg-transparent rounded-md input-text text-xl grow mx-4 border-darkborderc resize-none overflow-y-hidden overflow-x-hidden max-w-full">
+            <input placeholder={language.search + '...'} aria-label={language.search} bind:value={$MobileSearch} class="peer focus:border-textcolor transition-colors outline-hidden text-textcolor p-2 min-w-0 border bg-transparent rounded-md input-text text-xl grow mx-4 border-darkborderc resize-none overflow-y-hidden overflow-x-hidden max-w-full">
         </div>
     {:else}
         <span class="font-bold text-lg">Risuai</span>

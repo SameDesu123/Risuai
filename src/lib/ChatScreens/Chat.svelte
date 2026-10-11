@@ -549,6 +549,7 @@
         {#if isComment}
             <button
                 class="flex items-center hover:text-blue-500 transition-colors button-icon-remove"
+                aria-label={language.remove}
                 onclick={async (e) => {
                     await rm(e, true)
                 }}
@@ -587,7 +588,7 @@
 
 {#snippet majorIconButtonsBody(showNames:boolean)}
     {#if DBState.db.useChatCopy && !blankMessage}
-    <button class="flex items-center hover:text-blue-500 transition-colors button-icon-copy" onclick={async ()=>{
+    <button class="flex items-center hover:text-blue-500 transition-colors button-icon-copy" aria-label={showNames ? undefined : language.copy} onclick={async ()=>{
         const copyText = renderRawStreaming
             ? risuChatParser(rawStreamingText, {chara: name, chatID: idx, rmVar: true, visualize: true, cbsConditions: getCbsCondition()})
             : msgDisplay
@@ -821,7 +822,7 @@
 {/if}
 {#if idx > -1}
     {#if DBState.db.characters[selIdState.selId].type !== 'group' && DBState.db.characters[selIdState.selId].ttsMode !== 'none' && (DBState.db.characters[selIdState.selId].ttsMode)}
-        <button class="flex items-center hover:text-blue-500 transition-colors button-icon-tts" onclick={()=>{
+        <button class="flex items-center hover:text-blue-500 transition-colors button-icon-tts" aria-label={showNames ? undefined : 'TTS'} onclick={()=>{
             return sayTTS(null, isOptimizedStreamingMessage ? rawStreamingText : message)
         }}>
             <Volume2Icon size={20}/>
@@ -831,7 +832,7 @@
         </button>
     {/if}
     {#if !$ConnectionOpenStore}
-        <button class="flex items-center hover:text-blue-500 transition-colors button-icon-remove" onclick={(e) => rm(e, false)} use:longpress={(e) => rm(e, true)}>
+        <button class="flex items-center hover:text-blue-500 transition-colors button-icon-remove" aria-label={showNames ? undefined : language.remove} onclick={(e) => rm(e, false)} use:longpress={(e) => rm(e, true)}>
             <TrashIcon size={20}/>
 
             {#if showNames}
@@ -849,6 +850,8 @@
             class:translating={translating}
             disabled={translationViewControlsDisabled}
             onclick={toggleTranslation}
+            aria-label={showNames ? undefined : language.translate}
+            aria-pressed={translated}
         >
             <LanguagesIcon />
             {#if showNames}
@@ -861,6 +864,8 @@
             class={"flex items-center transition-colors button-icon-edit " + (editMode ? 'text-blue-400 hover:text-blue-500' : originalEditControlDisabled ? 'opacity-50 cursor-not-allowed' : 'hover:text-blue-500')}
             disabled={originalEditControlDisabled}
             onclick={toggleOriginalEdit}
+            aria-label={showNames ? undefined : language.edit}
+            aria-pressed={editMode}
         >
             <PencilIcon size={20}/>
 
@@ -874,17 +879,17 @@
 {#snippet rerolls()}
     {#if rerollIcon || altGreeting}
         {#if DBState.db.swipe || altGreeting}
-            <button class="flex items-center hover:text-blue-500 transition-colors button-icon-unreroll" class:dyna-icon={rerollIcon === 'dynamic'} onclick={unReroll}>
+            <button class="flex items-center hover:text-blue-500 transition-colors button-icon-unreroll" class:dyna-icon={rerollIcon === 'dynamic'} onclick={unReroll} aria-label={language.hotkeyDesc.unreroll}>
                 <ArrowLeft size={22}/>
             </button>
             {#if firstMessage && DBState.db.swipe && DBState.db.showFirstMessagePages}
                 <span class="flex items-center text-xs text-textcolor2">{currentPage}/{totalPages}</span>
             {/if}
-            <button class="flex items-center hover:text-blue-500 transition-colors button-icon-reroll" class:dyna-icon={rerollIcon === 'dynamic'} onclick={onReroll}>
+            <button class="flex items-center hover:text-blue-500 transition-colors button-icon-reroll" class:dyna-icon={rerollIcon === 'dynamic'} onclick={onReroll} aria-label={language.hotkeyDesc.reroll}>
                 <ArrowRight size={22}/>
             </button>
         {:else}
-            <button class="flex items-center hover:text-blue-500 transition-colors button-icon-reroll" class:dyna-icon={rerollIcon === 'dynamic'} onclick={onReroll}>
+            <button class="flex items-center hover:text-blue-500 transition-colors button-icon-reroll" class:dyna-icon={rerollIcon === 'dynamic'} onclick={onReroll} aria-label={language.hotkeyDesc.reroll}>
                 <RefreshCcwIcon size={20}/>
             </button>
         {/if}
@@ -894,7 +899,7 @@
 {#snippet minorIconButtonsBody(showNames:boolean)}
     
     {#if DBState.db.enableBookmark}
-        <button class="flex items-center hover:text-blue-500 transition-colors button-icon-bookmark {isBookmarked ? 'text-yellow-400' : ''}" onclick={async () => {
+        <button class="flex items-center hover:text-blue-500 transition-colors button-icon-bookmark {isBookmarked ? 'text-yellow-400' : ''}" aria-pressed={isBookmarked} aria-label={showNames ? undefined : language.bookmark} onclick={async () => {
             await sleep(1)
             toggleBookmark()
         }}>

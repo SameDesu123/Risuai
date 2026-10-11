@@ -440,7 +440,6 @@
       <!-- Translate Button -->
       <button
         class="p-2 transition-colors text-zinc-400 hover:text-zinc-200"
-        tabindex="-1"
         use:handleDualAction={{
           onMainAction: () => toggleTranslate(false),
           onAlternativeAction: () => toggleTranslate(true),
@@ -454,7 +453,6 @@
         class="p-2 transition-colors {summary.isImportant
           ? 'text-yellow-400 hover:text-yellow-300'
           : 'text-zinc-400 hover:text-zinc-200'}"
-        tabindex="-1"
         onclick={toggleImportant}
       >
         <StarIcon class="w-4 h-4" />
@@ -463,7 +461,6 @@
       <!-- Reroll Button -->
       <button
         class="p-2 transition-colors text-zinc-400 hover:text-zinc-200"
-        tabindex="-1"
         disabled={isOrphan()}
         onclick={async () => await toggleReroll()}
       >
@@ -473,7 +470,6 @@
       <!-- Delete This Button -->
       <button
         class="p-2 transition-colors text-zinc-400 hover:text-rose-300"
-        tabindex="-1"
         onclick={async () => await deleteThis()}
       >
         <Trash2Icon class="w-4 h-4" />
@@ -482,7 +478,6 @@
       <!-- Delete After Button -->
       <button
         class="p-2 transition-colors text-zinc-400 hover:text-rose-300"
-        tabindex="-1"
         onclick={async () => await deleteAfter()}
       >
         <ScissorsLineDashed class="w-4 h-4" />
@@ -513,9 +508,8 @@
       </div>
 
       <textarea
-        class="w-full p-2 transition-colors border rounded-sm sm:p-4 min-h-40 sm:min-h-56 resize-vertical border-zinc-700 focus:outline-hidden text-zinc-200 bg-zinc-900"
+        class="w-full p-2 transition-colors border rounded-sm sm:p-4 min-h-40 sm:min-h-56 resize-vertical border-zinc-700 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-zinc-500 text-zinc-200 bg-zinc-900"
         readonly
-        tabindex="-1"
         bind:this={summaryItemState.translationRef}
         value={translation}
       ></textarea>
@@ -533,7 +527,6 @@
           <!-- Translate Rerolled Button -->
           <button
             class="p-2 transition-colors text-zinc-400 hover:text-zinc-200"
-            tabindex="-1"
             use:handleDualAction={{
               onMainAction: () => toggleTranslateRerolled(false),
               onAlternativeAction: () => toggleTranslateRerolled(true),
@@ -545,7 +538,6 @@
           <!-- Cancel Button -->
           <button
             class="p-2 transition-colors text-zinc-400 hover:text-zinc-200"
-            tabindex="-1"
             onclick={cancelRerolled}
           >
             <XIcon class="w-4 h-4" />
@@ -554,7 +546,6 @@
           <!-- Apply Button -->
           <button
             class="p-2 transition-colors text-zinc-400 hover:text-rose-300"
-            tabindex="-1"
             onclick={applyRerolled}
           >
             <CheckIcon class="w-4 h-4" />
@@ -567,7 +558,6 @@
     <div class="mt-2 sm:mt-4">
       <textarea
         class="w-full p-2 transition-colors border rounded-sm sm:p-4 min-h-40 sm:min-h-56 resize-vertical border-zinc-700 focus:outline-hidden focus:ring-2 focus:ring-zinc-500 text-zinc-200 bg-zinc-900"
-        tabindex="-1"
         bind:value={rerolled}
       >
       </textarea>
@@ -581,9 +571,8 @@
         </div>
 
         <textarea
-          class="w-full p-2 transition-colors border rounded-sm sm:p-4 min-h-40 sm:min-h-56 resize-vertical border-zinc-700 focus:outline-hidden text-zinc-200 bg-zinc-900"
+          class="w-full p-2 transition-colors border rounded-sm sm:p-4 min-h-40 sm:min-h-56 resize-vertical border-zinc-700 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-zinc-500 text-zinc-200 bg-zinc-900"
           readonly
-          tabindex="-1"
           bind:this={summaryItemState.rerolledTranslationRef}
           value={rerolledTranslation}
         ></textarea>
@@ -596,7 +585,6 @@
     <div class="flex items-center justify-between">
       <button
         class="flex items-center gap-2 text-sm text-zinc-400 hover:text-zinc-200 transition-colors"
-        tabindex="-1"
         onclick={toggleSummaryCollapse}
       >
         {#if isCollapsed()}
@@ -614,7 +602,6 @@
         <!-- Translate Message Button -->
         <button
           class="p-2 transition-colors text-zinc-400 hover:text-zinc-200"
-          tabindex="-1"
           use:handleDualAction={{
             onMainAction: () => toggleTranslateExpandedMessage(false),
             onAlternativeAction: () => toggleTranslateExpandedMessage(true),
@@ -637,7 +624,6 @@
             )
               ? 'ring-2 ring-zinc-500'
               : ''}"
-            tabindex="-1"
             bind:this={summaryItemState.chatMemoRefs[memoIndex]}
             onclick={() => toggleExpandMessage(chatMemo)}
           >
@@ -664,9 +650,8 @@
 
             <!-- Content -->
             <textarea
-              class="w-full p-2 transition-colors border rounded-sm sm:p-4 min-h-40 sm:min-h-56 resize-vertical border-zinc-700 focus:outline-hidden text-zinc-200 bg-zinc-900"
+              class="w-full p-2 transition-colors border rounded-sm sm:p-4 min-h-40 sm:min-h-56 resize-vertical border-zinc-700 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-zinc-500 text-zinc-200 bg-zinc-900"
               readonly
-              tabindex="-1"
               value={expandedMessage.data}
             ></textarea>
           {:else}
@@ -692,9 +677,8 @@
           </div>
 
           <textarea
-            class="w-full p-2 transition-colors border rounded-sm sm:p-4 min-h-40 sm:min-h-56 resize-vertical border-zinc-700 focus:outline-hidden text-zinc-200 bg-zinc-900"
+            class="w-full p-2 transition-colors border rounded-sm sm:p-4 min-h-40 sm:min-h-56 resize-vertical border-zinc-700 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-zinc-500 text-zinc-200 bg-zinc-900"
             readonly
-            tabindex="-1"
             bind:this={expandedMessageState.translationRef}
             value={expandedMessageState.translation}
           ></textarea>

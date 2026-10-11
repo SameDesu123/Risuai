@@ -125,8 +125,8 @@
     <!-- Open Search Button -->
     <button
       class="p-2 transition-colors text-zinc-400 hover:text-zinc-200"
-      tabindex="-1"
       onclick={async () => await toggleSearch()}
+      aria-label={language.search}
     >
       <SearchIcon class="w-6 h-6" />
     </button>
@@ -136,8 +136,9 @@
       class="p-2 transition-colors {filterState?.showImportantOnly
         ? 'text-yellow-400 hover:text-yellow-300'
         : 'text-zinc-400 hover:text-zinc-200'}"
-      tabindex="-1"
       onclick={toggleFilterImportant}
+      aria-label={language.hypaV3Modal.filterImportantLabel}
+      aria-pressed={!!filterState?.showImportantOnly}
     >
       <StarIcon class="w-6 h-6" />
     </button>
@@ -148,8 +149,9 @@
         class="p-2 transition-colors {bulkEditState.isEnabled
           ? 'text-blue-400 hover:text-blue-300'
           : 'text-zinc-400 hover:text-zinc-200'}"
-        tabindex="-1"
         onclick={toggleBulkEditMode}
+        aria-label={language.hypaV3Modal.bulkEditLabel}
+        aria-pressed={bulkEditState.isEnabled}
       >
         <SquarePenIcon class="w-6 h-6" />
       </button>
@@ -159,8 +161,8 @@
     {#if categoryManagerState}
       <button
         class="p-2 text-zinc-400 hover:text-zinc-200 transition-colors"
-        tabindex="-1"
         onclick={openCategoryManager}
+        aria-label={language.hypaV3Modal.categoryManager}
       >
         <TagIcon class="w-6 h-6" />
       </button>
@@ -169,8 +171,8 @@
     <!-- Open Global Settings Button -->
     <button
       class="p-2 transition-colors text-zinc-400 hover:text-zinc-200"
-      tabindex="-1"
       onclick={openGlobalSettings}
+      aria-label={language.settings}
     >
       <SettingsIcon class="w-6 h-6" />
     </button>
@@ -179,8 +181,9 @@
     <div class="relative">
       <button
         class="p-2 transition-colors text-zinc-400 hover:text-zinc-200"
-        tabindex="-1"
         onclick={openDropdown}
+        aria-label={language.options}
+        aria-expanded={dropdownOpen}
       >
         <MoreVerticalIcon class="w-6 h-6" />
       </button>
@@ -196,8 +199,9 @@
               class="p-2 transition-colors {filterSelected
                 ? 'text-blue-400 hover:text-blue-300'
                 : 'text-zinc-400 hover:text-zinc-200'}"
-              tabindex="-1"
               onclick={toggleFilterSelected}
+              aria-label={language.hypaV3Modal.filterSelectedLabel}
+              aria-pressed={filterSelected}
             >
               <BarChartIcon class="w-6 h-6" />
             </button>
@@ -205,8 +209,8 @@
             <!-- Reset Data Button -->
             <button
               class="p-2 transition-colors text-zinc-400 hover:text-rose-300"
-              tabindex="-1"
               onclick={async () => await resetData()}
+              aria-label={language.reset}
             >
               <Trash2Icon class="w-6 h-6" />
             </button>
@@ -218,8 +222,8 @@
     <!-- Close Modal Button -->
     <button
       class="p-2 transition-colors text-zinc-400 hover:text-zinc-200"
-      tabindex="-1"
       onclick={closeModal}
+      aria-label={language.close}
     >
       <XIcon class="w-6 h-6" />
     </button>
