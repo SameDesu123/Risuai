@@ -126,14 +126,16 @@ async function processCommand(command:string, pipe:string):Promise<false | strin
             return pipe
         }
         case 'cut':{
-            if(arg.includes('-')){
-                const [start, end] = arg.split('-')
-                currentChat.message = currentChat.message.slice(parseInt(start), parseInt(end))
+            const range = arg.trim().match(/^(\d+)\s*-\s*(\d+)$/)
+            if(range){
+                //inclusive range, same as STScript
+                const start = Math.min(parseInt(range[1]), parseInt(range[2]))
+                const end = Math.max(parseInt(range[1]), parseInt(range[2]))
+                currentChat.message.splice(start, end - start + 1)
                 setDatabase(db)
             }
-            else if(!isNaN(parseInt(arg))){
-                const index = parseInt(arg)
-                currentChat.message = currentChat.message.splice(index, 1)
+            else if(/^\d+$/.test(arg.trim())){
+                currentChat.message.splice(parseInt(arg), 1)
                 setDatabase(db)
             }
             else{ //For risu, doesn'ts work for STScript
@@ -145,8 +147,9 @@ async function processCommand(command:string, pipe:string):Promise<false | strin
         }
         case 'del': {
             const size = parseInt(arg)
-            if(!isNaN(size)){
-                currentChat.message = currentChat.message.slice(currentChat.message.length-size)
+            if(!isNaN(size) && size > 0){
+                //removes the last [size] messages
+                currentChat.message = currentChat.message.slice(0, Math.max(0, currentChat.message.length - size))
                 setDatabase(db)
             }
             return pipe
@@ -270,11 +273,11 @@ async function processCommand(command:string, pipe:string):Promise<false | strin
             # /comment [text]
             - Add comment to chat
             - Example: /comment Hello World
-            # /cut [index]
-            - Cut chat message
-            - Example: /cut 1
+            # /cut [index | start-end]
+            - Remove a chat message, or an inclusive range of messages
+            - Example: /cut 1, /cut 2-5
             # /del [size]
-            - Delete chat message
+            - Delete the last [size] chat messages
             - Example: /del 1
             # /len [array]
             - Return length of array
