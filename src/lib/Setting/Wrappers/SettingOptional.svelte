@@ -11,6 +11,7 @@
     }
 
     let { item, ctx }: Props = $props();
+    const uid = $props.id();
 
     let localValue: any = $state(untrack(() => getSettingValue(item, ctx)));
 
@@ -32,12 +33,14 @@
 </script>
 
 <span class="text-textcolor {item.classes ?? ''}">
-    {getLabel(item)}
+    <label for="{uid}-input" id="{uid}-label">{getLabel(item)}</label>
     {#if item.helpKey}<Help key={item.helpKey as any}/>{/if}
 </span>
 <OptionalInput
     marginBottom={true}
     bind:value={localValue}
+    id="{uid}-input"
+    labelledby="{uid}-label"
     numberMode={item.options?.optionalMode === 'number'}
     boolMode={item.options?.optionalMode === 'bool'}
 />
