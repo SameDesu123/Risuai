@@ -8,6 +8,7 @@ import SettingSlider from 'src/lib/Setting/Wrappers/SettingSlider.svelte';
 import SettingSelect from 'src/lib/Setting/Wrappers/SettingSelect.svelte';
 import SettingSegmented from 'src/lib/Setting/Wrappers/SettingSegmented.svelte';
 import SettingColor from 'src/lib/Setting/Wrappers/SettingColor.svelte';
+import SettingOptional from 'src/lib/Setting/Wrappers/SettingOptional.svelte';
 import SettingHeader from 'src/lib/Setting/Wrappers/SettingHeader.svelte';
 import SettingButton from 'src/lib/Setting/Wrappers/SettingButton.svelte';
 import SettingAccordion from 'src/lib/Setting/Wrappers/SettingAccordion.svelte';
@@ -24,6 +25,7 @@ export const settingRegistry: Record<SettingType, WrapperComponent> = {
     'select': SettingSelect,
     'segmented': SettingSegmented,
     'color': SettingColor,
+    'optional': SettingOptional,
     'header': SettingHeader,
     'button': SettingButton,
     'accordion': SettingAccordion,

@@ -30,6 +30,7 @@ export type SettingType =
     | 'select'     // Dropdown (SelectInput)
     | 'segmented'  // Sliding segmented control (SegmentedControl)
     | 'color'      // Color picker (ColorInput)
+    | 'optional'   // Nullable value with enable checkbox (OptionalInput)
     | 'header'     // Section header (h2, span, warning)
     | 'button'     // Action button (Button)
     | 'accordion'  // Collapsible section (Accordion)
@@ -84,6 +85,9 @@ export interface SettingOptions {
     hideText?: boolean;     // For password-like inputs
     inputClassName?: string;
     marginBottom?: boolean;
+    
+    // optional
+    optionalMode?: 'text' | 'number' | 'bool'; // Initial value type when enabled (default: 'text')
     
     // button
     onClick?: () => void | Promise<void>;
