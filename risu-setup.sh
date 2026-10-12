@@ -2,7 +2,7 @@
 # RisuAI Node server setup TUI for beginners.
 # Pure bash, no extra dependencies. (Linux / macOS / WSL / Termux)
 #
-#   Usage: bash risu-setup.sh [--lang ko|en|ja]
+#   Usage: bash risu-setup.sh [--lang ko|en|ja|zh|zh_TW]
 #
 # The UI language follows the system locale. Override it with --lang,
 # the RISU_LANG environment variable, or the settings menu.
@@ -25,12 +25,13 @@ RISU_LEGAL="TRUE"         # TRUE for a personal self-hosted instance
 RISU_LITE="FALSE"
 RISU_TRUST_PROXY=""       # 1 when behind a reverse proxy
 RISU_HTTPS="FALSE"
+ENV_RISU_LANG="${RISU_LANG:-}"   # keep the caller's RISU_LANG before the default below clears it
 RISU_LANG=""              # empty = follow the system locale
 
 # ---------------------------------------------------------------------------
 # Language
 # ---------------------------------------------------------------------------
-SUPPORTED_LANGS="ko en ja"
+SUPPORTED_LANGS="ko en ja zh zh_TW"
 UI_LANG=en
 LOCALE_SOURCE=""
 
@@ -38,8 +39,15 @@ lang_name() {
     case "$1" in
         ko) echo "한국어" ;;
         ja) echo "日本語" ;;
+        zh) echo "简体中文" ;;
+        zh_TW) echo "繁體中文" ;;
         *)  echo "English" ;;
     esac
+}
+
+lang_supported() {
+    case " $SUPPORTED_LANGS " in *" $1 "*) return 0 ;; esac
+    return 1
 }
 
 # Sets SYSTEM_LOCALE (e.g. ko_KR.UTF-8) and LOCALE_SOURCE.
@@ -86,6 +94,10 @@ locale_to_lang() {
     case "$l" in
         ko*) echo ko ;;
         ja*) echo ja ;;
+        # Traditional script: Taiwan, Hong Kong, Macau, or an explicit Hant tag
+        # (zh_TW, zh-Hant-HK, zh-Hant_TW, zh_HK.UTF-8 ...)
+        zh[_-]TW*|zh[_-]HK*|zh[_-]MO*|zh[_-]Hant*) echo zh_TW ;;
+        zh*) echo zh ;;
         *)   echo en ;;
     esac
 }
@@ -98,8 +110,8 @@ detect_lang() {
 
 apply_lang() {
     case "${RISU_LANG:-}" in
-        ko|en|ja) UI_LANG="$RISU_LANG" ;;
-        *) UI_LANG="$DETECTED_LANG" ;;
+        '') UI_LANG="$DETECTED_LANG" ;;
+        *) if lang_supported "$RISU_LANG"; then UI_LANG="$RISU_LANG"; else UI_LANG="$DETECTED_LANG"; fi ;;
     esac
     "load_lang_$UI_LANG"
 }
@@ -584,6 +596,328 @@ load_lang_ja() {
     M_BYE="さようなら!"
 }
 
+# --- Simplified Chinese ----------------------------------------------------
+load_lang_zh() {
+    M_TITLE="RisuAI 节点服务器 安装助手"
+    M_PRESS_ENTER="按回车键继续..."
+    M_MENU_HINT="↑/↓ 移动 · 回车 选择 · 数字 直接跳转 · q 返回"
+    M_ASK="%s [默认: %s] "
+    M_CONF_SAVED="设置已保存: %s"
+
+    M_ENV_TITLE="环境检查"
+    M_ENV_OS="操作系统: %s"
+    M_ENV_LANG="语言: %s  (系统区域设置: %s, 来源: %s)"
+    M_ENV_MISSING="未找到"
+    M_ENV_PRESENT="已安装"
+    M_ENV_GIT_MISSING="未找到 (下载源码时需要)"
+    M_ENV_NODE_OLD="%s — 需要 20.19 以上或 22.12 以上"
+    M_ENV_PNPM_MISSING="未找到 (安装时会自动安装)"
+    M_ENV_DOCKER_MISSING="未找到 (仅 Docker 方式需要)"
+    M_ENV_OPENSSL_MISSING="未找到 (仅生成 HTTPS 证书时需要)"
+    M_ENV_SOURCE="源码"
+    M_ENV_SOURCE_MISSING="尚未下载"
+
+    M_GIT_MAC_RETRY="安装窗口完成后，请重新运行本脚本。"
+    M_NO_PKG_MANAGER="未找到软件包管理器。请手动安装 git。"
+    M_NODE_NVM1="将使用 nvm (Node 版本管理器) 安装 Node.js 22 LTS。"
+    M_NODE_NVM2="安装到用户目录 (~/.nvm)，不需要管理员权限。"
+    M_NEED_CURL="需要 curl。请先安装 curl。"
+    M_PNPM_INSTALLING="正在安装 pnpm..."
+    M_PNPM_SUDO="全局安装失败。可能是权限问题，将使用 sudo 重试。"
+
+    M_SRC_TITLE="准备 RisuAI 源码"
+    M_SRC_HERE="本脚本已位于 RisuAI 文件夹中: %s"
+    M_GIT_MISSING="未安装 git。"
+    M_GIT_INSTALL_Q="要安装 git 吗?"
+    M_SRC_WHERE="从哪里获取源码?"
+    M_SRC_OFFICIAL="官方仓库 (kwaroran/Risuai) — 推荐"
+    M_SRC_CUSTOM="手动输入其他仓库地址"
+    M_SRC_URL_TITLE="仓库地址"
+    M_SRC_URL="git 地址"
+    M_SRC_DIR_TITLE="安装位置"
+    M_SRC_DIR="安装文件夹"
+    M_SRC_EXISTS="源码已存在，将直接使用。"
+    M_SRC_NOT_EMPTY="文件夹 %s 不是空的。请选择其他位置。"
+    M_SRC_CLONING="正在下载源码... (可能需要几分钟)"
+    M_SRC_CLONE_FAIL="下载失败。"
+    M_SRC_DONE="源码已下载: %s"
+
+    M_CERT_EXISTS="HTTPS 证书已存在。"
+    M_CERT_NO_OPENSSL="未安装 openssl，无法生成证书。"
+    M_CERT_GEN="正在生成自签名证书。遇到提问直接按回车即可。"
+    # shellcheck disable=SC1111 # Chinese quotation marks, intentional
+    M_CERT_DONE="证书已生成。浏览器显示“不安全”警告属于正常现象。"
+    M_CERT_TRUST="要消除警告，请在设备上将 %s 安装为受信任的证书。"
+
+    M_DOCKER_BUILDING="正在构建 Docker 镜像... (首次构建可能需要 10 分钟以上)"
+    M_NODE_BAD="Node.js 版本不符合要求。请查看环境检查菜单。"
+    M_PNPM_FAIL="pnpm 安装失败。"
+    M_INSTALLING_PKGS="正在安装依赖包... (首次需要几分钟)"
+    M_PNPM_INSTALL_FAIL="pnpm install 失败"
+    M_BUILDING="正在构建前端..."
+    M_BUILD_FAIL="构建失败"
+    M_BUILD_DONE="构建完成!"
+
+    M_URL="访问地址: %s"
+    M_URL_LAN="同一 Wi-Fi 下的手机/其他电脑: %s"
+    M_FIRST_PW="首次访问时会要求设置密码。请务必记住!"
+    M_NO_SOURCE="没有源码。请先运行安装向导。"
+    M_ALREADY_RUNNING="已在运行中。"
+    M_DOCKER_STARTED="Docker 容器已启动。"
+    M_NO_DIST="没有构建产物，将先进行构建。"
+    M_STARTED="服务器已在后台启动。(PID %s)"
+    M_STARTED_BG="关闭终端后也会继续运行。日志: %s"
+    M_START_FAIL="服务器启动后立即退出了。最后的日志:"
+    M_DOCKER_STOPPED="容器已停止。"
+    M_NOT_RUNNING="未在运行。"
+    M_STOPPED="服务器已停止。"
+
+    M_STATUS_TITLE="服务器状态"
+    M_ST_DIR="安装位置 : %s"
+    M_ST_METHOD="运行方式 : %s"
+    M_ST_PORT="端口     : %s"
+    M_RUNNING_DOCKER="运行中 (Docker)"
+    M_RUNNING_PID="运行中 (PID %s)"
+    M_RECENT_LOG="最近的日志:"
+
+    M_UPDATE_TITLE="更新"
+    M_UPDATE_NOGIT="不是 git 仓库，无法自动更新。"
+    M_UPDATE_BACKUP_TIP="建议在更新前备份 save 文件夹。"
+    M_UPDATE_BACKUP_Q="先备份吗?"
+    M_UPDATE_PULL_FAIL="git pull 失败。如果你修改过源码，可能发生了冲突。"
+    M_UPDATE_DONE="更新完成!"
+    M_BACKUP_FAIL="备份失败"
+    M_BACKUP_NODATA="还没有保存的数据。"
+    M_BACKUP_DONE="备份完成: %s"
+
+    M_PW_TITLE="重置密码"
+    M_PW_WARN="清除密码后，下次访问时需要设置新密码。数据不会被删除。"
+    M_PROCEED_Q="要继续吗?"
+    M_PW_DONE="重置完成"
+    M_PW_FAIL_DOCKER="失败 (请确认容器正在运行)"
+
+    M_W1_TITLE="第 1 步: 选择运行方式"
+    M_W1_NODE="直接用 Node.js 运行 — 推荐，最简单"
+    M_W1_DOCKER="用 Docker 运行 — 如果你已经在用 Docker"
+    M_W2_TITLE="第 2 步: 检查必需软件"
+    M_NODE_FOUND="已找到 Node.js %s"
+    M_NODE_NEED="没有合适的 Node.js。(需要: 20.19 以上或 22.12 以上)"
+    M_NODE_AUTO_Q="要自动安装吗?"
+    M_NODE_INSTALL_FAIL="Node.js 安装失败。请从 https://nodejs.org 手动安装 LTS 版本。"
+    M_NODE_INSTALLED="Node.js %s 安装完成"
+    M_NODE_MANUAL="请从 https://nodejs.org 安装 LTS 版本后重新运行本脚本。"
+    M_DOCKER_MISSING="未安装 Docker。请从 https://docs.docker.com/get-docker/ 安装。"
+    M_DOCKER_DOWN="Docker 未运行或没有权限。请启动 Docker 后重试。"
+    M_DOCKER_OK="已找到 Docker"
+    M_W3_TITLE="第 3 步: 基本设置"
+    M_PORT_Q="端口号 (不清楚就直接回车)"
+    M_PORT_INVALID="不是数字，将使用 6001。"
+    # shellcheck disable=SC1111 # Chinese quotation marks, intentional
+    M_LEGAL_TIP="如果是个人服务器，开启“已完成法律声明设置”即可跳过警告页面。"
+    M_LEGAL_Q="这是只给自己或熟人用的私人服务器吗?"
+    M_LITE_Q="要开启实验性的轻量 (移动端) 模式吗?"
+    M_PROXY_TIP="仅在 Nginx、Caddy、Cloudflare Tunnel 等反向代理后面运行时才开启。"
+    M_PROXY_Q="是在反向代理后面运行吗?"
+    M_HTTPS_TIP="从其他设备访问时，部分浏览器功能 (如麦克风) 需要 HTTPS。"
+    M_HTTPS_Q="要生成自签名 HTTPS 证书吗?"
+    M_W4_TITLE="第 4 步: 构建"
+    M_RUN_NOW_Q="现在启动服务器吗?"
+    M_WIZARD_DONE="安装完成! 以后重新运行本脚本，即可在菜单中启动/停止。"
+
+    M_SET_TITLE="设置 (部分修改需要重新构建)"
+    M_SET_LANG="语言 / Language: %s"
+    M_SET_PORT="端口: %s"
+    M_SET_LEGAL="私人服务器 (已完成法律声明设置): %s  ※ 需要重新构建"
+    M_SET_LITE="轻量模式: %s  ※ 需要重新构建"
+    M_SET_PROXY="信任反向代理: %s"
+    M_OFF="关"
+    M_SET_HTTPS="生成 HTTPS 证书"
+    M_SET_REBUILD="重新构建"
+    M_BACK="返回"
+    M_PORT_TITLE="端口"
+    M_PORT_NUM="端口号"
+    M_DIGITS_ONLY="请只输入数字。"
+    M_LANG_TITLE="语言 / Language"
+    M_LANG_AUTO="自动 — 跟随系统区域设置 (%s)"
+
+    M_NEED_TTY="请在交互式终端中运行:  bash risu-setup.sh"
+    M_MAIN_TITLE="主菜单   (服务器: %s)"
+    M_STATE_RUNNING="运行中"
+    M_STATE_STOPPED="已停止"
+    M_STATE_NOT_INSTALLED="未安装"
+    M_MAIN_WIZARD="安装向导  — 第一次请从这里开始!"
+    M_MAIN_START="启动服务器"
+    M_MAIN_STOP="停止服务器"
+    M_MAIN_STATUS="状态 / 日志"
+    M_MAIN_UPDATE="更新 (获取最新版本 + 重新构建)"
+    M_MAIN_BACKUP="备份数据 (save 文件夹)"
+    M_MAIN_PW="重置密码"
+    M_MAIN_SETTINGS="设置"
+    M_MAIN_ENV="环境检查"
+    M_MAIN_EXIT="退出"
+    M_BYE="再见!"
+}
+
+# --- Traditional Chinese ---------------------------------------------------
+load_lang_zh_TW() {
+    M_TITLE="RisuAI 節點伺服器 安裝助手"
+    M_PRESS_ENTER="按 Enter 鍵繼續..."
+    M_MENU_HINT="↑/↓ 移動 · Enter 選擇 · 數字 直接跳轉 · q 返回"
+    M_ASK="%s [預設: %s] "
+    M_CONF_SAVED="設定已儲存: %s"
+
+    M_ENV_TITLE="環境檢查"
+    M_ENV_OS="作業系統: %s"
+    M_ENV_LANG="語言: %s  (系統地區設定: %s, 來源: %s)"
+    M_ENV_MISSING="找不到"
+    M_ENV_PRESENT="已安裝"
+    M_ENV_GIT_MISSING="找不到 (下載原始碼時需要)"
+    M_ENV_NODE_OLD="%s — 需要 20.19 以上或 22.12 以上"
+    M_ENV_PNPM_MISSING="找不到 (安裝時會自動安裝)"
+    M_ENV_DOCKER_MISSING="找不到 (僅 Docker 方式需要)"
+    M_ENV_OPENSSL_MISSING="找不到 (僅產生 HTTPS 憑證時需要)"
+    M_ENV_SOURCE="原始碼"
+    M_ENV_SOURCE_MISSING="尚未下載"
+
+    M_GIT_MAC_RETRY="安裝視窗完成後，請重新執行本腳本。"
+    M_NO_PKG_MANAGER="找不到套件管理員。請手動安裝 git。"
+    M_NODE_NVM1="將使用 nvm (Node 版本管理工具) 安裝 Node.js 22 LTS。"
+    M_NODE_NVM2="安裝到使用者資料夾 (~/.nvm)，不需要管理員權限。"
+    M_NEED_CURL="需要 curl。請先安裝 curl。"
+    M_PNPM_INSTALLING="正在安裝 pnpm..."
+    M_PNPM_SUDO="全域安裝失敗。可能是權限問題，將使用 sudo 重試。"
+
+    M_SRC_TITLE="準備 RisuAI 原始碼"
+    M_SRC_HERE="本腳本已位於 RisuAI 資料夾中: %s"
+    M_GIT_MISSING="尚未安裝 git。"
+    M_GIT_INSTALL_Q="要安裝 git 嗎?"
+    M_SRC_WHERE="要從哪裡取得原始碼?"
+    M_SRC_OFFICIAL="官方儲存庫 (kwaroran/Risuai) — 推薦"
+    M_SRC_CUSTOM="手動輸入其他儲存庫網址"
+    M_SRC_URL_TITLE="儲存庫網址"
+    M_SRC_URL="git 網址"
+    M_SRC_DIR_TITLE="安裝位置"
+    M_SRC_DIR="安裝資料夾"
+    M_SRC_EXISTS="原始碼已存在，將直接使用。"
+    M_SRC_NOT_EMPTY="資料夾 %s 不是空的。請選擇其他位置。"
+    M_SRC_CLONING="正在下載原始碼... (可能需要幾分鐘)"
+    M_SRC_CLONE_FAIL="下載失敗。"
+    M_SRC_DONE="原始碼已下載: %s"
+
+    M_CERT_EXISTS="HTTPS 憑證已存在。"
+    M_CERT_NO_OPENSSL="尚未安裝 openssl，無法產生憑證。"
+    M_CERT_GEN="正在產生自簽憑證。遇到提問直接按 Enter 即可。"
+    M_CERT_DONE="憑證已產生。瀏覽器顯示「不安全」警告是正常的。"
+    M_CERT_TRUST="若要消除警告，請在裝置上將 %s 安裝為受信任的憑證。"
+
+    M_DOCKER_BUILDING="正在建置 Docker 映像檔... (首次建置可能需要 10 分鐘以上)"
+    M_NODE_BAD="Node.js 版本不符合需求。請查看環境檢查選單。"
+    M_PNPM_FAIL="pnpm 安裝失敗。"
+    M_INSTALLING_PKGS="正在安裝套件... (首次需要幾分鐘)"
+    M_PNPM_INSTALL_FAIL="pnpm install 失敗"
+    M_BUILDING="正在建置前端..."
+    M_BUILD_FAIL="建置失敗"
+    M_BUILD_DONE="建置完成!"
+
+    M_URL="連線網址: %s"
+    M_URL_LAN="同一 Wi-Fi 的手機/其他電腦: %s"
+    M_FIRST_PW="首次連線時會要求設定密碼。請務必記住!"
+    M_NO_SOURCE="沒有原始碼。請先執行安裝精靈。"
+    M_ALREADY_RUNNING="已在執行中。"
+    M_DOCKER_STARTED="Docker 容器已啟動。"
+    M_NO_DIST="沒有建置結果，將先進行建置。"
+    M_STARTED="伺服器已在背景啟動。(PID %s)"
+    M_STARTED_BG="關閉終端機後也會繼續執行。日誌: %s"
+    M_START_FAIL="伺服器啟動後立即結束了。最後的日誌:"
+    M_DOCKER_STOPPED="容器已停止。"
+    M_NOT_RUNNING="未在執行。"
+    M_STOPPED="伺服器已停止。"
+
+    M_STATUS_TITLE="伺服器狀態"
+    M_ST_DIR="安裝位置 : %s"
+    M_ST_METHOD="執行方式 : %s"
+    M_ST_PORT="連接埠   : %s"
+    M_RUNNING_DOCKER="執行中 (Docker)"
+    M_RUNNING_PID="執行中 (PID %s)"
+    M_RECENT_LOG="最近的日誌:"
+
+    M_UPDATE_TITLE="更新"
+    M_UPDATE_NOGIT="不是 git 儲存庫，無法自動更新。"
+    M_UPDATE_BACKUP_TIP="建議在更新前備份 save 資料夾。"
+    M_UPDATE_BACKUP_Q="要先備份嗎?"
+    M_UPDATE_PULL_FAIL="git pull 失敗。如果你修改過原始碼，可能發生了衝突。"
+    M_UPDATE_DONE="更新完成!"
+    M_BACKUP_FAIL="備份失敗"
+    M_BACKUP_NODATA="還沒有儲存的資料。"
+    M_BACKUP_DONE="備份完成: %s"
+
+    M_PW_TITLE="重設密碼"
+    M_PW_WARN="清除密碼後，下次連線時需要設定新密碼。資料不會被刪除。"
+    M_PROCEED_Q="要繼續嗎?"
+    M_PW_DONE="重設完成"
+    M_PW_FAIL_DOCKER="失敗 (請確認容器正在執行)"
+
+    M_W1_TITLE="第 1 步: 選擇執行方式"
+    M_W1_NODE="直接用 Node.js 執行 — 推薦，最簡單"
+    M_W1_DOCKER="用 Docker 執行 — 如果你已經在用 Docker"
+    M_W2_TITLE="第 2 步: 檢查必要軟體"
+    M_NODE_FOUND="已找到 Node.js %s"
+    M_NODE_NEED="沒有合適的 Node.js。(需要: 20.19 以上或 22.12 以上)"
+    M_NODE_AUTO_Q="要自動安裝嗎?"
+    M_NODE_INSTALL_FAIL="Node.js 安裝失敗。請從 https://nodejs.org 手動安裝 LTS 版本。"
+    M_NODE_INSTALLED="Node.js %s 安裝完成"
+    M_NODE_MANUAL="請從 https://nodejs.org 安裝 LTS 版本後重新執行本腳本。"
+    M_DOCKER_MISSING="尚未安裝 Docker。請從 https://docs.docker.com/get-docker/ 安裝。"
+    M_DOCKER_DOWN="Docker 未執行或沒有權限。請啟動 Docker 後重試。"
+    M_DOCKER_OK="已找到 Docker"
+    M_W3_TITLE="第 3 步: 基本設定"
+    M_PORT_Q="連接埠號碼 (不清楚就直接按 Enter)"
+    M_PORT_INVALID="不是數字，將使用 6001。"
+    M_LEGAL_TIP="如果是個人伺服器，開啟「已完成法律聲明設定」即可略過警告頁面。"
+    M_LEGAL_Q="這是只給自己或熟人用的私人伺服器嗎?"
+    M_LITE_Q="要開啟實驗性的輕量 (行動裝置) 模式嗎?"
+    M_PROXY_TIP="僅在 Nginx、Caddy、Cloudflare Tunnel 等反向代理後方執行時才開啟。"
+    M_PROXY_Q="是在反向代理後方執行嗎?"
+    M_HTTPS_TIP="從其他裝置連線時，部分瀏覽器功能 (如麥克風) 需要 HTTPS。"
+    M_HTTPS_Q="要產生自簽 HTTPS 憑證嗎?"
+    M_W4_TITLE="第 4 步: 建置"
+    M_RUN_NOW_Q="現在啟動伺服器嗎?"
+    M_WIZARD_DONE="安裝完成! 之後重新執行本腳本，即可在選單中啟動/停止。"
+
+    M_SET_TITLE="設定 (部分變更需要重新建置)"
+    M_SET_LANG="語言 / Language: %s"
+    M_SET_PORT="連接埠: %s"
+    M_SET_LEGAL="私人伺服器 (已完成法律聲明設定): %s  ※ 需要重新建置"
+    M_SET_LITE="輕量模式: %s  ※ 需要重新建置"
+    M_SET_PROXY="信任反向代理: %s"
+    M_OFF="關"
+    M_SET_HTTPS="產生 HTTPS 憑證"
+    M_SET_REBUILD="重新建置"
+    M_BACK="返回"
+    M_PORT_TITLE="連接埠"
+    M_PORT_NUM="連接埠號碼"
+    M_DIGITS_ONLY="請只輸入數字。"
+    M_LANG_TITLE="語言 / Language"
+    M_LANG_AUTO="自動 — 依照系統地區設定 (%s)"
+
+    M_NEED_TTY="請在互動式終端機中執行:  bash risu-setup.sh"
+    M_MAIN_TITLE="主選單   (伺服器: %s)"
+    M_STATE_RUNNING="執行中"
+    M_STATE_STOPPED="已停止"
+    M_STATE_NOT_INSTALLED="未安裝"
+    M_MAIN_WIZARD="安裝精靈  — 第一次請從這裡開始!"
+    M_MAIN_START="啟動伺服器"
+    M_MAIN_STOP="停止伺服器"
+    M_MAIN_STATUS="狀態 / 日誌"
+    M_MAIN_UPDATE="更新 (取得最新版本 + 重新建置)"
+    M_MAIN_BACKUP="備份資料 (save 資料夾)"
+    M_MAIN_PW="重設密碼"
+    M_MAIN_SETTINGS="設定"
+    M_MAIN_ENV="環境檢查"
+    M_MAIN_EXIT="結束"
+    M_BYE="再見!"
+}
+
 # Formats a message: f "$M_X" arg...
 # shellcheck disable=SC2059
 f() { local fmt="$1"; shift; printf "$fmt" "$@"; }
@@ -676,7 +1010,7 @@ confirm() {
     [ "$def" = y ] && hint="Y/n" || hint="y/N"
     read -r -p "$q [$hint] " ans || ans=''
     ans="${ans:-$def}"
-    case "$ans" in y|Y|yes|YES|Yes|예|네|ㅇ|はい|うん) return 0 ;; *) return 1 ;; esac
+    case "$ans" in y|Y|yes|YES|Yes|예|네|ㅇ|はい|うん|是|好|对|對) return 0 ;; *) return 1 ;; esac
 }
 
 # Value prompt. ask "question" "default" → ASK_RESULT
@@ -1140,7 +1474,7 @@ settings_menu() {
 # Main
 # ---------------------------------------------------------------------------
 main() {
-    local cli_lang="" env_lang="${RISU_LANG:-}"
+    local cli_lang="" env_lang="$ENV_RISU_LANG"
     while [ $# -gt 0 ]; do
         case "$1" in
             --lang) cli_lang="${2:-}"; shift 2 || shift ;;
@@ -1152,7 +1486,9 @@ main() {
     # Priority: --lang > RISU_LANG env > saved setting > system locale
     [ -n "$env_lang" ] && RISU_LANG="$env_lang"
     [ -n "$cli_lang" ] && RISU_LANG="$cli_lang"
-    case "$RISU_LANG" in ko|en|ja|'') ;; *) RISU_LANG='' ;; esac
+    # Accept common spellings such as zh-TW or zh_Hant for the CLI/env value.
+    case "$RISU_LANG" in zh-TW|zh-tw|zh_tw|zh-Hant|zh_Hant|zh-HK|zh_HK) RISU_LANG=zh_TW ;; zh-CN|zh_CN|zh-Hans|zh_Hans) RISU_LANG=zh ;; esac
+    [ -n "$RISU_LANG" ] && ! lang_supported "$RISU_LANG" && RISU_LANG=
     detect_lang
     apply_lang
 
