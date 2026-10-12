@@ -50,3 +50,8 @@ dist.zip
 
 # Due to Cargo.lock makes the project build fail, we ignore it
 Cargo.lock
+# risu-setup.sh
+.risu-setup.env
+.risu-server.pid
+risu-server.log
+backup-save-*.tar.gz
