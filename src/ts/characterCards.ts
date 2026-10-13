@@ -30,9 +30,9 @@ export const hubURL = isNodeServer
     ? NIGHTLY_HUB_URL 
     : EXTERNAL_HUB_URL;
 
-export async function importCharacter() {
+export async function importCharacter(preselectedFiles?: File[]) {
     try {
-        const files = await selectFileByDom(["*"], 'multiple')
+        const files = preselectedFiles ?? await selectFileByDom(["*"], 'multiple')
         if(!files){
             return
         }

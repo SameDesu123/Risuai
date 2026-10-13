@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { alertGenerationInfoStore } from "../../ts/alert";
+    import { alertGenerationInfoStore, setAddCharacterImportFiles } from "../../ts/alert";
     
     import { DBState } from 'src/ts/stores.svelte';
     import { getCharImage } from '../../ts/characters';
@@ -19,6 +19,7 @@
     import { getFetchData } from 'src/ts/globalApi.svelte';
     import { alertStore, selectedCharID } from "src/ts/stores.svelte";
     import { tokenize } from "src/ts/tokenizer";
+    import { selectFileByDom } from "src/ts/util";
     import TextAreaInput from "../UI/GUI/TextAreaInput.svelte";
     import ModuleChatMenu from "../Setting/Pages/Module/ModuleChatMenu.svelte";
     import { ColorSchemeTypeStore } from "src/ts/gui/colorscheme";
@@ -605,9 +606,17 @@
                     <button class="border-darkborderc border py-2 px-8 flex rounded-md hover:ring-2 items-center mt-2" onclick={((e) => {
                         e.stopPropagation()
                         e.preventDefault()
-                        alertStore.set({
-                            type: 'none',
-                            msg: 'importCharacter'
+                        // Open the picker synchronously: WebKit drops the user gesture if we close the popup and
+                        // open it later, and the popup should stay up until files are actually chosen.
+                        selectFileByDom(["*"], 'multiple').then((files) => {
+                            if(!files || files.length === 0 || $alertStore.type !== 'addchar'){
+                                return
+                            }
+                            setAddCharacterImportFiles(files)
+                            alertStore.set({
+                                type: 'none',
+                                msg: 'importCharacter'
+                            })
                         })
                     })}>
                         <div class="flex flex-col justify-start items-start">

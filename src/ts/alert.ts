@@ -97,7 +97,21 @@ export async function alertNormalWait(msg:string){
     await waitAlert()
 }
 
+// Files picked from the add-character popup itself, so the picker opens inside the click gesture
+let addCharacterImportFiles: File[] | null = null
+
+export function setAddCharacterImportFiles(files: File[] | null) {
+    addCharacterImportFiles = files
+}
+
+export function takeAddCharacterImportFiles() {
+    const files = addCharacterImportFiles
+    addCharacterImportFiles = null
+    return files
+}
+
 export async function alertAddCharacter() {
+    addCharacterImportFiles = null
     alertStoreImported.set({
         'type': 'addchar',
         'msg': language.addCharacter

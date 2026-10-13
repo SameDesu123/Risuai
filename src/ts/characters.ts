@@ -1,6 +1,6 @@
 import { get, writable } from "svelte/store";
 import { saveImage, type character, type Chat, defaultSdDataFunc, type loreBook, getDatabase, getCharacterByIndex, setCharacterByIndex } from "./storage/database.svelte";
-import { alertAddCharacter, alertConfirm, alertError, alertNormal, alertSelect, alertStore, alertWait } from "./alert";
+import { alertAddCharacter, takeAddCharacterImportFiles, alertConfirm, alertError, alertNormal, alertSelect, alertStore, alertWait } from "./alert";
 import { language } from "../lang";
 import { checkNullish, findCharacterbyId, findCharacterIndexbyId, getUserName, selectMultipleFile, selectSingleFile } from "./util";
 import { v4 as uuidv4, v4 } from 'uuid';
@@ -860,7 +860,7 @@ export async function addCharacter(arg:{
             createNewGroup()
             break
         case 'importCharacter':
-            await importCharacter()
+            await importCharacter(takeAddCharacterImportFiles() ?? undefined)
             break
         default:
             MobileGUIStack.set(1)
