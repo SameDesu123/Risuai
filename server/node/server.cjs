@@ -1174,7 +1174,11 @@ app.post('/api/login', loginRouteLimiter, async (req, res) => {
         res.status(400).send({error: 'Password not set'})
         return;
     }
-    if(req.body.password && req.body.password.trim() === password.trim()){
+    if(typeof req.body.password === 'string' && req.body.password && req.body.password.trim() === password.trim()){
+        if(!req.body.publicKey || typeof req.body.publicKey !== 'object'){
+            res.status(400).send({error: 'Invalid public key'})
+            return;
+        }
         knownPublicKeysHashes.push(await hashJSON(req.body.publicKey))
         writeFileSync(knownPublicKeysPath, JSON.stringify(knownPublicKeysHashes), 'utf-8')
         res.send({status:'success'})
