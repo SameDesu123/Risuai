@@ -1423,7 +1423,7 @@ app.get('/api/oauth_callback', async (req, res, next) => {
         }
 
         let tokens = await openid.authorizationCodeGrant(
-            oauthData.config,   
+            oauthData.config,
             getCurrentUrl(),
             {
                 pkceCodeVerifier: oauthData.code_verifier,
