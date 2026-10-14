@@ -740,12 +740,32 @@ async function checkAuth(req, res, returnOnlyStatus = false){
     }
 }
 
+function parseProxyRequestHeaders(req) {
+    try {
+        const urlParam = req.headers['risu-url'] ? decodeURIComponent(req.headers['risu-url']) : req.query.url;
+        const header = req.headers['risu-header'] ? JSON.parse(decodeURIComponent(req.headers['risu-header'])) : req.headers;
+        if (!header || typeof header !== 'object' || Array.isArray(header)) {
+            return null;
+        }
+        return { urlParam, header };
+    } catch {
+        return null;
+    }
+}
+
 const reverseProxyFunc = async (req, res, next) => {
     if(!await checkProxyAuth(req, res)){
         return;
     }
     
-    const urlParam = req.headers['risu-url'] ? decodeURIComponent(req.headers['risu-url']) : req.query.url;
+    const parsed = parseProxyRequestHeaders(req);
+    if (!parsed) {
+        res.status(400).send({
+            error:'Invalid risu-url or risu-header'
+        });
+        return;
+    }
+    const { urlParam, header } = parsed;
 
     if (!urlParam) {
         res.status(400).send({
@@ -753,7 +773,6 @@ const reverseProxyFunc = async (req, res, next) => {
         });
         return;
     }
-    const header = req.headers['risu-header'] ? JSON.parse(decodeURIComponent(req.headers['risu-header'])) : req.headers;
     if(!header['x-forwarded-for']){
         header['x-forwarded-for'] = req.ip
     }
@@ -826,7 +845,14 @@ const reverseProxyFunc_get = async (req, res, next) => {
         return;
     }
     
-    const urlParam = req.headers['risu-url'] ? decodeURIComponent(req.headers['risu-url']) : req.query.url;
+    const parsed = parseProxyRequestHeaders(req);
+    if (!parsed) {
+        res.status(400).send({
+            error:'Invalid risu-url or risu-header'
+        });
+        return;
+    }
+    const { urlParam, header } = parsed;
 
     if (!urlParam) {
         res.status(400).send({
@@ -834,7 +860,6 @@ const reverseProxyFunc_get = async (req, res, next) => {
         });
         return;
     }
-    const header = req.headers['risu-header'] ? JSON.parse(decodeURIComponent(req.headers['risu-header'])) : req.headers;
     if(!header['x-forwarded-for']){
         header['x-forwarded-for'] = req.ip
     }
