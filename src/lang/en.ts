@@ -1729,6 +1729,26 @@ export const languageEnglish = {
     skipSavingAssetsOnWebSync: "Skip Saving Assets on Web Sync",
     applyAdditionalParamsToAll: "Apply Additional Parameters to All Models",
     localToggles: "Local Toggles",
+    chatCommands: {
+        input: "Show an input dialog and return the entered text",
+        echo: "Show an alert dialog with the text",
+        popup: "Show an alert dialog with the text",
+        pass: "Return the text as is",
+        buttons: "Show a select dialog and return the selected label",
+        speak: "Speak the text with TTS",
+        send: "Add the text to the chat as a user message",
+        sendas: "Add the text to the chat as a character message",
+        comment: "Add a comment to the last message",
+        cut: "Cut chat messages",
+        del: "Delete chat messages",
+        len: "Return the length of an array",
+        multisend: "Send multiple messages in sequence",
+        setvar: "Set a chat variable",
+        addvar: "Add a value to a chat variable",
+        getvar: "Get a chat variable",
+        trigger: "Run a manual trigger",
+        help: "Show the command help",
+    },
 } satisfies I18nTranslation;
 
 type I18nTranslationFunction = (...args: any[]) => string;

@@ -1,6 +1,7 @@
 <script lang="ts">
 
     import Suggestion from './Suggestion.svelte';
+    import CommandSuggestion from './CommandSuggestion.svelte';
     import { CameraIcon, DatabaseIcon, DicesIcon, GlobeIcon, ImagePlusIcon, LanguagesIcon, Laugh, MenuIcon, MicOffIcon, PackageIcon, Plus, RefreshCcwIcon, ReplyIcon, Send, StepForwardIcon, XIcon, BrainIcon, ArrowDown, SparkleIcon } from "@lucide/svelte";
     import { selectedCharID, PlaygroundStore, createSimpleCharacter, hypaV3ModalOpen, ScrollToMessageStore, additionalChatMenu, additionalFloatingActionButtons, easyPanelStore, chatPanelStore } from "../../ts/stores.svelte";
     import { tick } from 'svelte';
@@ -54,6 +55,7 @@
     let fileInput:string[] = $state([])
     let showNewMessageButton = $state(false)
     let chatsInstance: any = $state()
+    let commandSuggestion: ReturnType<typeof CommandSuggestion> | undefined = $state()
     let isScrollingToMessage = $state(false)
     let { openModuleList = $bindable(false), openChatList = $bindable(false), customStyle = '' }: Props = $props();
     let currentCharacter = $derived(DBState.db.characters[$selectedCharID])
@@ -584,9 +586,18 @@
             }
         }}>
             <div
-                    class="{DBState.db.fixedChatTextarea ? 'sticky pt-2 pb-2 right-0 bottom-0 bg-bgcolor' : 'mt-2 mb-2'} flex items-stretch w-full"
+                    class="{DBState.db.fixedChatTextarea ? 'sticky pt-2 pb-2 right-0 bottom-0 bg-bgcolor' : 'relative mt-2 mb-2'} flex items-stretch w-full"
                     style="{DBState.db.fixedChatTextarea ? 'z-index:29;' : ''}"
             >
+                <CommandSuggestion
+                    bind:this={commandSuggestion}
+                    input={messageInput}
+                    onselect={(command) => {
+                        messageInput = `/${command.name} `
+                        tick().then(updateInputSizeAll)
+                        inputEle?.focus()
+                    }}
+                />
                 {#if DBState.db.useChatSticker && currentCharacter.type !== 'group'}
                     <div onclick={()=>{toggleStickers = !toggleStickers}}
                          class={"ml-4 bg-textcolor2 flex justify-center items-center  w-12 h-12 rounded-md hover:bg-blue-500 transition-colors "+(toggleStickers ? 'text-green-500':'text-textcolor')}>
@@ -598,6 +609,9 @@
                           bind:value={messageInput}
                           bind:this={inputEle}
                           onkeydown={(e) => {
+                        if(commandSuggestion?.handleKeydown(e)){
+                            return
+                        }
                         if(e.key.toLocaleLowerCase() === "enter" && !e.isComposing){
                             if(DBState.db.sendWithEnter && (!e.shiftKey)){
                                 send()
