@@ -1565,4 +1565,10 @@ export const languageKorean = {
         trigger: "수동 트리거를 실행합니다",
         help: "명령어 도움말을 표시합니다",
     },
+    chatCommandUI: {
+        builtin: "기본",
+        navigate: "이동",
+        complete: "완성",
+        close: "닫기",
+    },
 } satisfies DeepPartial<typeof import('./en').languageEnglish>

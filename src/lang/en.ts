@@ -1749,6 +1749,12 @@ export const languageEnglish = {
         trigger: "Run a manual trigger",
         help: "Show the command help",
     },
+    chatCommandUI: {
+        builtin: "Built-in",
+        navigate: "Navigate",
+        complete: "Complete",
+        close: "Close",
+    },
 } satisfies I18nTranslation;
 
 type I18nTranslationFunction = (...args: any[]) => string;

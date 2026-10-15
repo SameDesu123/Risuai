@@ -28,11 +28,28 @@ export const builtinCommands: ChatCommandInfo[] = [
     { name: '?', usage: '', description: () => language.chatCommands.help },
 ]
 
-// Returns the commands matching the command name being typed, or null when the list should not be shown
-export function getCommandSuggestions(input: string): ChatCommandInfo[] | null {
+export type CommandSectionId = 'builtin'
+
+export interface CommandSection {
+    id: CommandSectionId
+    label: () => string
+    commands: ChatCommandInfo[]
+}
+
+// Sections shown in the suggestion list, in display order
+export function getCommandSections(): CommandSection[] {
+    return [
+        { id: 'builtin', label: () => language.chatCommandUI.builtin, commands: builtinCommands },
+    ]
+}
+
+// Returns the sections with commands matching the command name being typed, or null when the list should not be shown
+export function getCommandSuggestions(input: string): CommandSection[] | null {
     if(!input.startsWith('/') || /\s/.test(input)){
         return null
     }
     const query = input.slice(1).toLowerCase()
-    return builtinCommands.filter((c) => c.name.startsWith(query))
+    return getCommandSections()
+        .map((section) => ({ ...section, commands: section.commands.filter((c) => c.name.startsWith(query)) }))
+        .filter((section) => section.commands.length > 0)
 }
