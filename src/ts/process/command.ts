@@ -43,22 +43,16 @@ async function processCommand(command:string, pipe:string):Promise<false | strin
     const db = getDatabase()
     const currentChar = db.characters[get(selectedCharID)]
     const currentChat = currentChar.chats[currentChar.chatPage]
-    let {commandName, arg, namedArg} = commandParser(command, pipe)
-
-    if(!arg){
-        arg = pipe
-    }
-
-    arg = risuChatParser(arg, {
+    const {commandName, args, rest, named} = commandParser(command, pipe, (text) => risuChatParser(text, {
         chara: currentChar.type === 'character' ? currentChar : null
+    }))
+    // free text commands take the whole line as one argument
+    const arg = rest(0) ?? ''
+    // `/setvar key value`, or the STScript style `/setvar key=key value`. The value falls back to the pipe.
+    const varArgs = () => ({
+        key: named('key') ?? args[0] ?? '',
+        value: rest(1) ?? pipe,
     })
-
-    const namedArgKeys = Object.keys(namedArg)
-    for(const key of namedArgKeys){
-        namedArg[key] = risuChatParser(namedArg[key], {
-            chara: currentChar.type === 'character' ? currentChar : null
-        })
-    }
 
     switch(commandName){
         //STScript compatibility commands
@@ -76,13 +70,21 @@ async function processCommand(command:string, pipe:string):Promise<false | strin
             return pipe
         }
         case 'buttons': {
-            if(namedArg.labels){
+            // `/buttons Yes No "Not sure"`, or the STScript style `/buttons labels=["Yes","No"]`
+            let labels = args
+            const labelsJSON = named('labels')
+            if(labelsJSON !== undefined){
                 try {
-                    const JSONLabels = JSON.parse(namedArg.labels)
-                    if(Array.isArray(JSONLabels)){
-                        pipe = await alertSelect(JSONLabels)
-                    }
-                } catch (error) {}
+                    const parsed = JSON.parse(labelsJSON)
+                    labels = Array.isArray(parsed) ? parsed.map((e) => String(e)) : []
+                } catch (error) {
+                    labels = []
+                }
+            }
+            labels = labels.filter((e) => e !== '')
+            if(labels.length > 0){
+                // alertSelect gives back the index of the chosen button
+                pipe = labels[Number(await alertSelect(labels))] ?? ''
             }
             return pipe
         }
@@ -126,25 +128,26 @@ async function processCommand(command:string, pipe:string):Promise<false | strin
             return pipe
         }
         case 'cut':{
-            if(arg.includes('-')){
-                const [start, end] = arg.split('-')
+            const target = args[0] ?? ''
+            if(target.includes('-')){
+                const [start, end] = target.split('-')
                 currentChat.message = currentChat.message.slice(parseInt(start), parseInt(end))
                 setDatabase(db)
             }
-            else if(!isNaN(parseInt(arg))){
-                const index = parseInt(arg)
+            else if(!isNaN(parseInt(target))){
+                const index = parseInt(target)
                 currentChat.message = currentChat.message.splice(index, 1)
                 setDatabase(db)
             }
             else{ //For risu, doesn'ts work for STScript
-                const id = arg
+                const id = target
                 currentChat.message = currentChat.message.filter((e)=>e.chatId !== id)
                 setDatabase(db)
             }
             return pipe
         }
         case 'del': {
-            const size = parseInt(arg)
+            const size = parseInt(args[0])
             if(!isNaN(size)){
                 currentChat.message = currentChat.message.slice(currentChat.message.length-size)
                 setDatabase(db)
@@ -180,7 +183,7 @@ async function processCommand(command:string, pipe:string):Promise<false | strin
             return ''
         }
         case 'setvar':{
-            const { key, value } = parseVarArgs(namedArg, arg, pipe)
+            const { key, value } = varArgs()
             const db = getDatabase()
             const selectedChar = get(selectedCharID)
             const char = db.characters[selectedChar]
@@ -195,7 +198,7 @@ async function processCommand(command:string, pipe:string):Promise<false | strin
             return ''
         }
         case 'addvar':{
-            const { key, value } = parseVarArgs(namedArg, arg, pipe)
+            const { key, value } = varArgs()
             const db = getDatabase()
             const selectedChar = get(selectedCharID)
             const char = db.characters[selectedChar]
@@ -209,7 +212,7 @@ async function processCommand(command:string, pipe:string):Promise<false | strin
             return ''
         }
         case 'getvar':{
-            const { key } = parseVarArgs(namedArg, arg, pipe)
+            const { key } = varArgs()
             const db = getDatabase()
             const selectedChar = get(selectedCharID)
             const char = db.characters[selectedChar]
@@ -241,6 +244,8 @@ async function processCommand(command:string, pipe:string):Promise<false | strin
         }
         case '?':{
             alertMd(`
+            Arguments are separated by spaces. Wrap an argument in double quotes to keep its spaces,
+            and the last argument of a text command takes the rest of the line.
             # /input [text]
             - Show input dialog
             - Return input text
@@ -256,10 +261,10 @@ async function processCommand(command:string, pipe:string):Promise<false | strin
             # /pass [text]
             - Return input text
             - Example: /pass Hello World
-            # /buttons [labels]
+            # /buttons [label] [label] ...
             - Show select dialog
             - Return selected label
-            - Example: /buttons Yes§No
+            - Example: /buttons Yes No "Not sure"
             # /speak [text]
             - Speak text
             - Example: /speak Hello World
@@ -279,11 +284,11 @@ async function processCommand(command:string, pipe:string):Promise<false | strin
             - Delete chat message
             - Example: /del 1
             # /len [array]
-            - Return length of array
-            - Example: /len Hello§World
+            - Return length of JSON array
+            - Example: /len ["Hello", "World"]
             # /setvar [key] [value]
             - Set variable
-            - Example: /setvar hello world
+            - Example: /setvar greeting hello world
             # /addvar [key] [value]
             - Add value to variable
             - Example: /addvar damage 10
@@ -292,6 +297,7 @@ async function processCommand(command:string, pipe:string):Promise<false | strin
             - Example: /getvar damage
             # /trigger [name]
             - Run trigger
+            - Example: /trigger my trigger
             # /?
             - Show help
             `)
@@ -304,41 +310,95 @@ async function processCommand(command:string, pipe:string):Promise<false | strin
 }
 
 
-// Reads the variable name and value for setvar/addvar/getvar.
-// Accepts `/setvar [key] [value]` as well as the STScript style `/setvar key=[key] [value]`.
-// The value falls back to the pipe when only the key is given.
-function parseVarArgs(namedArg:{[key:string]:string}, arg:string, pipe:string){
-    if(namedArg.key !== undefined){
-        return { key: namedArg.key, value: arg }
-    }
-    const trimmed = arg.trim()
-    const spaceIndex = trimmed.search(/\s/)
-    if(spaceIndex === -1){
-        return { key: trimmed, value: pipe }
-    }
-    return { key: trimmed.slice(0, spaceIndex), value: trimmed.slice(spaceIndex + 1).trim() }
+interface CommandToken {
+    // argument text, without the quotes that grouped it
+    value: string
+    // offset of the argument in the argument line
+    start: number
 }
 
-function commandParser(command:string, pipe:string){
+// Splits the argument line on whitespace.
+// Double quotes group words into one argument, and nothing inside brackets is split,
+// so JSON like ["a", "b"] and CBS like {{getvar::a b}} each stay one argument.
+function tokenizeArgs(line:string):CommandToken[]{
+    const tokens:CommandToken[] = []
+    let i = 0
+    while(i < line.length){
+        if(/\s/.test(line[i])){
+            i++
+            continue
+        }
+        const start = i
+        let value = ''
+        let inQuote = false
+        let bracketDepth = 0
+        for(; i < line.length; i++){
+            const char = line[i]
+            if(!inQuote && bracketDepth === 0 && /\s/.test(char)){
+                break
+            }
+            if(char === '"' && bracketDepth === 0){
+                inQuote = !inQuote
+                continue
+            }
+            if(!inQuote){
+                if(char === '[' || char === '{'){
+                    bracketDepth++
+                }
+                else if((char === ']' || char === '}') && bracketDepth > 0){
+                    bracketDepth--
+                }
+            }
+            value += char
+        }
+        tokens.push({ value, start })
+    }
+    return tokens
+}
+
+// Parses `/command <arg1> <arg2> <arg3>...`
+function commandParser(command:string, pipe:string, parse:(text:string) => string){
+    command = command.trim()
     if(command.startsWith('/')){
         command = command.slice(1)
     }
-    const sliced = command.split(' ').filter((e)=>e!='')
-    const commandName = sliced[0]
-    let argArray:string[] = []
-    let namedArg:{[key:string]:string} = {}
-    for(let i = 1; i<sliced.length; i++){
-        if(sliced[i].includes('=')){
-            const [key, value] = sliced[i].split('=')
-            namedArg[key] = value
-        }
-        else{
-            argArray.push(sliced[i])
-        }
+    const nameEnd = command.search(/\s/)
+    const commandName = nameEnd === -1 ? command : command.slice(0, nameEnd)
+    let line = nameEnd === -1 ? '' : command.slice(nameEnd).trim()
+    let tokens = tokenizeArgs(line)
+    if(tokens.length === 0){
+        // with no arguments, the piped value becomes the first argument
+        line = pipe
+        tokens = [{ value: pipe, start: 0 }]
     }
-    const arg = argArray.join(' ')
-        .replace('{{pipe}}', pipe) //STScript compatibility
-        .replace('{{slot}}', pipe) //Risu default
-    return {commandName, arg, namedArg}
 
+    const fill = (text:string) => parse(text
+        .replaceAll('{{pipe}}', pipe) //STScript compatibility
+        .replaceAll('{{slot}}', pipe) //Risu default
+    )
+    const args = tokens.map((token) => fill(token.value))
+
+    return {
+        commandName,
+        args,
+        // The line from the index-th argument to the end, for a last argument that takes free text.
+        // A single quoted argument loses its quotes, longer text is kept as typed.
+        rest: (index:number):string|undefined => {
+            if(index >= tokens.length){
+                return undefined
+            }
+            if(index === tokens.length - 1){
+                return args[index]
+            }
+            return fill(line.slice(tokens[index].start))
+        },
+        // STScript style named argument, given first as `name=value`
+        named: (name:string):string|undefined => {
+            const prefix = name + '='
+            if(!line.startsWith(prefix)){
+                return undefined
+            }
+            return fill(tokens[0].value.slice(prefix.length))
+        },
+    }
 }

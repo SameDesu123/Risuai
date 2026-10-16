@@ -13,7 +13,7 @@ export const builtinCommands: ChatCommandInfo[] = [
     { name: 'echo', usage: ['text'], description: () => language.chatCommands.echo },
     { name: 'popup', usage: ['text'], description: () => language.chatCommands.popup },
     { name: 'pass', usage: ['text'], description: () => language.chatCommands.pass },
-    { name: 'buttons', usage: ['labels=JSON array'], description: () => language.chatCommands.buttons },
+    { name: 'buttons', usage: ['label', 'label...'], description: () => language.chatCommands.buttons },
     { name: 'speak', usage: ['text'], description: () => language.chatCommands.speak },
     { name: 'send', usage: ['text'], description: () => language.chatCommands.send },
     { name: 'sendas', usage: ['text'], description: () => language.chatCommands.sendas },
