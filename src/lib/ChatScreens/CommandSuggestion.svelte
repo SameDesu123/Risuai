@@ -104,9 +104,9 @@
                         >
                             <span class="flex items-center gap-2 flex-wrap">
                                 <span class="text-textcolor">/{command.name}</span>
-                                {#if command.usage}
-                                    <span class="px-1.5 rounded-sm bg-darkbutton text-xs leading-5 text-textcolor2">{command.usage}</span>
-                                {/if}
+                                {#each command.usage as arg}
+                                    <span class="px-1.5 rounded-sm bg-darkbutton text-xs leading-5 text-textcolor2">{arg}</span>
+                                {/each}
                             </span>
                             <span class="text-sm text-textcolor2">{command.description()}</span>
                         </button>

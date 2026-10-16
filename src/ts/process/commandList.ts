@@ -2,30 +2,31 @@ import { language } from "../../lang";
 
 export interface ChatCommandInfo {
     name: string
-    usage: string
+    // argument placeholders, each shown as its own badge
+    usage: string[]
     description: () => string
 }
 
 // Built-in slash commands handled by processCommand in ./command.ts
 export const builtinCommands: ChatCommandInfo[] = [
-    { name: 'input', usage: '[text]', description: () => language.chatCommands.input },
-    { name: 'echo', usage: '[text]', description: () => language.chatCommands.echo },
-    { name: 'popup', usage: '[text]', description: () => language.chatCommands.popup },
-    { name: 'pass', usage: '[text]', description: () => language.chatCommands.pass },
-    { name: 'buttons', usage: 'labels=[JSON array]', description: () => language.chatCommands.buttons },
-    { name: 'speak', usage: '[text]', description: () => language.chatCommands.speak },
-    { name: 'send', usage: '[text]', description: () => language.chatCommands.send },
-    { name: 'sendas', usage: '[text]', description: () => language.chatCommands.sendas },
-    { name: 'comment', usage: '[text]', description: () => language.chatCommands.comment },
-    { name: 'cut', usage: '[index | start-end | chatId]', description: () => language.chatCommands.cut },
-    { name: 'del', usage: '[count]', description: () => language.chatCommands.del },
-    { name: 'len', usage: '[JSON array]', description: () => language.chatCommands.len },
-    { name: 'multisend', usage: '[text]|||[text]...', description: () => language.chatCommands.multisend },
-    { name: 'setvar', usage: 'key=[key] [value]', description: () => language.chatCommands.setvar },
-    { name: 'addvar', usage: 'key=[key] [value]', description: () => language.chatCommands.addvar },
-    { name: 'getvar', usage: 'key=[key]', description: () => language.chatCommands.getvar },
-    { name: 'trigger', usage: '[name]', description: () => language.chatCommands.trigger },
-    { name: '?', usage: '', description: () => language.chatCommands.help },
+    { name: 'input', usage: ['text'], description: () => language.chatCommands.input },
+    { name: 'echo', usage: ['text'], description: () => language.chatCommands.echo },
+    { name: 'popup', usage: ['text'], description: () => language.chatCommands.popup },
+    { name: 'pass', usage: ['text'], description: () => language.chatCommands.pass },
+    { name: 'buttons', usage: ['labels=JSON array'], description: () => language.chatCommands.buttons },
+    { name: 'speak', usage: ['text'], description: () => language.chatCommands.speak },
+    { name: 'send', usage: ['text'], description: () => language.chatCommands.send },
+    { name: 'sendas', usage: ['text'], description: () => language.chatCommands.sendas },
+    { name: 'comment', usage: ['text'], description: () => language.chatCommands.comment },
+    { name: 'cut', usage: ['index | start-end | chatId'], description: () => language.chatCommands.cut },
+    { name: 'del', usage: ['count'], description: () => language.chatCommands.del },
+    { name: 'len', usage: ['JSON array'], description: () => language.chatCommands.len },
+    { name: 'multisend', usage: ['text|||text...'], description: () => language.chatCommands.multisend },
+    { name: 'setvar', usage: ['key=name', 'value'], description: () => language.chatCommands.setvar },
+    { name: 'addvar', usage: ['key=name', 'value'], description: () => language.chatCommands.addvar },
+    { name: 'getvar', usage: ['key=name'], description: () => language.chatCommands.getvar },
+    { name: 'trigger', usage: ['name'], description: () => language.chatCommands.trigger },
+    { name: '?', usage: [], description: () => language.chatCommands.help },
 ]
 
 export type CommandSectionId = 'builtin'
