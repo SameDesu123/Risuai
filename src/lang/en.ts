@@ -1751,9 +1751,6 @@ export const languageEnglish = {
     },
     chatCommandUI: {
         builtin: "Built-in",
-        navigate: "Navigate",
-        complete: "Complete",
-        close: "Close",
     },
 } satisfies I18nTranslation;
 

@@ -1,7 +1,6 @@
 <script lang="ts">
     import { SquareSlashIcon } from "@lucide/svelte";
     import type { Component } from "svelte";
-    import { language } from "src/lang";
     import SidebarIndicator from "../SideBars/SidebarIndicator.svelte";
     import { getCommandSuggestions, type ChatCommandInfo, type CommandSectionId } from "src/ts/process/commandList";
 
@@ -131,12 +130,6 @@
                         </button>
                     {/each}
                 {/each}
-            </div>
-
-            <div class="hidden sm:flex items-center gap-4 px-4 py-2 border-t border-darkborderc text-xs text-textcolor2">
-                <span class="flex items-center gap-1"><kbd class="px-1.5 rounded-sm bg-darkbutton leading-5">↑</kbd><kbd class="px-1.5 rounded-sm bg-darkbutton leading-5">↓</kbd><span class="ml-1">{language.chatCommandUI.navigate}</span></span>
-                <span class="flex items-center gap-1"><kbd class="px-1.5 rounded-sm bg-darkbutton leading-5">Tab</kbd><span class="ml-1">{language.chatCommandUI.complete}</span></span>
-                <span class="flex items-center gap-1"><kbd class="px-1.5 rounded-sm bg-darkbutton leading-5">Esc</kbd><span class="ml-1">{language.chatCommandUI.close}</span></span>
             </div>
         </div>
     </div>
