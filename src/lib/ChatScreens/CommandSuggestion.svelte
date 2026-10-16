@@ -83,24 +83,6 @@
 
 {#if visible}
     <div class="absolute bottom-full left-4 right-2 mb-2 z-30 flex max-h-80 overflow-hidden bg-darkbg text-textcolor border border-darkborderc rounded-md shadow-lg">
-        <div class="flex flex-col items-center gap-2 py-2 w-14 min-w-14 bg-bgcolor">
-            {#each sections as section (section.id)}
-                {@const Icon = sectionIcons[section.id]}
-                <div class="group relative flex items-center justify-center w-full">
-                    <SidebarIndicator isActive={section.id === activeSectionId} />
-                    <button
-                        class="w-10 h-10 flex items-center justify-center rounded-md transition-colors {section.id === activeSectionId ? 'bg-selected text-textcolor' : 'text-textcolor2 hover:text-textcolor'}"
-                        title={section.label()}
-                        aria-label={section.label()}
-                        onmousedown={(e) => e.preventDefault()}
-                        onclick={() => jumpToSection(section.id)}
-                    >
-                        <Icon size={20} />
-                    </button>
-                </div>
-            {/each}
-        </div>
-
         <div class="flex flex-col flex-1 min-w-0">
             <div bind:this={listEle} class="flex-1 overflow-y-auto px-2 pb-2" role="listbox">
                 {#each sections as section (section.id)}
@@ -131,6 +113,27 @@
                     {/each}
                 {/each}
             </div>
+        </div>
+
+        <div class="flex flex-col items-center gap-2 py-2 w-14 min-w-14 bg-bgcolor">
+            {#each sections as section (section.id)}
+                {@const Icon = sectionIcons[section.id]}
+                <div class="group relative flex items-center justify-center w-full">
+                    <!-- mirrored so the sidebar indicator sits on the right edge, next to the input bar buttons -->
+                    <div class="absolute inset-0 flex items-center -scale-x-100 pointer-events-none">
+                        <SidebarIndicator isActive={section.id === activeSectionId} />
+                    </div>
+                    <button
+                        class="w-10 h-10 flex items-center justify-center rounded-md transition-colors {section.id === activeSectionId ? 'bg-selected text-textcolor' : 'text-textcolor2 hover:text-textcolor'}"
+                        title={section.label()}
+                        aria-label={section.label()}
+                        onmousedown={(e) => e.preventDefault()}
+                        onclick={() => jumpToSection(section.id)}
+                    >
+                        <Icon size={20} />
+                    </button>
+                </div>
+            {/each}
         </div>
     </div>
 {/if}
