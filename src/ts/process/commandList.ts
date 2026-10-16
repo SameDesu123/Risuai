@@ -22,9 +22,9 @@ export const builtinCommands: ChatCommandInfo[] = [
     { name: 'del', usage: ['count'], description: () => language.chatCommands.del },
     { name: 'len', usage: ['JSON array'], description: () => language.chatCommands.len },
     { name: 'multisend', usage: ['text|||text...'], description: () => language.chatCommands.multisend },
-    { name: 'setvar', usage: ['key=name', 'value'], description: () => language.chatCommands.setvar },
-    { name: 'addvar', usage: ['key=name', 'value'], description: () => language.chatCommands.addvar },
-    { name: 'getvar', usage: ['key=name'], description: () => language.chatCommands.getvar },
+    { name: 'setvar', usage: ['key', 'value'], description: () => language.chatCommands.setvar },
+    { name: 'addvar', usage: ['key', 'value'], description: () => language.chatCommands.addvar },
+    { name: 'getvar', usage: ['key'], description: () => language.chatCommands.getvar },
     { name: 'trigger', usage: ['name'], description: () => language.chatCommands.trigger },
     { name: '?', usage: [], description: () => language.chatCommands.help },
 ]

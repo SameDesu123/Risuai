@@ -180,13 +180,13 @@ async function processCommand(command:string, pipe:string):Promise<false | strin
             return ''
         }
         case 'setvar':{
-            console.log(namedArg, arg)
+            const { key, value } = parseVarArgs(namedArg, arg, pipe)
             const db = getDatabase()
             const selectedChar = get(selectedCharID)
             const char = db.characters[selectedChar]
             const chat = char.chats[char.chatPage]
             chat.scriptstate = chat.scriptstate ?? {}
-            chat.scriptstate['$' + namedArg['key']] = arg
+            chat.scriptstate['$' + key] = value
             console.log(chat.scriptstate)
 
             char.chats[char.chatPage] = chat
@@ -195,12 +195,13 @@ async function processCommand(command:string, pipe:string):Promise<false | strin
             return ''
         }
         case 'addvar':{
+            const { key, value } = parseVarArgs(namedArg, arg, pipe)
             const db = getDatabase()
             const selectedChar = get(selectedCharID)
             const char = db.characters[selectedChar]
             const chat = char.chats[char.chatPage]
             chat.scriptstate = chat.scriptstate ?? {}
-            chat.scriptstate['$' + namedArg['key']] = (Number(chat.scriptstate['$' + namedArg['key']]) + Number(arg)).toString()
+            chat.scriptstate['$' + key] = (Number(chat.scriptstate['$' + key]) + Number(value)).toString()
 
             char.chats[char.chatPage] = chat
             db.characters[selectedChar] = char
@@ -208,12 +209,13 @@ async function processCommand(command:string, pipe:string):Promise<false | strin
             return ''
         }
         case 'getvar':{
+            const { key } = parseVarArgs(namedArg, arg, pipe)
             const db = getDatabase()
             const selectedChar = get(selectedCharID)
             const char = db.characters[selectedChar]
             const chat = char.chats[char.chatPage]
             chat.scriptstate = chat.scriptstate ?? {}
-            pipe = (chat.scriptstate['$' + namedArg['key']]).toString() ?? 'null'
+            pipe = (chat.scriptstate['$' + key]).toString() ?? 'null'
             return pipe
         }
         case 'test_lorebook':{
@@ -279,15 +281,15 @@ async function processCommand(command:string, pipe:string):Promise<false | strin
             # /len [array]
             - Return length of array
             - Example: /len Hello§World
-            # /setvar key=[key] [value]
+            # /setvar [key] [value]
             - Set variable
-            - Example: /setvar key=hello world
-            # /addvar key=[key] [value]
+            - Example: /setvar hello world
+            # /addvar [key] [value]
             - Add value to variable
-            - Example: /addvar key=damage 10
-            # /getvar key=[key]
+            - Example: /addvar damage 10
+            # /getvar [key]
             - Get variable
-            - Example: /getvar key=damage
+            - Example: /getvar damage
             # /trigger [name]
             - Run trigger
             # /?
@@ -301,6 +303,21 @@ async function processCommand(command:string, pipe:string):Promise<false | strin
     return false
 }
 
+
+// Reads the variable name and value for setvar/addvar/getvar.
+// Accepts `/setvar [key] [value]` as well as the STScript style `/setvar key=[key] [value]`.
+// The value falls back to the pipe when only the key is given.
+function parseVarArgs(namedArg:{[key:string]:string}, arg:string, pipe:string){
+    if(namedArg.key !== undefined){
+        return { key: namedArg.key, value: arg }
+    }
+    const trimmed = arg.trim()
+    const spaceIndex = trimmed.search(/\s/)
+    if(spaceIndex === -1){
+        return { key: trimmed, value: pipe }
+    }
+    return { key: trimmed.slice(0, spaceIndex), value: trimmed.slice(spaceIndex + 1).trim() }
+}
 
 function commandParser(command:string, pipe:string){
     if(command.startsWith('/')){
