@@ -19,9 +19,13 @@
     let dismissed = $state(false)
     let listEle: HTMLDivElement | undefined = $state()
 
-    const sections = $derived(getCommandSuggestions(input))
+    const suggestions = $derived(getCommandSuggestions(input))
+    const sections = $derived(suggestions?.sections ?? [])
+    // set once arguments are being typed; the list then only shows that command as a reference
+    const argIndex = $derived(suggestions?.argIndex ?? null)
+    const typingArgs = $derived(suggestions !== null && /\s/.test(input))
     // flat list of every shown command, so keyboard navigation can cross sections
-    const flatCommands = $derived((sections ?? []).flatMap((section) => section.commands.map((command) => ({ command, sectionId: section.id }))))
+    const flatCommands = $derived(sections.flatMap((section) => section.commands.map((command) => ({ command, sectionId: section.id }))))
     const visible = $derived(!dismissed && flatCommands.length > 0)
     const activeSectionId = $derived(flatCommands[selectedIndex]?.sectionId)
 
@@ -51,6 +55,15 @@
     export function handleKeydown(e: KeyboardEvent): boolean {
         if(!visible || e.isComposing){
             return false
+        }
+        if(typingArgs){
+            // keep every other key for the textarea, so Enter still sends and Tab never wipes the typed arguments
+            if(e.key !== 'Escape'){
+                return false
+            }
+            dismissed = true
+            e.preventDefault()
+            return true
         }
         const current = flatCommands[selectedIndex].command
         switch(e.key){
@@ -94,18 +107,19 @@
                         {@const i = startIndex + j}
                         <button
                             class="w-full flex flex-col items-start gap-0.5 p-2 rounded-md text-left scroll-mt-9"
-                            class:bg-selected={i === selectedIndex}
+                            class:bg-selected={i === selectedIndex && !typingArgs}
+                            class:cursor-default={typingArgs}
                             data-command-index={i}
                             role="option"
                             aria-selected={i === selectedIndex}
                             onmousedown={(e) => e.preventDefault()}
                             onmouseenter={() => selectedIndex = i}
-                            onclick={() => onselect(command)}
+                            onclick={() => { if(!typingArgs){ onselect(command) } }}
                         >
                             <span class="flex items-center gap-2 flex-wrap">
                                 <span class="text-textcolor">/{command.name}</span>
-                                {#each command.usage as arg}
-                                    <span class="px-1.5 rounded-sm bg-darkbutton text-xs leading-5 text-textcolor2">{arg}</span>
+                                {#each command.usage as arg, k}
+                                    <span class="px-1.5 rounded-sm text-xs leading-5 transition-colors {k === argIndex ? 'bg-selected text-textcolor' : 'bg-darkbutton text-textcolor2'}">{arg}</span>
                                 {/each}
                             </span>
                             <span class="text-sm text-textcolor2">{command.description()}</span>

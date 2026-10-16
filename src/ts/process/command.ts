@@ -7,6 +7,7 @@ import { risuChatParser } from "../parser/parser.svelte";
 import { sendChat } from "./index.svelte";
 import { loadLoreBookV3Prompt } from "./lorebook.svelte";
 import { runTrigger } from "./triggers";
+import { tokenizeArgs } from "./commandList";
 
 export async function processMultiCommand(command:string) {
     let pipe = ''
@@ -309,52 +310,6 @@ async function processCommand(command:string, pipe:string):Promise<false | strin
     return false
 }
 
-
-interface CommandToken {
-    // argument text, without the quotes that grouped it
-    value: string
-    // offset of the argument in the argument line
-    start: number
-}
-
-// Splits the argument line on whitespace.
-// Double quotes group words into one argument, and nothing inside brackets is split,
-// so JSON like ["a", "b"] and CBS like {{getvar::a b}} each stay one argument.
-function tokenizeArgs(line:string):CommandToken[]{
-    const tokens:CommandToken[] = []
-    let i = 0
-    while(i < line.length){
-        if(/\s/.test(line[i])){
-            i++
-            continue
-        }
-        const start = i
-        let value = ''
-        let inQuote = false
-        let bracketDepth = 0
-        for(; i < line.length; i++){
-            const char = line[i]
-            if(!inQuote && bracketDepth === 0 && /\s/.test(char)){
-                break
-            }
-            if(char === '"' && bracketDepth === 0){
-                inQuote = !inQuote
-                continue
-            }
-            if(!inQuote){
-                if(char === '[' || char === '{'){
-                    bracketDepth++
-                }
-                else if((char === ']' || char === '}') && bracketDepth > 0){
-                    bracketDepth--
-                }
-            }
-            value += char
-        }
-        tokens.push({ value, start })
-    }
-    return tokens
-}
 
 // Parses `/command <arg1> <arg2> <arg3>...`
 function commandParser(command:string, pipe:string, parse:(text:string) => string){
