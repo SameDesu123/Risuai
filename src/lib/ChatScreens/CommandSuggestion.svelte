@@ -2,6 +2,7 @@
     import { SquareSlashIcon } from "@lucide/svelte";
     import type { Component } from "svelte";
     import { language } from "src/lang";
+    import SidebarIndicator from "../SideBars/SidebarIndicator.svelte";
     import { getCommandSuggestions, type ChatCommandInfo, type CommandSectionId } from "src/ts/process/commandList";
 
     interface Props {
@@ -82,35 +83,36 @@
 </script>
 
 {#if visible}
-    <div class="absolute bottom-full left-4 right-2 mb-2 z-30 flex max-h-80 overflow-hidden bg-darkbg border border-darkborderc rounded-lg shadow-xl">
-        <div class="flex flex-col items-center gap-1 p-2 border-r border-darkborderc shrink-0">
+    <div class="absolute bottom-full left-4 right-2 mb-2 z-30 flex max-h-80 overflow-hidden bg-darkbg text-textcolor border border-darkborderc rounded-md shadow-lg">
+        <div class="flex flex-col items-center gap-2 py-2 w-14 min-w-14 bg-bgcolor">
             {#each sections as section (section.id)}
                 {@const Icon = sectionIcons[section.id]}
-                <button
-                    class="w-9 h-9 flex items-center justify-center rounded-md transition-colors {section.id === activeSectionId ? 'bg-selected text-textcolor' : 'text-textcolor2 hover:bg-textcolor/5 hover:text-textcolor'}"
-                    title={section.label()}
-                    aria-label={section.label()}
-                    onmousedown={(e) => e.preventDefault()}
-                    onclick={() => jumpToSection(section.id)}
-                >
-                    <Icon size={20} />
-                </button>
+                <div class="group relative flex items-center justify-center w-full">
+                    <SidebarIndicator isActive={section.id === activeSectionId} />
+                    <button
+                        class="w-10 h-10 flex items-center justify-center rounded-md transition-colors {section.id === activeSectionId ? 'bg-selected text-textcolor' : 'text-textcolor2 hover:text-textcolor'}"
+                        title={section.label()}
+                        aria-label={section.label()}
+                        onmousedown={(e) => e.preventDefault()}
+                        onclick={() => jumpToSection(section.id)}
+                    >
+                        <Icon size={20} />
+                    </button>
+                </div>
             {/each}
         </div>
 
         <div class="flex flex-col flex-1 min-w-0">
-            <div bind:this={listEle} class="flex-1 overflow-y-auto p-2" role="listbox">
+            <div bind:this={listEle} class="flex-1 overflow-y-auto px-2 pb-2" role="listbox">
                 {#each sections as section (section.id)}
-                    {@const Icon = sectionIcons[section.id]}
                     {@const startIndex = sectionStartIndex(section.id)}
-                    <div data-command-section={section.id} class="sticky top-0 z-10 flex items-center gap-1.5 px-3 pt-1 pb-2 bg-darkbg text-xs font-semibold uppercase tracking-wider text-textcolor2">
-                        <Icon size={14} />
+                    <div data-command-section={section.id} class="sticky top-0 z-10 px-2 pt-2 pb-1 bg-darkbg text-sm text-textcolor2">
                         {section.label()}
                     </div>
                     {#each section.commands as command, j (command.name)}
                         {@const i = startIndex + j}
                         <button
-                            class="w-full flex flex-col items-start gap-1 px-3 py-2.5 rounded-md text-left transition-colors scroll-mt-9"
+                            class="w-full flex flex-col items-start gap-0.5 p-2 rounded-md text-left scroll-mt-9"
                             class:bg-selected={i === selectedIndex}
                             data-command-index={i}
                             role="option"
@@ -120,9 +122,9 @@
                             onclick={() => onselect(command)}
                         >
                             <span class="flex items-center gap-2 flex-wrap">
-                                <span class="font-semibold text-textcolor">/{command.name}</span>
+                                <span class="text-textcolor">/{command.name}</span>
                                 {#if command.usage}
-                                    <span class="px-1.5 py-0.5 rounded bg-textcolor/5 font-mono text-xs text-textcolor2">{command.usage}</span>
+                                    <span class="px-1.5 rounded-sm bg-darkbutton text-xs leading-5 text-textcolor2">{command.usage}</span>
                                 {/if}
                             </span>
                             <span class="text-sm text-textcolor2">{command.description()}</span>
@@ -132,11 +134,10 @@
             </div>
 
             <div class="hidden sm:flex items-center gap-4 px-4 py-2 border-t border-darkborderc text-xs text-textcolor2">
-                <span class="flex items-center gap-1.5"><kbd class="px-1.5 rounded border border-darkborderc leading-5">↑</kbd><kbd class="px-1.5 rounded border border-darkborderc leading-5">↓</kbd>{language.chatCommandUI.navigate}</span>
-                <span class="flex items-center gap-1.5"><kbd class="px-1.5 rounded border border-darkborderc leading-5">Tab</kbd>{language.chatCommandUI.complete}</span>
-                <span class="flex items-center gap-1.5"><kbd class="px-1.5 rounded border border-darkborderc leading-5">Esc</kbd>{language.chatCommandUI.close}</span>
+                <span class="flex items-center gap-1"><kbd class="px-1.5 rounded-sm bg-darkbutton leading-5">↑</kbd><kbd class="px-1.5 rounded-sm bg-darkbutton leading-5">↓</kbd><span class="ml-1">{language.chatCommandUI.navigate}</span></span>
+                <span class="flex items-center gap-1"><kbd class="px-1.5 rounded-sm bg-darkbutton leading-5">Tab</kbd><span class="ml-1">{language.chatCommandUI.complete}</span></span>
+                <span class="flex items-center gap-1"><kbd class="px-1.5 rounded-sm bg-darkbutton leading-5">Esc</kbd><span class="ml-1">{language.chatCommandUI.close}</span></span>
             </div>
         </div>
     </div>
 {/if}
-
