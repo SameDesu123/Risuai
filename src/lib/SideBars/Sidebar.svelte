@@ -48,6 +48,7 @@
     import SideChatList from "./SideChatList.svelte";
     import { ConnectionIsHost, ConnectionOpenStore, RoomIdStore } from "src/ts/sync/multiuser";
   import { sideBarSize } from "src/ts/gui/guisize";
+  import { TitlebarState } from "src/ts/gui/titlebar.svelte";
   import DevTool from "./DevTool.svelte";
     import QuickSettingsGui from "../Others/QuickSettingsGUI.svelte";
     import PluginDefinedIcon from "../Others/PluginDefinedIcon.svelte";
@@ -404,6 +405,9 @@
   class:hidden={hidden}
   class:flex={!hidden}
 >
+{#if TitlebarState.inset}
+  <div class="w-full shrink-0 h-(--risu-titlebar-height)" data-tauri-drag-region></div>
+{/if}
 <button
   class="flex items-center justify-center py-2 flex-col gap-1 w-full mt-4"
   class:text-textcolor2={!(
@@ -476,6 +480,9 @@
   class:hidden={hidden}
   class:flex={!hidden}
 >
+  {#if TitlebarState.inset}
+    <div class="w-full shrink-0 h-(--risu-titlebar-height)" data-tauri-drag-region></div>
+  {/if}
   {#if !DBState.db.hamburgerButtonBottom}
   <button
     class="flex h-8 min-h-8 w-14 min-w-14 cursor-pointer text-white mt-2 items-center justify-center rounded-md bg-textcolor2 transition-colors hover:bg-blue-500"
