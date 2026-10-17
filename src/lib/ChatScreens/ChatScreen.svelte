@@ -2,7 +2,7 @@
     import { getCustomBackground, getEmotion } from "../../ts/util";
     
     import { DBState } from 'src/ts/stores.svelte';
-    import { CharEmotion, selectedCharID } from "../../ts/stores.svelte";
+    import { CharEmotion, MobileGUI, selectedCharID } from "../../ts/stores.svelte";
     import ResizeBox from './ResizeBox.svelte'
     import DefaultChatScreen from "./DefaultChatScreen.svelte";
     import defaultWallpaper from '../../etc/bg.jpg'
@@ -35,7 +35,7 @@
 
 {#if DBState.db.theme === 'waifu'}
     <div class="grow h-full flex justify-center relative" style="{bgImg.length < 4 ? wallPaper : bgImg}">
-        {#if TitlebarState.inset}
+        {#if TitlebarState.inset && !$MobileGUI}
             <div class="absolute top-0 inset-x-0 z-20 h-(--risu-titlebar-height)" data-tauri-drag-region></div>
         {/if}
         <SideBarArrow />
@@ -53,7 +53,7 @@
     </div>
 {:else if DBState.db.theme === 'waifuMobile'}
     <div class="grow h-full relative" style={bgImg.length < 4 ? wallPaper : bgImg}>
-        {#if TitlebarState.inset}
+        {#if TitlebarState.inset && !$MobileGUI}
             <div class="absolute top-0 inset-x-0 z-20 h-(--risu-titlebar-height)" data-tauri-drag-region></div>
         {/if}
         <SideBarArrow />
@@ -74,7 +74,7 @@
     </div>
 {:else}
     <div class="grow h-full min-w-0 relative justify-center flex">
-        {#if TitlebarState.inset}
+        {#if TitlebarState.inset && !$MobileGUI}
             <div class="absolute top-0 inset-x-0 z-20 h-(--risu-titlebar-height)" data-tauri-drag-region></div>
         {/if}
         <SideBarArrow />

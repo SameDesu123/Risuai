@@ -47,9 +47,9 @@
     let gridOpen = $state(false)
     let aprilFools = $state(new Date().getMonth() === 3 && new Date().getDate() === 1)
     let aprilFoolsPage = $state(0)
-    // The sidebar + chat layout and Settings make room for the macOS traffic lights themselves, other screens sit below a draggable band
+    // The sidebar + chat layout, Settings and the character grid make room for the macOS traffic lights themselves, other screens sit below a draggable band
     let titlebarBand = $derived(TitlebarState.inset && !(
-        legalConfigured && !aprilFools && $loadedStore && !$CustomGUISettingMenuStore && didFirstSetup && ($settingsOpen || (!$MobileGUI && !gridOpen))
+        legalConfigured && !aprilFools && $loadedStore && !$CustomGUISettingMenuStore && didFirstSetup && ($settingsOpen || !$MobileGUI)
     ))
     let keepingSessionAlive = $state(false)
     let keepAliveAudio: HTMLAudioElement | null = null
