@@ -1051,7 +1051,7 @@ export const languageEnglish = {
         invalidKeyFile: "Invalid signing key file.",
         signCard: "Add creator signature",
         signingAs: "Signing as",
-        noSigningKey: "Create a signing key in Account & Files settings to sign this card.",
+        noSigningKey: "Create a signing key in Advanced Settings > Creator Signature to sign this card.",
         verified: "Signature verified",
         modified: "Modified since the last signature",
         invalid: "Signature does not match",

@@ -910,7 +910,7 @@ export const languageKorean = {
         "invalidKeyFile": "올바르지 않은 서명 키 파일입니다.",
         "signCard": "제작자 서명 넣기",
         "signingAs": "서명자",
-        "noSigningKey": "이 카드에 서명하려면 계정 & 파일 설정에서 서명 키를 먼저 만드세요.",
+        "noSigningKey": "이 카드에 서명하려면 고급 설정 > 제작자 서명에서 서명 키를 먼저 만드세요.",
         "verified": "서명 확인됨",
         "modified": "마지막 서명 이후 수정됨",
         "invalid": "서명이 일치하지 않음",

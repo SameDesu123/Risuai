@@ -3,6 +3,7 @@
     import { DBState } from 'src/ts/stores.svelte';
     import Button from "src/lib/UI/GUI/Button.svelte";
     import TextInput from "src/lib/UI/GUI/TextInput.svelte";
+    import Accordion from "src/lib/UI/Accordion.svelte";
     import { alertConfirm, alertError, alertNormal } from "src/ts/alert";
     import { downloadFile } from "src/ts/globalApi.svelte";
     import { selectSingleFile } from "src/ts/util";
@@ -47,9 +48,8 @@
     }
 </script>
 
-<div class="bg-darkbg p-3 rounded-md mb-2 flex flex-col items-start mt-2">
-    <h1 class="text-2xl font-black">{language.creatorSignature.title}</h1>
-    <span class="text-textcolor2 text-sm mt-1">{language.creatorSignature.description}</span>
+<Accordion styled name={language.creatorSignature.title}>
+    <span class="text-textcolor2 text-sm">{language.creatorSignature.description}</span>
     {#if DBState.db.creatorSigningKey}
         <span class="text-textcolor mt-4">{language.creatorSignature.signerName}</span>
         <TextInput size="sm" fullwidth bind:value={DBState.db.creatorSigningKey.name} />
@@ -68,4 +68,4 @@
             <Button size="sm" onclick={importKey}>{language.creatorSignature.importKey}</Button>
         </div>
     {/if}
-</div>
+</Accordion>

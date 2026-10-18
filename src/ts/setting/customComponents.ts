@@ -20,6 +20,7 @@ import TranslatorPresetSettings from 'src/lib/Setting/Pages/Language/TranslatorP
 import BanCharacterSetSettings from 'src/lib/Setting/Pages/Advanced/BanCharacterSetSettings.svelte';
 import CustomModelsSettings from 'src/lib/Setting/Pages/Advanced/CustomModelsSettings.svelte';
 import SettingsExportButtons from 'src/lib/Setting/Pages/Advanced/SettingsExportButtons.svelte';
+import CreatorSignatureSettings from 'src/lib/Setting/Pages/Advanced/CreatorSignatureSettings.svelte';
 import CustomSidebarConfigButton from 'src/lib/Setting/Pages/Advanced/CustomSidebarConfigButton.svelte';
 import ColorSchemeSelect from 'src/lib/Setting/Pages/Display/ColorSchemeSelect.svelte';
 import CustomColorSchemeEditor from 'src/lib/Setting/Pages/Display/CustomColorSchemeEditor.svelte';
@@ -38,6 +39,7 @@ export const customComponents: Record<string, Component<any>> = {
     'BanCharacterSetSettings': BanCharacterSetSettings,
     'CustomModelsSettings': CustomModelsSettings,
     'SettingsExportButtons': SettingsExportButtons,
+    'CreatorSignatureSettings': CreatorSignatureSettings,
     'CustomSidebarConfig': CustomSidebarConfigButton,
     'ColorSchemeSelect': ColorSchemeSelect,
     'CustomColorSchemeEditor': CustomColorSchemeEditor,
