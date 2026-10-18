@@ -44,7 +44,7 @@ import type { AccountStorage } from "./storage/accountStorage";
 import { getColdStorageItem, makeColdData } from "./process/coldstorage.svelte";
 import { isTauri, isNodeServer } from "./platform";
 import { isLocalNetworkUrl } from "./network/localNetwork";
-import { decodeProxyJobWsChunk, formatProxyStreamErrorMessage, parseProxyJobWsEvent } from "./network/proxyJobWs";
+import { openProxyJobStream, ProxyJobCreateUncertainError } from "./network/proxyJobWs";
 import { getNodeServerProxyAuth } from "./storage/nodeStorage";
 
 export const forageStorage = new AutoStorage()
@@ -1534,187 +1534,25 @@ async function fetchViaProxyJobWs(url: string, arg: {
     chatId?: string,
     fetchLogIndex?: number | null
 }): Promise<Response> {
-    const auth = await getNodeServerProxyAuth();
-
-    const requestSignal = arg.signal;
-    const baseUrl = getProxyStreamJobBaseUrl();
-
-    let jobId = '';
-    const createRes = await fetch(`${baseUrl}/proxy-stream-jobs`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'risu-auth': auth
-        },
-        body: JSON.stringify({
+    const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const res = await openProxyJobStream({
+        baseUrl: getProxyStreamJobBaseUrl(),
+        wsBaseUrl: `${wsProtocol}//${location.host}`,
+        auth: await getNodeServerProxyAuth(),
+        request: {
             url,
             method: arg.method,
             headers: arg.headers ?? {},
             bodyBase64: Buffer.from(arg.body).toString('base64'),
             timeoutMs: arg.requestTimeoutMs,
             heartbeatSec: defaultProxyJobHeartbeatSec
-        }),
-        signal: requestSignal
-    });
-
-    if (!createRes.ok) {
-        const errText = await createRes.text();
-        throw new Error(`Proxy stream job creation failed: ${createRes.status} ${errText}`);
-    }
-
-    const created = await createRes.json() as { jobId?: string };
-    if (!created.jobId) {
-        throw new Error('Proxy stream job creation returned no jobId');
-    }
-    jobId = created.jobId;
-
-    const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${wsProtocol}//${location.host}/proxy-stream-jobs/${encodeURIComponent(jobId)}/ws?risu-auth=${encodeURIComponent(auth)}`;
-
-    let headersReady = false;
-    let status = 200;
-    let responseHeaders: HeadersInit = { 'content-type': 'text/event-stream' };
-    let settled = false;
-    let resolveHeaders: () => void = () => {};
-    const waitHeaders = new Promise<void>((resolve) => {
-        resolveHeaders = resolve;
-    });
-    let streamController: ReadableStreamDefaultController<Uint8Array> | null = null;
-    const encoder = new TextEncoder();
-
-    const ws = new WebSocket(wsUrl);
-    const readable = new ReadableStream<Uint8Array>({
-        start(controller) {
-            streamController = controller;
         },
-        cancel() {
-            settle();
-        }
+        signal: arg.signal,
+        streamSignal: arg.streamSignal
     });
-    const pipedReadable = arg.fetchLogIndex != null ? pipeFetchLog(arg.fetchLogIndex, readable) : readable;
-
-    const ensureHeadersReady = () => {
-        if (!headersReady) {
-            headersReady = true;
-            resolveHeaders();
-        }
-    };
-
-    const abortSignals = new Set([arg.signal, arg.streamSignal].filter((signal): signal is AbortSignal => !!signal));
-    const settle = () => {
-        settled = true;
-        for (const signal of abortSignals) {
-            signal.removeEventListener('abort', abortHandler);
-        }
-        try {
-            ws.close();
-        } catch {
-            // no-op
-        }
-    };
-
-    const closeAndEnd = () => {
-        if (settled) {
-            return;
-        }
-        settle();
-        if (streamController) {
-            try {
-                streamController.close();
-            } catch {
-                // no-op
-            }
-        }
-    };
-
-    // Once the response has started the caller reads only the body, so a failure has to error the
-    // stream: closing it would pass a cut-off response off as a complete one
-    const failStream = (failStatus: number, message: string) => {
-        if (settled) {
-            return;
-        }
-        if (headersReady) {
-            settle();
-            streamController?.error(new Error(message));
-            return;
-        }
-        status = failStatus;
-        responseHeaders = { 'content-type': 'text/plain; charset=utf-8' };
-        ensureHeadersReady();
-        streamController?.enqueue(encoder.encode(message));
-        closeAndEnd();
-    };
-
-    ws.onmessage = (event) => {
-        const parsed = parseProxyJobWsEvent(typeof event.data === 'string' ? event.data : '');
-        if (!parsed || !streamController) {
-            return;
-        }
-        switch (parsed.type) {
-            case 'job_accepted':
-            case 'ping':
-                return;
-            case 'upstream_headers':
-                status = parsed.status;
-                responseHeaders = parsed.headers ?? {};
-                ensureHeadersReady();
-                return;
-            case 'chunk':
-                ensureHeadersReady();
-                streamController.enqueue(decodeProxyJobWsChunk(parsed.dataBase64));
-                return;
-            case 'error':
-                // The formatted message explains a response that never started, which is wrong mid-stream
-                failStream(parsed.status ?? 502, headersReady
-                    ? `Proxy stream failed (${parsed.status ?? 'unknown'}): ${parsed.message}`
-                    : formatProxyStreamErrorMessage(parsed.status, parsed.message));
-                return;
-            case 'done':
-                ensureHeadersReady();
-                closeAndEnd();
-                return;
-        }
-    };
-
-    // Only `done` or `error` ends a job, so a close before either means the connection was lost
-    ws.onerror = () => {
-        failStream(502, 'Proxy WebSocket connection lost before the response finished');
-    };
-    ws.onclose = () => {
-        failStream(502, 'Proxy WebSocket connection lost before the response finished');
-    };
-
-    function abortHandler() {
-        if (settled) {
-            return;
-        }
-        // Without this the server keeps generating after the user stops
-        void fetch(`${baseUrl}/proxy-stream-jobs/${encodeURIComponent(jobId)}`, {
-            method: 'DELETE',
-            headers: {
-                'risu-auth': auth
-            }
-        }).catch(() => {});
-        if (!headersReady) {
-            status = 499;
-            responseHeaders = { 'content-type': 'text/plain; charset=utf-8' };
-            ensureHeadersReady();
-            streamController?.enqueue(encoder.encode('Aborted'));
-        }
-        closeAndEnd();
-    }
-    for (const signal of abortSignals) {
-        if (signal.aborted) {
-            abortHandler();
-            break;
-        }
-        signal.addEventListener('abort', abortHandler, { once: true });
-    }
-
-    await waitHeaders;
-    return new Response(pipedReadable, {
-        status,
-        headers: new Headers(responseHeaders)
+    return new Response(arg.fetchLogIndex != null ? pipeFetchLog(arg.fetchLogIndex, res.body) : res.body, {
+        status: res.status,
+        headers: new Headers(res.headers)
     });
 }
 
@@ -1948,6 +1786,10 @@ export async function fetchNative(url: string, arg: {
                     fetchLogIndex
                 });
             } catch (wsErr) {
+                // The job may already be running, and /proxy2 would send the request a second time
+                if (wsErr instanceof ProxyJobCreateUncertainError) {
+                    throw wsErr;
+                }
                 console.warn('[ProxyJobWS] fallback to /proxy2 due to error:', wsErr);
             }
         }
