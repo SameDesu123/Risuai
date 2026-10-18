@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { BadgeCheckIcon, PencilLineIcon, ShieldAlertIcon } from "@lucide/svelte";
+    import { BadgeCheckIcon, ChevronDownIcon, ChevronRightIcon, PencilLineIcon, ShieldAlertIcon } from "@lucide/svelte";
     import { language } from "src/lang";
     import { DBState } from 'src/ts/stores.svelte';
     import { tooltip } from "src/ts/gui/tooltip";
@@ -14,6 +14,7 @@
     let { char, className = '' }: Props = $props();
 
     let verification = $state<SignatureVerification|null>(null)
+    let open = $state(false)
     let runId = 0
 
     $effect(() => {
@@ -42,8 +43,9 @@
 
 {#if verification && verification.status !== 'none' && verification.entries.length > 0}
     {@const [original, ...modifiers] = verification.entries}
-    <div class="flex flex-col gap-1 text-sm mt-2 p-2 rounded-md border border-darkborderc {className}">
-        <div class="flex items-center gap-1 font-semibold">
+    <!-- only the status is shown until it is expanded -->
+    <div class="flex flex-col gap-1 text-sm mt-2 pt-2 border-t border-darkborderc {className}">
+        <button class="flex items-center gap-1 font-semibold w-fit" aria-expanded={open} onclick={() => open = !open}>
             {#if verification.status === 'verified'}
                 <BadgeCheckIcon size={16} />
                 <span>{language.creatorSignature.verified}</span>
@@ -54,28 +56,35 @@
                 <ShieldAlertIcon size={16} class="text-draculared" />
                 <span class="text-draculared">{language.creatorSignature.invalid}</span>
             {/if}
-        </div>
-        <div class="flex flex-wrap items-center gap-x-1">
-            <span class="text-textcolor2">{language.creatorSignature.originalAuthor}:</span>
-            <span class:text-draculared={!original.valid} use:tooltip={signedAt(original.entry)}>{original.entry.name}</span>
-            <span class="font-mono text-xs text-textcolor2">({original.entry.authorId})</span>
-            {#if isMine(original)}
-                <span class="text-xs px-1 rounded-sm bg-selected">{language.creatorSignature.you}</span>
+            {#if open}
+                <ChevronDownIcon size={16} class="text-textcolor2" />
+            {:else}
+                <ChevronRightIcon size={16} class="text-textcolor2" />
             {/if}
-        </div>
-        {#if modifiers.length > 0}
+        </button>
+        {#if open}
             <div class="flex flex-wrap items-center gap-x-1">
-                <span class="text-textcolor2">{language.creatorSignature.modifiedBy}:</span>
-                {#each modifiers as modifier, i}
-                    {#if i > 0}
-                        <span class="text-textcolor2">·</span>
-                    {/if}
-                    <span class:text-draculared={!modifier.valid} use:tooltip={`${modifier.entry.authorId} · ${signedAt(modifier.entry)}`}>{modifier.entry.name}</span>
-                    {#if isMine(modifier)}
-                        <span class="text-xs px-1 rounded-sm bg-selected">{language.creatorSignature.you}</span>
-                    {/if}
-                {/each}
+                <span class="text-textcolor2">{language.creatorSignature.originalAuthor}:</span>
+                <span class:text-draculared={!original.valid} use:tooltip={signedAt(original.entry)}>{original.entry.name}</span>
+                <span class="font-mono text-xs text-textcolor2">({original.entry.authorId})</span>
+                {#if isMine(original)}
+                    <span class="text-xs px-1 rounded-sm bg-selected">{language.creatorSignature.you}</span>
+                {/if}
             </div>
+            {#if modifiers.length > 0}
+                <div class="flex flex-wrap items-center gap-x-1">
+                    <span class="text-textcolor2">{language.creatorSignature.modifiedBy}:</span>
+                    {#each modifiers as modifier, i}
+                        {#if i > 0}
+                            <span class="text-textcolor2">·</span>
+                        {/if}
+                        <span class:text-draculared={!modifier.valid} use:tooltip={`${modifier.entry.authorId} · ${signedAt(modifier.entry)}`}>{modifier.entry.name}</span>
+                        {#if isMine(modifier)}
+                            <span class="text-xs px-1 rounded-sm bg-selected">{language.creatorSignature.you}</span>
+                        {/if}
+                    {/each}
+                </div>
+            {/if}
         {/if}
     </div>
 {/if}
