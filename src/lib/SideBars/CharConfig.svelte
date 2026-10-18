@@ -35,6 +35,7 @@
     import Toggles from "./Toggles.svelte";
     import { convertCharacterToModule } from "src/ts/interchangeability";
     import OnboardingEditor from "./OnboardingEditor.svelte";
+    import CreatorSignatureBadge from "../UI/CreatorSignatureBadge.svelte";
 
     let iconRemoveMode = $state(false)
     let viewSubMenu = $state(0)
@@ -1140,6 +1141,7 @@
 
         <span class="text-textcolor">{language.creator}</span>
         <TextInput size="sm" autocomplete="off" bind:value={DBState.db.characters[$selectedCharID].additionalData.creator} />
+        <CreatorSignatureBadge char={DBState.db.characters[$selectedCharID] as character} className="mb-2" />
 
         <span class="text-textcolor">{language.CharVersion}</span>
         <TextInput size="sm" bind:value={DBState.db.characters[$selectedCharID].additionalData.character_version}/>

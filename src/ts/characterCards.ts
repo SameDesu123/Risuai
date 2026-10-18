@@ -21,6 +21,7 @@ import { onOpenUrl } from '@tauri-apps/plugin-deep-link';
 import { AccountStorage } from "./storage/accountStorage"
 import { filterBlockedRealmCards, isRealmCreatorBlocked } from "./realmBlocking"
 import { normalizeOnboarding } from "./onboarding"
+import { signChain, type CreatorSignature } from "./creatorSignature"
 
 
 const EXTERNAL_HUB_URL = 'https://sv.risuai.xyz';
@@ -1062,6 +1063,7 @@ async function importCharacterCardSpec<T extends boolean = false>(card:Character
         moduleNamespace: data?.extensions?.risuai?.moduleNamespace,
         hideChatIcon: data?.extensions?.risuai?.hideChatIcon ?? false,
         onboarding: normalizeOnboarding(data?.extensions?.risuai?.onboarding),
+        creatorSignatures: Array.isArray(risuext?.creatorSignatures) ? risuext.creatorSignatures : undefined,
     }
 
     if(card.spec === 'chara_card_v3'){
@@ -1289,6 +1291,20 @@ function createBaseV2(char:character) {
 }
 
 
+async function exportCreatorSignatures(char:character):Promise<CreatorSignature[]|undefined>{
+    const db = getDatabase()
+    if(!db.creatorSigningKey || !db.creatorSignatureAutoSign){
+        return char.creatorSignatures
+    }
+    const chain = await signChain(char.creatorSignatures, char, safeStructuredClone(db.creatorSigningKey))
+    //keep the stored character in sync so its signature badge matches what was exported
+    const stored = db.characters.find((c) => c.chaId === char.chaId)
+    if(stored && stored.type !== 'group'){
+        stored.creatorSignatures = safeStructuredClone(chain)
+    }
+    return chain
+}
+
 export async function exportCharacterCard(char:character, type:'png'|'json'|'charx'|'charxJpeg' = 'png', arg:{
     password?:string
     writer?:LocalWriter|VirtualWriter,
@@ -1318,6 +1334,7 @@ export async function exportCharacterCard(char:character, type:'png'|'json'|'cha
         let assetIndex = 0
         if(spec === 'v2'){
             const card = await createBaseV2(char)
+            card.data.extensions.risuai.creatorSignatures = await exportCreatorSignatures(char)
             if(card.data.extensions.risuai.emotions && card.data.extensions.risuai.emotions.length > 0){
                 for(let i=0;i<card.data.extensions.risuai.emotions.length;i++){
                     alertStore.set({
@@ -1383,6 +1400,7 @@ export async function exportCharacterCard(char:character, type:'png'|'json'|'cha
         }
         else if(spec === 'v3'){
             const card = createBaseV3(char)
+            card.data.extensions.risuai.creatorSignatures = await exportCreatorSignatures(char)
             const seenPaths = new Set<string>()
             if(card.data.assets && card.data.assets.length > 0){
                 for(let i=0;i<card.data.assets.length;i++){
@@ -2008,6 +2026,7 @@ type CharacterCardV2Risu = {
                     emotionInstructions: string,
                 },
                 vits?: {[key:string]:string}
+                creatorSignatures?:CreatorSignature[]
             }
             depth_prompt?: { depth: number, prompt: string }
         }

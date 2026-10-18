@@ -15,6 +15,7 @@
     import { exportAsDataset } from "src/ts/storage/exportAsDataset";
     import { loginToSionyw, testSionywLogin } from "src/ts/sionyw";
     import { cleanColdStorage } from "src/ts/process/coldstorage.svelte";
+    import CreatorSignatureSettings from "./CreatorSignatureSettings.svelte";
     let openIframe = $state(false)
     let openIframeURL = $state('')
     let popup:Window = null
@@ -186,6 +187,7 @@
     <!-- <Button onclick={autoServerBackup}>Auto Server Backups</Button> -->
 
 </div>
+<CreatorSignatureSettings />
 {#if openIframe}
     <div class="fixed top-0 left-0 bg-black/50 w-full h-full flex justify-center items-center">
         <iframe src={openIframeURL} title="login" class="w-full h-full">

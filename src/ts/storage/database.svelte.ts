@@ -608,6 +608,8 @@ export function setDatabase(data:Database){
     data.returnCSSError ??= true
     data.realmDirectOpen ??= false
     data.blockedRealmCreators ??= []
+    data.creatorSigningKey ??= null
+    data.creatorSignatureAutoSign ??= true
     data.checkCorruption ??= false
     data.toggleConfirmRecommendedPreset ??= false
     data.useExperimentalGoogleTranslator ??= false
@@ -966,6 +968,8 @@ export interface Database{
     NAIsettings:NAISettings
     hideRealm:boolean
     blockedRealmCreators:BlockedRealmCreator[]
+    creatorSigningKey:CreatorSigningKey|null
+    creatorSignatureAutoSign:boolean
     colorScheme:ColorScheme
     colorSchemeName:string
     customColorScheme:ColorScheme
@@ -1496,6 +1500,7 @@ export interface character{
     }>
     defaultVariables?:string
     onboarding?:CharacterOnboarding
+    creatorSignatures?:CreatorSignature[]
     lowLevelAccess?:boolean
     hideChatIcon?:boolean
     lastInteraction?:number
@@ -2332,6 +2337,7 @@ import type { SerializableHypaV3Data } from '../process/memory/hypav3';
 import { defaultHotkeys, type Hotkey } from '../defaulthotkeys';
 import type { OpenAIChat } from '../process/index.svelte';
 import type { Loadout } from '../loadout';
+import type { CreatorSignature, CreatorSigningKey } from '../creatorSignature';
 
 export async function downloadPreset(id:number, type:'json'|'risupreset'|'return' = 'json'){
     saveCurrentPreset()

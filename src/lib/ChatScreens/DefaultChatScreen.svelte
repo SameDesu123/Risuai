@@ -5,7 +5,7 @@
     import { selectedCharID, PlaygroundStore, createSimpleCharacter, hypaV3ModalOpen, ScrollToMessageStore, additionalChatMenu, additionalFloatingActionButtons, easyPanelStore, chatPanelStore, onboardingModalStore } from "../../ts/stores.svelte";
     import { tick } from 'svelte';
     import Chat from "./Chat.svelte";
-    import { type Message } from "../../ts/storage/database.svelte";
+    import { type Message, type character } from "../../ts/storage/database.svelte";
     import { DBState } from 'src/ts/stores.svelte';
     import { getCharImage } from "../../ts/characters";
     import { chatProcessStage, doingChat, sendChat } from "../../ts/process/index.svelte";
@@ -895,8 +895,8 @@
                             {language.aiGenerationWarning}
                         </div>
                     {/if}
-                    {#if !DBState.db.characters[$selectedCharID].removedQuotes && DBState.db.characters[$selectedCharID].creatorNotes.length >= 2}
-                        <CreatorQuote quote={DBState.db.characters[$selectedCharID].creatorNotes} onRemove={() => {
+                    {#if !DBState.db.characters[$selectedCharID].removedQuotes && (DBState.db.characters[$selectedCharID].creatorNotes.length >= 2 || DBState.db.characters[$selectedCharID].creatorSignatures?.length > 0)}
+                        <CreatorQuote quote={DBState.db.characters[$selectedCharID].creatorNotes} char={DBState.db.characters[$selectedCharID] as character} onRemove={() => {
                             const cha = DBState.db.characters[$selectedCharID]
                             if(cha.type !== 'group'){
                                 cha.removedQuotes = true

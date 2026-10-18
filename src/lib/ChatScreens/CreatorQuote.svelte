@@ -5,18 +5,24 @@
                 <XIcon />
             </button>
         </h1>
-        <MultiLangDisplay value={quote} markdown={true} />
+        {#if quote.length >= 2}
+            <MultiLangDisplay value={quote} markdown={true} />
+        {/if}
+        <CreatorSignatureBadge char={char} />
     </div>
 </div>
 <script lang="ts">
     import { XIcon } from "@lucide/svelte";
     import { language } from "src/lang";
     import MultiLangDisplay from "../UI/GUI/MultiLangDisplay.svelte";
+    import CreatorSignatureBadge from "../UI/CreatorSignatureBadge.svelte";
+    import type { character } from "src/ts/storage/database.svelte";
 
     interface Props {
         onRemove: () => void;
         quote: string;
+        char: character;
     }
 
-    let { onRemove, quote }: Props = $props();
+    let { onRemove, quote, char }: Props = $props();
 </script>
