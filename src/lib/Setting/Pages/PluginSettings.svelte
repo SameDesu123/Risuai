@@ -1,11 +1,11 @@
 <script lang="ts">
-    import { PlusIcon, TrashIcon, LinkIcon, CodeXmlIcon, PowerIcon, PowerOffIcon } from "@lucide/svelte";
+    import { PlusIcon, TrashIcon, LinkIcon, CodeXmlIcon, PowerIcon, PowerOffIcon, ShieldCheckIcon, ShieldQuestionMarkIcon, ShieldXIcon } from "@lucide/svelte";
     import { language } from "src/lang";
     import { alertConfirm, alertMd, alertSelect } from "src/ts/alert";
     import { TriangleAlert } from '@lucide/svelte';
 
     import { DBState, hotReloading } from "src/ts/stores.svelte";
-    import { checkPluginUpdate, createBlankPlugin, importPlugin, loadPlugins, updatePlugin } from "src/ts/plugins/plugins.svelte";
+    import { checkPluginUpdate, createBlankPlugin, importPlugin, loadPlugins, pluginSignatureStates, updatePlugin } from "src/ts/plugins/plugins.svelte";
     import TextInput from "src/lib/UI/GUI/TextInput.svelte";
     import NumberInput from "src/lib/UI/GUI/NumberInput.svelte";
     import SelectInput from "src/lib/UI/GUI/SelectInput.svelte";
@@ -26,6 +26,7 @@
         <span class="text-textcolor2">{language.noPlugins}</span>
     {/if}
     {#each DBState.db.plugins as plugin, i}
+        {@const signatureStatus = pluginSignatureStates[plugin.name]}
         {#if i!==0}
         <div
             class="border-darkborderc mt-2 mb-2 w-full border-solid border-b-1 seperator"
@@ -50,6 +51,31 @@
                     </span>
                 {/if}
             </div>
+            {#if signatureStatus?.state === "valid"}
+                {@const message = language.pluginSignatureValid.replace("{fingerprint}", signatureStatus.fingerprint)}
+                <button class="text-green-400 hover:gray-200 cursor-pointer" title={message} onclick={(e) => {
+                    e.stopPropagation()
+                    alertMd(message)
+                }}>
+                    <ShieldCheckIcon />
+                </button>
+            {:else if signatureStatus?.state === "unverifiable"}
+                {@const message = language.pluginSignatureUnverifiable.replace("{fingerprint}", signatureStatus.fingerprint).replace("{reason}", signatureStatus.reason)}
+                <button class="text-yellow-400 hover:gray-200 cursor-pointer" title={message} onclick={(e) => {
+                    e.stopPropagation()
+                    alertMd(message)
+                }}>
+                    <ShieldQuestionMarkIcon />
+                </button>
+            {:else if signatureStatus?.state === "invalid"}
+                {@const message = language.pluginSignatureFailed.replace("{reason}", signatureStatus.reason)}
+                <button class="text-draculared hover:gray-200 cursor-pointer" title={message} onclick={(e) => {
+                    e.stopPropagation()
+                    alertMd(message)
+                }}>
+                    <ShieldXIcon />
+                </button>
+            {/if}
             {#if plugin.version === 2 || plugin.version === "2.1"}
                 <button class="text-yellow-400 hover:gray-200 cursor-pointer" onclick={() => {
                     alertMd(language.pluginV2Warning);

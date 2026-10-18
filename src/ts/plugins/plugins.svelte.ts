@@ -11,6 +11,7 @@ import { checkCodeSafety } from "./pluginSafety";
 import { SafeDocument, SafeIdbFactory, SafeLocalStorage } from "./pluginSafeClass";
 import { loadV3Plugins } from "./apiV3/v3.svelte";
 import { pluginCodeTranspiler } from "./apiV3/transpiler";
+import { checkSignerContinuity, verifyPluginSignature, type PluginSignatureStatus } from "./pluginSignature";
 
 export const customProviderStore = writable([] as string[])
 
@@ -27,6 +28,8 @@ interface ProviderPlugin {
     updateURL?: string
     enabled?: boolean
     allowedIPC?: string[]
+    // Original signed source of plugins imported from TypeScript; `script` holds the transpiled output
+    signedSource?: string
 }
 interface ProviderPluginCustomLink {
     link: string
@@ -331,7 +334,14 @@ export async function importPlugin(code:string|null = null, argu:{
             return
         }
 
-        
+        // Verify against the original source, before TypeScript transpiling changes it
+        const signedSource = jsFile
+        const signature = await verifyPluginSignature(signedSource)
+        if(signature.state === 'invalid'){
+            showError(language.pluginSignatureInvalid.replace('{reason}', signature.reason))
+            return
+        }
+
         if(isTypescript){
             try {
                 jsFile = await pluginCodeTranspiler(jsFile)                
@@ -372,7 +382,8 @@ export async function importPlugin(code:string|null = null, argu:{
             versionOfPlugin: versionOfPlugin,
             updateURL: updateURL,
             allowedIPC: ipcList,
-            enabled: true
+            enabled: true,
+            ...(isTypescript && signature.state !== 'unsigned' ? { signedSource } : {})
         }
 
         db.plugins ??= []
@@ -384,6 +395,21 @@ export async function importPlugin(code:string|null = null, argu:{
             return
         }
 
+
+        // Once a plugin is installed signed, replacing it requires the same signing key
+        if(oldPluginIndex !== -1 && !argu.isHotReload){
+            const reason = checkSignerContinuity(await getPluginSignature(db.plugins[oldPluginIndex]), signature)
+            if(reason){
+                if(isUpdate){
+                    showError(language.pluginSignerChangedBlocked.replace('{reason}', reason))
+                    return
+                }
+                const c = await alertConfirm(language.pluginSignerChangedConfirm.replace('{reason}', reason))
+                if(!c){
+                    return
+                }
+            }
+        }
 
         if(!isUpdate && oldPluginIndex !== -1){
             const c = await alertConfirm(language.duplicatePluginFoundUpdateIt)
@@ -416,12 +442,83 @@ export async function importPlugin(code:string|null = null, argu:{
 
 let pluginTranslator = false
 
+export const pluginSignatureStates: Record<string, PluginSignatureStatus> = $state({})
+
+export function getPluginSignature(plugin: RisuPlugin) {
+    return verifyPluginSignature(plugin.signedSource ?? plugin.script)
+}
+
+// Metadata stored next to the script is not covered by the signature, so it must match the signed source.
+// Parsing mirrors importPlugin.
+function checkSignedMetadata(plugin: RisuPlugin): string | null {
+    const lines = (plugin.signedSource ?? plugin.script).split('\n')
+    const name = lines.filter((line) => line.startsWith('//@name')).map((line) => line.slice(7).trim()).at(-1)
+    if(name !== plugin.name){
+        return 'The plugin name does not match the signed code.'
+    }
+    const signedIPC = lines.filter((line) => line.startsWith('//@allowed-ipc')).flatMap((line) => line.trim().split(' ').slice(1))
+    const storedIPC = plugin.allowedIPC ?? []
+    if(signedIPC.length !== storedIPC.length || signedIPC.some((v, i) => v !== storedIPC[i])){
+        return 'The allowed IPC list does not match the signed code.'
+    }
+    return null
+}
+
+const reportedTamperedPlugins = new Set<string>()
+
+/**
+ * Re-verifies signatures so plugins modified after installation are not run.
+ * Plugins imported from TypeScript run the transpiled output of their verified source.
+ */
+async function verifyPluginsBeforeLoad(plugins: RisuPlugin[]): Promise<RisuPlugin[]> {
+    const loadable: RisuPlugin[] = []
+    const tampered: string[] = []
+
+    for(const name of Object.keys(pluginSignatureStates)){
+        if(!plugins.some((p) => p.name === name)){
+            delete pluginSignatureStates[name]
+        }
+    }
+
+    for(const plugin of plugins){
+        let status = await getPluginSignature(plugin)
+        if(status.state === 'valid' || status.state === 'unverifiable'){
+            const mismatch = checkSignedMetadata(plugin)
+            if(mismatch){
+                status = { state: 'invalid', reason: mismatch, publicKey: status.publicKey, fingerprint: status.fingerprint }
+            }
+        }
+        pluginSignatureStates[plugin.name] = status
+
+        if(!plugin.enabled){
+            continue
+        }
+        if(status.state === 'invalid'){
+            console.error(`Plugin "${plugin.name}" was not loaded: ${status.reason}`)
+            if(!reportedTamperedPlugins.has(plugin.name)){
+                reportedTamperedPlugins.add(plugin.name)
+                tampered.push(plugin.displayName ?? plugin.name)
+            }
+            continue
+        }
+        if(plugin.signedSource){
+            plugin.script = await pluginCodeTranspiler(plugin.signedSource)
+        }
+        loadable.push(plugin)
+    }
+
+    if(tampered.length > 0){
+        alertError(language.pluginSignatureTamperedOnLoad.replace('{plugins}', tampered.join(', ')))
+    }
+    return loadable
+}
+
 export async function loadPlugins() {
     console.log('Loading plugins...')
     let db = getDatabase()
 
 
-    const enabledPlugins = safeStructuredClone(db.plugins).filter((p: RisuPlugin) => p.enabled)
+    const enabledPlugins = await verifyPluginsBeforeLoad(safeStructuredClone(db.plugins ?? []))
     const pluginV2 = enabledPlugins.filter((a: RisuPlugin) => a.version === 2 || a.version === '2.1')
     const pluginV3 = enabledPlugins.filter((a: RisuPlugin) => a.version === '3.0')
 
@@ -958,6 +1055,18 @@ export async function handlePluginInstallViaPlugin(plugins: RisuPlugin[]){
 
             if(plugin.version !== '3.0'){
                 console.warn(`Plugin "${plugin.name}" has version "${plugin.version}", which is not supported for installation via plugin. Only API version 3.0 plugins can be installed via plugin. Skipping installation of this plugin.`)
+                continue
+            }
+
+            const signature = await getPluginSignature(plugin)
+            if(signature.state === 'invalid'){
+                console.warn(`Plugin "${plugin.name}" has an invalid signature, skipping installation via plugin. ${signature.reason}`)
+                continue
+            }
+            const existing = DBState.db.plugins.find((p: RisuPlugin) => p.name === plugin.name)
+            const signerChange = existing ? checkSignerContinuity(await getPluginSignature(existing), signature) : null
+            if(signerChange){
+                console.warn(`Plugin "${plugin.name}" does not match the installed version's signer, skipping installation via plugin. ${signerChange}`)
                 continue
             }
             const confirmation = await alertConfirm(language.confirmInstallPluginViaPlugin.replace('{plugin}', plugin.name))

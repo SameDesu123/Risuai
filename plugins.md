@@ -128,6 +128,40 @@ It must be placed at the very top of your plugin script.
   Required for update checks. Although other version formats are supported, we recommend using [Semantic Versioning](https://semver.org/) (e.g. `1.0.0`, `2.1.3`).
   This should be updated manually by you whenever you release a new version. unlike other metadata, this metadata requires to be high on the file, ideally right below the `//@name` and `//@api` metadata, so that the update checker can read it easily.
 
+### Signing Your Plugin
+
+You can sign your plugin so users can detect tampering. Risuai verifies the signature when the plugin is installed, updated, and loaded:
+
+- A plugin with an invalid signature is not installed.
+- A signed plugin whose code or metadata is modified after installation is not loaded, and the user is warned.
+- Once a signed plugin is installed, updates via `//@update-url` must be signed with the **same key**. An update that is unsigned or signed with a different key is blocked, and a manual re-import asks the user to confirm.
+- The plugin settings show a green shield for signed plugins, with the key fingerprint.
+
+Signing adds two lines to the end of your plugin file:
+
+```javascript
+//@signature-key <public key>
+//@signature <signature>
+```
+
+Use the signing tool in this repository (requires Node.js):
+
+```bash
+# Once: create a signing key. Keep it secret and back it up.
+node util/signPlugin.mjs keygen plugin-signing-key.pem
+
+# On every release: sign the final file (re-signing replaces the old signature lines)
+node util/signPlugin.mjs sign dist/plugin.js plugin-signing-key.pem
+```
+
+Sign the exact file you distribute, as the last step of your build. Any change to the file after signing, including formatting, invalidates the signature (line endings and a leading BOM are ignored). If you distribute a `.ts` plugin, sign the `.ts` file itself.
+
+> **Do not lose your key.** Users who installed a signed version cannot auto-update to a version signed with a new key; they have to re-import it manually and confirm the warning.
+
+The signature uses ECDSA P-256 with SHA-256. The signed data is the file with the `//@signature` line removed, after stripping a leading BOM and converting line endings to `\n`.
+
+Signatures prove the plugin has not changed since **the key holder** signed it. They do not prove the key holder is trustworthy, and an unsigned plugin is still installable. On insecure (non-HTTPS) self-hosted origins, browsers do not provide Web Crypto, so signatures cannot be verified there.
+
 ## API v3.0 Architecture
 
 ### The Iframe Sandbox Model
