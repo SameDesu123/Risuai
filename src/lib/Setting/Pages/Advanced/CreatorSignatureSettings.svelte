@@ -19,8 +19,8 @@
         DBState.db.creatorSigningKey = await generateSigningKey(newName.trim())
         newName = ''
         //back up a freshly created key right away, losing it means losing the Author ID
-        await exportKey()
-        alertNormal(language.creatorSignature.keyDownloaded)
+        const fileName = await exportKey()
+        alertNormal(language.creatorSignature.keyDownloaded.replace('{}', fileName))
     }
 
     async function importKey() {
@@ -40,8 +40,12 @@
         }
     }
 
+    //the Author ID in the file name keeps backups of different keys from overwriting each other
     async function exportKey() {
-        await downloadFile('creator-signing-key.json', exportSigningKeyFile($state.snapshot(DBState.db.creatorSigningKey)))
+        const key = $state.snapshot(DBState.db.creatorSigningKey)
+        const fileName = `creator-signing-key-${key.authorId}.json`
+        await downloadFile(fileName, exportSigningKeyFile(key))
+        return fileName
     }
 
     async function deleteKey() {

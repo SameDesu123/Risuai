@@ -1049,7 +1049,7 @@ export const languageEnglish = {
         deleteConfirm: "Delete your signing key? Cards you sign afterwards will get a new Author ID unless you import this key again.",
         keyWarning: "Anyone with your key file can sign cards as you. Do not share it.",
         invalidKeyFile: "Invalid signing key file.",
-        keyDownloaded: "Your signing key was saved as creator-signing-key.json. Keep it somewhere safe: you need it to sign with the same Author ID on another device or after a reset.",
+        keyDownloaded: "Your signing key was saved as {}. Keep it somewhere safe: you need it to sign with the same Author ID on another device or after a reset.",
         signCard: "Add creator signature",
         signingAs: "Signing as",
         noSigningKey: "Create a signing key in Advanced Settings > Creator Signature to sign this card.",
