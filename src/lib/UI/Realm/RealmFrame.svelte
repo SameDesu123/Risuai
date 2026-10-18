@@ -83,7 +83,7 @@
             }
         }
         else{
-            data = await shareRealmCardData()
+            data = await shareRealmCardData($ShowRealmFrameStore === 'character:signed')
         }
 
         if(iframe){

@@ -15,6 +15,7 @@
     import json from 'highlight.js/lib/languages/json';
     import SelectInput from "../UI/GUI/SelectInput.svelte";
     import OptionInput from "../UI/GUI/OptionInput.svelte";
+    import CheckInput from "../UI/GUI/CheckInput.svelte";
     import { language } from 'src/lang';
     import { getFetchData } from 'src/ts/globalApi.svelte';
     import { alertStore, selectedCharID } from "src/ts/stores.svelte";
@@ -63,6 +64,7 @@
     let input = $state('')
     let cardExportType = $state('realm')
     let cardExportType2 = $state('')
+    let cardExportSign = $state(false)
     let cardLicense = $state('')
     let generationInfoMenuIndex = $state(0)
     let branchHover:null|{
@@ -134,6 +136,7 @@
         if($alertStore.type !== 'cardexport'){
             cardExportType = 'realm'
             cardExportType2 = ''
+            cardExportSign = false
             cardLicense = ''
         }
         if($alertStore.type !== 'requestlogs'){
@@ -791,12 +794,24 @@
                     <OptionInput value="json">JSON</OptionInput>
                 </SelectInput>
             {/if}
+            {#if $alertStore.submsg === ''}
+                <span class="text-textcolor mt-4">{language.creatorSignature.title}</span>
+                {#if DBState.db.creatorSigningKey}
+                    <CheckInput className="mt-2" bind:check={cardExportSign} name={language.creatorSignature.signCard} />
+                    {#if cardExportSign}
+                        <span class="text-textcolor2 text-sm mt-1">{language.creatorSignature.signingAs}: {DBState.db.creatorSigningKey.name} <span class="font-mono">({DBState.db.creatorSigningKey.authorId})</span></span>
+                    {/if}
+                {:else}
+                    <span class="text-textcolor2 text-sm mt-1">{language.creatorSignature.noSigningKey}</span>
+                {/if}
+            {/if}
             <Button className="mt-4" onclick={() => {
                 alertStore.set({
                     type: 'none',
                     msg: JSON.stringify({
                         type: cardExportType,
-                        type2: cardExportType2
+                        type2: cardExportType2,
+                        sign: cardExportSign
                     })
                 })
             }}>{cardExportType === 'realm' ? language.shareCloud : language.export}</Button>

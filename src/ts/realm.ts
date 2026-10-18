@@ -14,12 +14,12 @@ window.addEventListener("message", (event) => {
     }
 });
 
-export async function shareRealmCardData():Promise<{ name: ArrayBuffer; data: ArrayBuffer; }> {
+export async function shareRealmCardData(sign:boolean = false):Promise<{ name: ArrayBuffer; data: ArrayBuffer; }> {
     const char = safeStructuredClone(getCurrentCharacter({snapshot:true})) as character
     const trimedName = char.name.replace(/[^a-zA-Z0-9]/g, '') || 'character';
     const writer = new VirtualWriter()
     const namebuf = new TextEncoder().encode(trimedName + '.png')
-    await exportCharacterCard(char, 'png', {writer: writer, spec: 'v3'})
+    await exportCharacterCard(char, 'png', {writer: writer, spec: 'v3', sign: sign})
     alertStore.set({
         type: 'none',
         msg: ''

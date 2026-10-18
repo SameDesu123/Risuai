@@ -726,13 +726,13 @@ export async function exportChar(charaID:number):Promise<string> {
 
     const option = await alertCardExport()
     if(option.type === ''){
-        exportCharacterCard(char, option.type2 === 'json' ? 'json' : (option.type2 === 'charx' ? 'charx' : option.type2 === 'charxJpeg' ? 'charxJpeg' : 'png'), {spec: 'v3'})
+        exportCharacterCard(char, option.type2 === 'json' ? 'json' : (option.type2 === 'charx' ? 'charx' : option.type2 === 'charxJpeg' ? 'charxJpeg' : 'png'), {spec: 'v3', sign: option.sign})
     }
     else if(option.type === 'ccv2'){
-        exportCharacterCard(char,'png', {spec: 'v2'})
+        exportCharacterCard(char,'png', {spec: 'v2', sign: option.sign})
     }
     else if(option.type === 'realm'){
-        ShowRealmFrameStore.set("character")
+        ShowRealmFrameStore.set(option.sign ? "character:signed" : "character")
     }
     else{
         return option.type
@@ -1291,9 +1291,11 @@ function createBaseV2(char:character) {
 }
 
 
-async function exportCreatorSignatures(char:character):Promise<CreatorSignature[]|undefined>{
+//cards are only signed when the creator ticks the signature box in the export dialog,
+//other exports carry the existing chain unchanged
+async function exportCreatorSignatures(char:character, sign:boolean):Promise<CreatorSignature[]|undefined>{
     const db = getDatabase()
-    if(!db.creatorSigningKey || !db.creatorSignatureAutoSign){
+    if(!sign || !db.creatorSigningKey){
         return char.creatorSignatures
     }
     const chain = await signChain(char.creatorSignatures, char, safeStructuredClone(db.creatorSigningKey))
@@ -1309,6 +1311,7 @@ export async function exportCharacterCard(char:character, type:'png'|'json'|'cha
     password?:string
     writer?:LocalWriter|VirtualWriter,
     spec?:'v2'|'v3'
+    sign?:boolean
 } = {}) {
     let img = await readCardExportImage(char.image)
     const spec:'v2'|'v3' = arg.spec ?? 'v2' //backward compatibility
@@ -1334,7 +1337,7 @@ export async function exportCharacterCard(char:character, type:'png'|'json'|'cha
         let assetIndex = 0
         if(spec === 'v2'){
             const card = await createBaseV2(char)
-            card.data.extensions.risuai.creatorSignatures = await exportCreatorSignatures(char)
+            card.data.extensions.risuai.creatorSignatures = await exportCreatorSignatures(char, arg.sign ?? false)
             if(card.data.extensions.risuai.emotions && card.data.extensions.risuai.emotions.length > 0){
                 for(let i=0;i<card.data.extensions.risuai.emotions.length;i++){
                     alertStore.set({
@@ -1400,7 +1403,7 @@ export async function exportCharacterCard(char:character, type:'png'|'json'|'cha
         }
         else if(spec === 'v3'){
             const card = createBaseV3(char)
-            card.data.extensions.risuai.creatorSignatures = await exportCreatorSignatures(char)
+            card.data.extensions.risuai.creatorSignatures = await exportCreatorSignatures(char, arg.sign ?? false)
             const seenPaths = new Set<string>()
             if(card.data.assets && card.data.assets.length > 0){
                 for(let i=0;i<card.data.assets.length;i++){

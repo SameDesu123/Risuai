@@ -2,7 +2,6 @@
     import { language } from "src/lang";
     import { DBState } from 'src/ts/stores.svelte';
     import Button from "src/lib/UI/GUI/Button.svelte";
-    import Check from "src/lib/UI/GUI/CheckInput.svelte";
     import TextInput from "src/lib/UI/GUI/TextInput.svelte";
     import { alertConfirm, alertError, alertNormal } from "src/ts/alert";
     import { downloadFile } from "src/ts/globalApi.svelte";
@@ -55,9 +54,6 @@
         <span class="text-textcolor mt-4">{language.creatorSignature.signerName}</span>
         <TextInput size="sm" fullwidth bind:value={DBState.db.creatorSigningKey.name} />
         <span class="text-textcolor2 text-sm mt-2">{language.creatorSignature.authorId}: <span class="font-mono text-textcolor">{DBState.db.creatorSigningKey.authorId}</span></span>
-        <div class="flex items-center mt-2">
-            <Check bind:check={DBState.db.creatorSignatureAutoSign} name={language.creatorSignature.autoSign} />
-        </div>
         <span class="text-draculared text-xs mt-2">{language.creatorSignature.keyWarning}</span>
         <div class="flex flex-wrap gap-2 mt-2">
             <Button size="sm" onclick={exportKey}>{language.creatorSignature.exportKey}</Button>

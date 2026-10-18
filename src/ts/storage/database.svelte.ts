@@ -609,7 +609,6 @@ export function setDatabase(data:Database){
     data.realmDirectOpen ??= false
     data.blockedRealmCreators ??= []
     data.creatorSigningKey ??= null
-    data.creatorSignatureAutoSign ??= true
     data.checkCorruption ??= false
     data.toggleConfirmRecommendedPreset ??= false
     data.useExperimentalGoogleTranslator ??= false
@@ -969,7 +968,6 @@ export interface Database{
     hideRealm:boolean
     blockedRealmCreators:BlockedRealmCreator[]
     creatorSigningKey:CreatorSigningKey|null
-    creatorSignatureAutoSign:boolean
     colorScheme:ColorScheme
     colorSchemeName:string
     customColorScheme:ColorScheme

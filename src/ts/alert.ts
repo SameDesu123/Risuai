@@ -229,6 +229,7 @@ export async function alertCardExport(type:string = ''){
     return JSON.parse(get(alertStoreImported).msg) as {
         type: string,
         type2: string,
+        sign?: boolean,
     }
 }
 
