@@ -1527,6 +1527,9 @@ async function fetchViaProxyJobWs(url: string, arg: {
     headers?: { [key: string]: string },
     method: "POST" | "GET" | "PUT" | "DELETE",
     signal?: AbortSignal,
+    // `signal` may stop firing once the response starts (its request timeout gets cleaned up), so the
+    // caller's own signal is passed separately to cancel the job for as long as the stream runs
+    streamSignal?: AbortSignal,
     requestTimeoutMs?: number,
     chatId?: string,
     fetchLogIndex?: number | null
@@ -1585,11 +1588,7 @@ async function fetchViaProxyJobWs(url: string, arg: {
             streamController = controller;
         },
         cancel() {
-            try {
-                ws.close();
-            } catch {
-                // no-op
-            }
+            settle();
         }
     });
     const pipedReadable = arg.fetchLogIndex != null ? pipeFetchLog(arg.fetchLogIndex, readable) : readable;
@@ -1601,11 +1600,24 @@ async function fetchViaProxyJobWs(url: string, arg: {
         }
     };
 
+    const abortSignals = new Set([arg.signal, arg.streamSignal].filter((signal): signal is AbortSignal => !!signal));
+    const settle = () => {
+        settled = true;
+        for (const signal of abortSignals) {
+            signal.removeEventListener('abort', abortHandler);
+        }
+        try {
+            ws.close();
+        } catch {
+            // no-op
+        }
+    };
+
     const closeAndEnd = () => {
         if (settled) {
             return;
         }
-        settled = true;
+        settle();
         if (streamController) {
             try {
                 streamController.close();
@@ -1613,11 +1625,24 @@ async function fetchViaProxyJobWs(url: string, arg: {
                 // no-op
             }
         }
-        try {
-            ws.close();
-        } catch {
-            // no-op
+    };
+
+    // Once the response has started the caller reads only the body, so a failure has to error the
+    // stream: closing it would pass a cut-off response off as a complete one
+    const failStream = (failStatus: number, message: string) => {
+        if (settled) {
+            return;
         }
+        if (headersReady) {
+            settle();
+            streamController?.error(new Error(message));
+            return;
+        }
+        status = failStatus;
+        responseHeaders = { 'content-type': 'text/plain; charset=utf-8' };
+        ensureHeadersReady();
+        streamController?.enqueue(encoder.encode(message));
+        closeAndEnd();
     };
 
     ws.onmessage = (event) => {
@@ -1638,15 +1663,12 @@ async function fetchViaProxyJobWs(url: string, arg: {
                 ensureHeadersReady();
                 streamController.enqueue(decodeProxyJobWsChunk(parsed.dataBase64));
                 return;
-            case 'error': {
-                status = parsed.status ?? 502;
-                responseHeaders = { 'content-type': 'text/plain; charset=utf-8' };
-                ensureHeadersReady();
-                const msg = formatProxyStreamErrorMessage(parsed.status, parsed.message);
-                streamController.enqueue(encoder.encode(msg));
-                closeAndEnd();
+            case 'error':
+                // The formatted message explains a response that never started, which is wrong mid-stream
+                failStream(parsed.status ?? 502, headersReady
+                    ? `Proxy stream failed (${parsed.status ?? 'unknown'}): ${parsed.message}`
+                    : formatProxyStreamErrorMessage(parsed.status, parsed.message));
                 return;
-            }
             case 'done':
                 ensureHeadersReady();
                 closeAndEnd();
@@ -1654,50 +1676,42 @@ async function fetchViaProxyJobWs(url: string, arg: {
         }
     };
 
+    // Only `done` or `error` ends a job, so a close before either means the connection was lost
     ws.onerror = () => {
-        if (!streamController) {
+        failStream(502, 'Proxy WebSocket connection lost before the response finished');
+    };
+    ws.onclose = () => {
+        failStream(502, 'Proxy WebSocket connection lost before the response finished');
+    };
+
+    function abortHandler() {
+        if (settled) {
             return;
         }
-        status = 502;
-        responseHeaders = { 'content-type': 'text/plain; charset=utf-8' };
-        ensureHeadersReady();
-        streamController.enqueue(encoder.encode('Proxy WebSocket stream error'));
-        closeAndEnd();
-    };
-
-    ws.onclose = () => {
-        if (!headersReady) {
-            status = 502;
-            responseHeaders = { 'content-type': 'text/plain; charset=utf-8' };
-            ensureHeadersReady();
-        }
-        closeAndEnd();
-    };
-
-    const abortHandler = () => {
-        status = 499;
-        responseHeaders = { 'content-type': 'text/plain; charset=utf-8' };
-        ensureHeadersReady();
-        if (streamController && !settled) {
-            streamController.enqueue(encoder.encode('Aborted'));
-        }
+        // Without this the server keeps generating after the user stops
         void fetch(`${baseUrl}/proxy-stream-jobs/${encodeURIComponent(jobId)}`, {
             method: 'DELETE',
             headers: {
                 'risu-auth': auth
             }
         }).catch(() => {});
+        if (!headersReady) {
+            status = 499;
+            responseHeaders = { 'content-type': 'text/plain; charset=utf-8' };
+            ensureHeadersReady();
+            streamController?.enqueue(encoder.encode('Aborted'));
+        }
         closeAndEnd();
-    };
-    if (requestSignal?.aborted) {
-        abortHandler();
     }
-    else {
-        requestSignal?.addEventListener('abort', abortHandler, { once: true });
+    for (const signal of abortSignals) {
+        if (signal.aborted) {
+            abortHandler();
+            break;
+        }
+        signal.addEventListener('abort', abortHandler, { once: true });
     }
 
     await waitHeaders;
-    requestSignal?.removeEventListener('abort', abortHandler);
     return new Response(pipedReadable, {
         status,
         headers: new Headers(responseHeaders)
@@ -1928,6 +1942,7 @@ export async function fetchNative(url: string, arg: {
                     headers,
                     method: arg.method,
                     signal: requestSignal,
+                    streamSignal: arg.signal,
                     requestTimeoutMs: arg.requestTimeoutMs,
                     chatId: arg.chatId,
                     fetchLogIndex
