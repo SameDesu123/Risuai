@@ -18,6 +18,9 @@
         }
         DBState.db.creatorSigningKey = await generateSigningKey(newName.trim())
         newName = ''
+        //back up a freshly created key right away, losing it means losing the Author ID
+        await exportKey()
+        alertNormal(language.creatorSignature.keyDownloaded)
     }
 
     async function importKey() {

@@ -908,6 +908,7 @@ export const languageKorean = {
         "deleteConfirm": "서명 키를 삭제할까요? 이 키를 다시 가져오지 않으면 이후 서명하는 카드는 새 작성자 ID를 갖게 됩니다.",
         "keyWarning": "키 파일을 가진 사람은 누구나 당신의 이름으로 서명할 수 있습니다. 남에게 공유하지 마세요.",
         "invalidKeyFile": "올바르지 않은 서명 키 파일입니다.",
+        "keyDownloaded": "서명 키를 creator-signing-key.json 파일로 저장했습니다. 다른 기기나 초기화 후에도 같은 작성자 ID로 서명하려면 이 파일이 필요하니 안전한 곳에 보관하세요.",
         "signCard": "제작자 서명 넣기",
         "signingAs": "서명자",
         "noSigningKey": "이 카드에 서명하려면 고급 설정 > 제작자 서명에서 서명 키를 먼저 만드세요.",
