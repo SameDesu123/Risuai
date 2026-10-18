@@ -14,6 +14,7 @@ const fs = require('fs/promises')
 const crypto = require('crypto')
 const rateLimit = require('express-rate-limit');
 const { WebSocketServer } = require('ws');
+const { createProxyStreamJobStore, isValidProxyStreamJobId, normalizeSinceSeq } = require('./proxyStreamJobs.cjs');
 app.use(express.static(path.join(process.cwd(), 'dist'), {index: false}));
 app.use(express.json({ limit: requestBodyLimit }));
 app.use(express.raw({ type: 'application/octet-stream', limit: requestBodyLimit }));
@@ -66,12 +67,18 @@ const PROXY_STREAM_DEFAULT_HEARTBEAT_SEC = 15;
 const PROXY_STREAM_HEARTBEAT_MIN_SEC = 5;
 const PROXY_STREAM_HEARTBEAT_MAX_SEC = 60;
 const PROXY_STREAM_GC_INTERVAL_MS = 60000;
-const PROXY_STREAM_DONE_GRACE_MS = 30000;
+const PROXY_STREAM_RESULT_TTL_MS = 15 * 60 * 1000;
 const PROXY_STREAM_MAX_ACTIVE_JOBS = 64;
-const PROXY_STREAM_MAX_PENDING_EVENTS = 512;
-const PROXY_STREAM_MAX_PENDING_BYTES = 2 * 1024 * 1024;
+const PROXY_STREAM_MAX_RETAINED_JOBS = 64;
+const PROXY_STREAM_MAX_JOB_LOG_BYTES = 32 * 1024 * 1024;
+const PROXY_STREAM_MAX_TOTAL_LOG_BYTES = 128 * 1024 * 1024;
 const PROXY_STREAM_MAX_BODY_BASE64_BYTES = 8 * 1024 * 1024;
-const proxyStreamJobs = new Map();
+const proxyStreamJobs = createProxyStreamJobStore({
+    resultTtlMs: PROXY_STREAM_RESULT_TTL_MS,
+    maxRetainedJobs: PROXY_STREAM_MAX_RETAINED_JOBS,
+    maxJobLogBytes: PROXY_STREAM_MAX_JOB_LOG_BYTES,
+    maxTotalLogBytes: PROXY_STREAM_MAX_TOTAL_LOG_BYTES
+});
 const authenticatedRouteLimiter = rateLimit({
     windowMs: 60 * 1000,
     max: 2000,
@@ -415,87 +422,20 @@ function requestLocalTargetStream(targetUrl, arg) {
     });
 }
 
-function createProxyStreamJob(arg) {
-    const jobId = crypto.randomUUID();
-    const timeoutMs = normalizeProxyStreamTimeoutMs(Number(arg.timeoutMs));
-    const heartbeatSec = normalizeHeartbeatSec(arg.heartbeatSec);
-    const controller = new AbortController();
-    const createdAt = Date.now();
-    const job = {
-        id: jobId,
-        createdAt,
-        updatedAt: createdAt,
-        done: false,
-        cleanupAt: 0,
-        clients: new Set(),
-        pendingEvents: [],
-        pendingBytes: 0,
-        abortController: controller,
-        deadlineAt: createdAt + timeoutMs,
-        heartbeatSec,
-        timeoutMs // lgtm[js/request-forgery]
-    };
-    proxyStreamJobs.set(jobId, job);
-    return job;
-}
-
-function pushJobEvent(job, event) {
-    job.updatedAt = Date.now();
-    const text = JSON.stringify(event);
-    if (job.clients.size === 0) {
-        job.pendingEvents.push(text);
-        job.pendingBytes += Buffer.byteLength(text);
-        while (
-            job.pendingEvents.length > PROXY_STREAM_MAX_PENDING_EVENTS
-            || job.pendingBytes > PROXY_STREAM_MAX_PENDING_BYTES
-        ) {
-            const removed = job.pendingEvents.shift();
-            if (!removed) {
-                break;
-            }
-            job.pendingBytes -= Buffer.byteLength(removed);
-        }
-        return;
-    }
-    for (const client of job.clients) {
-        if (client.readyState === client.OPEN) {
-            client.send(text);
-        }
-    }
-}
-
-function markJobDone(job) {
-    if (job.done) {
-        return;
-    }
-    job.done = true;
-    job.cleanupAt = Date.now() + PROXY_STREAM_DONE_GRACE_MS;
-}
-
-function cleanupJob(jobId) {
-    const job = proxyStreamJobs.get(jobId);
-    if (!job) {
-        return;
-    }
-    for (const client of job.clients) {
-        try {
-            client.close();
-        } catch {
-            // ignore
-        }
-    }
-    proxyStreamJobs.delete(jobId);
+function hashProxyStreamJobRequest(arg) {
+    return crypto.createHash('sha256')
+        .update(JSON.stringify([arg.method, arg.targetUrl, arg.bodyBase64]))
+        .digest('hex');
 }
 
 async function runProxyStreamJob(job, arg) {
     const targetUrl = sanitizeTargetUrl(arg.targetUrl);
     if (!targetUrl) {
-        pushJobEvent(job, {
+        proxyStreamJobs.push(job, {
             type: 'error',
             status: 400,
             message: 'Blocked non-local target URL'
         });
-        markJobDone(job);
         return;
     }
 
@@ -522,35 +462,45 @@ async function runProxyStreamJob(job, arg) {
             filteredHeaders[key] = value;
         }
 
-        pushJobEvent(job, {
+        if (!proxyStreamJobs.push(job, {
             type: 'upstream_headers',
             status: upstreamResponse.status,
             headers: filteredHeaders
-        });
+        })) {
+            upstreamResponse.body?.destroy();
+            return;
+        }
 
         if (upstreamResponse.body) {
             for await (const value of upstreamResponse.body) {
                 if (job.abortController.signal.aborted) {
                     break;
                 }
-                if (value && value.length > 0) {
-                    pushJobEvent(job, {
-                        type: 'chunk',
-                        dataBase64: Buffer.from(value).toString('base64')
-                    });
+                if (value && value.length > 0 && !proxyStreamJobs.push(job, {
+                    type: 'chunk',
+                    dataBase64: Buffer.from(value).toString('base64')
+                })) {
+                    break;
                 }
             }
         }
-        pushJobEvent(job, { type: 'done' });
-        markJobDone(job);
+        if (job.abortController.signal.aborted) {
+            // A stored result must not pass a cut-off response off as complete
+            proxyStreamJobs.push(job, {
+                type: 'error',
+                status: 504,
+                message: 'Proxy stream job aborted'
+            });
+            return;
+        }
+        proxyStreamJobs.push(job, { type: 'done' });
     } catch (error) {
         const message = error?.name === 'AbortError' ? 'Proxy stream job aborted' : `${error}`;
-        pushJobEvent(job, {
+        proxyStreamJobs.push(job, {
             type: 'error',
             status: 504,
             message
         });
-        markJobDone(job);
     }
 }
 
@@ -1077,6 +1027,13 @@ app.post('/proxy-stream-jobs', authenticatedRouteLimiter, async (req, res) => {
         return;
     }
 
+    // A client-chosen job ID lets a client whose response to this POST got lost retry without starting the request twice
+    const requestedJobId = req.body?.jobId;
+    if (requestedJobId !== undefined && !isValidProxyStreamJobId(requestedJobId)) {
+        res.status(400).send({ error: 'Invalid job ID' });
+        return;
+    }
+
     const rawUrl = typeof req.body?.url === 'string' ? req.body.url : '';
     const encodedUrl = encodeURIComponent(rawUrl);
     const url = sanitizeTargetUrl(decodeURIComponent(encodedUrl));
@@ -1096,15 +1053,33 @@ app.post('/proxy-stream-jobs', authenticatedRouteLimiter, async (req, res) => {
         res.status(413).send({ error: 'Request body too large' });
         return;
     }
-    if (proxyStreamJobs.size >= PROXY_STREAM_MAX_ACTIVE_JOBS) {
+    const requestHash = hashProxyStreamJobRequest({ method, targetUrl: url, bodyBase64 });
+    const existingJob = requestedJobId ? proxyStreamJobs.get(requestedJobId.toLowerCase()) : undefined;
+    if (existingJob) {
+        if (existingJob.requestHash !== requestHash) {
+            res.status(409).send({ error: 'Job ID is already used by a different request' });
+            return;
+        }
+        res.send({
+            jobId: existingJob.id,
+            heartbeatSec: existingJob.heartbeatSec,
+            resumed: true
+        });
+        return;
+    }
+    if (proxyStreamJobs.countRunning() >= PROXY_STREAM_MAX_ACTIVE_JOBS) {
         res.status(429).send({ error: 'Too many active stream jobs. Retry shortly.' });
         return;
     }
     const headers = normalizeForwardHeaders(req.body?.headers);
     const heartbeatSec = normalizeHeartbeatSec(Number(req.body?.heartbeatSec));
-    const job = createProxyStreamJob({
+    const timeoutMs = normalizeProxyStreamTimeoutMs(Number(req.body?.timeoutMs));
+    const job = proxyStreamJobs.create({
+        jobId: requestedJobId?.toLowerCase(),
+        requestHash,
         heartbeatSec,
-        timeoutMs: req.body?.timeoutMs
+        timeoutMs, // lgtm[js/request-forgery]
+        staleAfterMs: Math.max(PROXY_STREAM_DEFAULT_TIMEOUT_MS, timeoutMs * 2)
     });
 
     void runProxyStreamJob(job, {
@@ -1121,18 +1096,24 @@ app.post('/proxy-stream-jobs', authenticatedRouteLimiter, async (req, res) => {
     });
 });
 
-app.delete('/proxy-stream-jobs/:jobId', authenticatedRouteLimiter, async (req, res) => {
+app.get('/proxy-stream-jobs/:jobId', authenticatedRouteLimiter, async (req, res) => {
     if (!await checkProxyAuth(req, res)) {
         return;
     }
     const job = proxyStreamJobs.get(req.params.jobId);
     if (!job) {
-        res.send({ success: true });
+        res.status(404).send({ error: 'Job not found' });
         return;
     }
-    job.abortController.abort();
-    markJobDone(job);
-    cleanupJob(job.id);
+    res.type('application/json').send(proxyStreamJobs.snapshot(job, normalizeSinceSeq(req.query.since)));
+});
+
+// Cancels a running job, or acknowledges a finished one so its stored result is freed before it expires
+app.delete('/proxy-stream-jobs/:jobId', authenticatedRouteLimiter, async (req, res) => {
+    if (!await checkProxyAuth(req, res)) {
+        return;
+    }
+    proxyStreamJobs.remove(req.params.jobId);
     res.send({ success: true });
 });
 
@@ -1491,9 +1472,11 @@ function setupProxyStreamWebSocket(server) {
                 socket.destroy();
                 return;
             }
+            // A reconnecting client passes the last seq it received to skip what it already has
+            const since = normalizeSinceSeq(reqUrl.searchParams.get('since'));
 
             wsServer.handleUpgrade(req, socket, head, (ws) => {
-                wsServer.emit('connection', ws, req, jobId);
+                wsServer.emit('connection', ws, req, jobId, since);
             });
         } catch {
             socket.write('HTTP/1.1 400 Bad Request\r\n\r\n');
@@ -1501,20 +1484,15 @@ function setupProxyStreamWebSocket(server) {
         }
     });
 
-    wsServer.on('connection', (ws, _req, jobId) => {
+    wsServer.on('connection', (ws, _req, jobId, since) => {
         const job = proxyStreamJobs.get(jobId);
         if (!job) {
             ws.close();
             return;
         }
 
-        job.clients.add(ws);
         ws.send(JSON.stringify({ type: 'job_accepted', jobId }));
-        for (const event of job.pendingEvents) {
-            ws.send(event);
-        }
-        job.pendingEvents = [];
-        job.pendingBytes = 0;
+        proxyStreamJobs.attach(job, ws, since);
 
         const pingTimer = setInterval(() => {
             if (ws.readyState !== ws.OPEN) {
@@ -1525,14 +1503,8 @@ function setupProxyStreamWebSocket(server) {
 
         ws.on('close', () => {
             clearInterval(pingTimer);
-            const currentJob = proxyStreamJobs.get(jobId);
-            if (!currentJob) {
-                return;
-            }
-            currentJob.clients.delete(ws);
-            if (currentJob.done && currentJob.clients.size === 0) {
-                cleanupJob(jobId);
-            }
+            // The job is kept even when done: the server cannot tell whether the client received the end
+            proxyStreamJobs.detach(job, ws);
         });
 
         ws.on('error', () => {
@@ -1573,19 +1545,7 @@ async function startServer() {
 
 (async () => {
     setInterval(() => {
-        const now = Date.now();
-        for (const [jobId, job] of proxyStreamJobs.entries()) {
-            if (!job.done && now >= job.deadlineAt && !job.abortController.signal.aborted) {
-                job.abortController.abort();
-            }
-            if (job.done && job.clients.size === 0 && job.cleanupAt > 0 && now >= job.cleanupAt) {
-                cleanupJob(jobId);
-                continue;
-            }
-            if (!job.done && now - job.updatedAt > Math.max(PROXY_STREAM_DEFAULT_TIMEOUT_MS, job.timeoutMs * 2)) {
-                cleanupJob(jobId);
-            }
-        }
+        proxyStreamJobs.collectGarbage();
     }, PROXY_STREAM_GC_INTERVAL_MS);
     await startServer();
 })();
