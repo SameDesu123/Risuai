@@ -1494,10 +1494,22 @@ function setupProxyStreamWebSocket(server) {
         ws.send(JSON.stringify({ type: 'job_accepted', jobId }));
         proxyStreamJobs.attach(job, ws, since);
 
+        // A client that stops answering pings (a suspended tab, a dropped network) is cut off so it stops
+        // holding a socket; it resumes from its last seq when it comes back. Two missed rounds are allowed
+        let missedPongs = 0;
+        ws.on('pong', () => {
+            missedPongs = 0;
+        });
         const pingTimer = setInterval(() => {
             if (ws.readyState !== ws.OPEN) {
                 return;
             }
+            if (missedPongs >= 2) {
+                ws.terminate();
+                return;
+            }
+            missedPongs++;
+            ws.ping();
             ws.send(JSON.stringify({ type: 'ping', ts: Date.now() }));
         }, job.heartbeatSec * 1000);
 
