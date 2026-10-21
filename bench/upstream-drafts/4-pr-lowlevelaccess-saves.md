@@ -69,6 +69,8 @@ The test opens a chat with 30 messages shown and scrolls up 8 times, 2.5 s apart
 
 | saves during the 8 scrolls | before | after |
 |---|---|---|
+| Web build, Chromium (Playwright), IndexedDB, low level access on | 8 (16 database writes) | 0 |
+| Web build, same bot with low level access off | 0 | not measured |
 | Linux desktop build (WebKitGTK), low level access on | 8 (16 database file writes) | 0 |
 | Linux desktop build, same bot with low level access off | 0 | 0 |
 
@@ -82,7 +84,7 @@ On a GitHub Actions `windows-latest` runner (WebView2 153), with a 16 MB save an
 - **Host UI thread:** a separate process sent `WM_NULL` to the app window every 20 ms. The table shows the longest round trip, and the sum of the round trips that took over 50 ms.
 - **Peak memory** is the sum of private bytes over the host and all WebView2 processes.
 
-I only measured the desktop build. The web and node-hosted builds run the same code, so I expect them to stop re-saving too, but I haven't measured them.
+I haven't measured the node-hosted build. It runs the same code and the same `saveDb()` path, so I expect it to stop re-saving too.
 
 On this branch, `pnpm check` (0 errors), `pnpm build` and `pnpm test` (242 passed) pass.
 
