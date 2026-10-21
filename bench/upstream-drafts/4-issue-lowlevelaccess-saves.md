@@ -53,7 +53,7 @@ const triggers = char.triggerscript.map((v) => {
 
 The save loop in `saveDb()` watches the selected character with `$state.snapshot()`, so each flip schedules a save, and the save writes the whole database again. For a character without low level access, both functions write `false`, so nothing changes after the first render.
 
-`runLuaButtonTrigger()` in the same file already does this without mutating anything:
+`runLuaInteractionTrigger()` in the same file already does this without mutating anything:
 
 ```ts
 char.triggerscript.map<triggerscript>((v) => ({
@@ -85,6 +85,6 @@ I haven't measured the node-hosted build. It uses the same `saveDb()` path, so I
 
 ### Suggested fix
 
-Build the trigger lists from copies, as `runLuaButtonTrigger()` already does. The Lua runtime still gets the same `lowLevelAccess` value, and the stored triggers are left alone. I have a PR ready.
+Build the trigger lists from copies, as `runLuaInteractionTrigger()` already does. The Lua runtime still gets the same `lowLevelAccess` value, and the stored triggers are left alone. I have a PR ready.
 
 _I found and measured this with the help of an AI assistant (Claude Code)._

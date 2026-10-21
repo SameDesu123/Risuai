@@ -1,6 +1,6 @@
 **Title:** fix: stop writing lowLevelAccess into the character's saved triggers
 
-**Branch:** `fix/lowlevelaccess-trigger-copy` (1 commit on `main`)
+**Branch:** `fix/lowlevelaccess-saves` (1 commit on `main` 61d0eb7)
 
 ---
 
@@ -27,7 +27,7 @@
 
 `runLuaEditTrigger()` and `runTrigger()` in display mode set `lowLevelAccess` on the trigger objects of the character in the save itself. `runLuaEditTrigger()` sets it to `false`, and `runTrigger()` to the character's own setting. Both run for every rendered message. For a character with low level access enabled, the flag therefore flips back and forth, and each flip makes `saveDb()` write the whole database again, just from scrolling through a chat.
 
-This PR builds both trigger lists from copies, as `runLuaButtonTrigger()` already does.
+This PR builds both trigger lists from copies, as `runLuaInteractionTrigger()` already does.
 
 ## Related Issues
 
@@ -86,7 +86,7 @@ On a GitHub Actions `windows-latest` runner (WebView2 153), with a 16 MB save an
 
 I haven't measured the node-hosted build. It runs the same code and the same `saveDb()` path, so I expect it to stop re-saving too.
 
-On this branch, `pnpm check` (0 errors), `pnpm build` and `pnpm test` (242 passed) pass.
+On this branch, `pnpm check` (0 errors), `pnpm build` and `pnpm test` (262 passed, 3 skipped) pass.
 
 ## Additional Notes
 

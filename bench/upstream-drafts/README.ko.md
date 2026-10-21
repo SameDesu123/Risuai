@@ -23,7 +23,7 @@
 | `3-issue-chunked-save.md` | 이슈 3: 큰 저장의 메모리 급등과 창 멈춤, `database.bin` 제자리 덮어쓰기 |
 | `3-pr-chunked-save.md` | PR 3 (브랜치 `perf/tauri-chunked-save`, PR 2 위에 쌓임) |
 | `4-issue-lowlevelaccess-saves.md` | 이슈 4: 저수준 접근 봇은 스크롤만 해도 DB 전체를 다시 저장함 |
-| `4-pr-lowlevelaccess-saves.md` | PR 4 (브랜치 `fix/lowlevelaccess-trigger-copy`) |
+| `4-pr-lowlevelaccess-saves.md` | PR 4 (브랜치 `fix/lowlevelaccess-saves`) |
 | `patches/` | 네 브랜치의 커밋을 `git format-patch`로 뽑아 둔 사본 |
 
 초안마다 맨 윗줄 `**Title:**` 뒤의 글이 제목 칸에 넣을 것이고, `---` 아래 전부가 본문 칸에 붙일 것이와요. `**Branch:**` 줄은 그대 보시라고 적은 메모라, 본문에 넣으시면 안 된답니다.
@@ -43,7 +43,7 @@
 | `fix/tauri-stream-coalesce` | +10 / −4 | 없음 | 오류 0 | 통과 | 239 통과 |
 | `perf/tauri-backup-copy` | +7 / −2 | 없음 | 오류 0 | 통과 | 239 통과 |
 | `perf/tauri-chunked-save` | +35 / −1 (PR 2 포함 시 +42 / −3) | 6개, +92줄 | 오류 0 | 통과 | 245 통과 |
-| `fix/lowlevelaccess-trigger-copy` | +8 / −8 | 3개, +90줄 | 오류 0 | 통과 | 242 통과 |
+| `fix/lowlevelaccess-saves` (main `61d0eb7` 위) | +8 / −8 | 3개, +90줄 | 오류 0 | 통과 | 262 통과 |
 
 본가로 갈 커밋에서는 제 포크용 표식인 `[skip ci]`를 빼 두었사와요. 그러니 본가의 검사도 평소처럼 돈답니다.
 
@@ -78,7 +78,7 @@ PR 체크리스트의 "Have you understood what the code does?"에 정직하게 
 ### PR 4: lowLevelAccess 값을 원본에 쓰지 않기
 
 - **문제:** 메시지를 하나 그릴 때마다 `runLuaEditTrigger()`가 캐릭터 트리거들의 `lowLevelAccess`를 `false`로 써넣고, 이어서 `runTrigger()`가 캐릭터 설정값으로 다시 써넣는 것이와요. 둘 다 **세이브 속 원본 객체에 직접** 쓰는 것이 문제랍니다. 저수준 접근이 켜진 캐릭터라면 값이 false와 true를 오가고, 저장 감시가 이것을 변경으로 보아 DB 전체를 다시 저장하는 것이와요. 아무것도 바꾸지 않고 스크롤만 8번 했는데 저장이 8번 돌았사와요.
-- **고친 방법:** 원본을 고치지 않고 `{...v, lowLevelAccess: …}`로 복사본을 만들어 쓰는 것이와요. 같은 파일의 `runLuaButtonTrigger()`가 이미 이렇게 하고 있었답니다.
+- **고친 방법:** 원본을 고치지 않고 `{...v, lowLevelAccess: …}`로 복사본을 만들어 쓰는 것이와요. 같은 파일의 `runLuaInteractionTrigger()`가 이미 이렇게 하고 있었답니다.
 - **결과:** 스크롤 8번에 저장 8 → 0번, 16 MB 세이브 기준 IPC 전송 254 MB → 0, 최대 메모리 939 → 491 MB가 되었사와요.
 - **알고 계실 점:** 공통 코드라 플랫폼을 가리지 않는 것이와요. 웹판(Chromium, IndexedDB)에서도 저장 8 → 0번으로 확인했고, 저수준 접근을 끈 대조군은 0번이었사와요. 노드 서버판만은 재지 않았고, 같은 `saveDb()` 경로를 타므로 똑같으리라 미루어 본 것이랍니다.
 
