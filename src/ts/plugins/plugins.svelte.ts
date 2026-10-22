@@ -10,6 +10,7 @@ import type { ScriptMode } from "../process/scripts";
 import { checkCodeSafety } from "./pluginSafety";
 import { SafeDocument, SafeIdbFactory, SafeLocalStorage } from "./pluginSafeClass";
 import { loadV3Plugins } from "./apiV3/v3.svelte";
+import { createCoalescedRunner } from "./apiV3/pluginLifecycle";
 import { pluginCodeTranspiler } from "./apiV3/transpiler";
 
 export const customProviderStore = writable([] as string[])
@@ -416,7 +417,11 @@ export async function importPlugin(code:string|null = null, argu:{
 
 let pluginTranslator = false
 
-export async function loadPlugins() {
+// Reloads are serialized: a reload started while another is running would
+// otherwise unload and start plugin instances concurrently and leak some of them.
+export const loadPlugins = createCoalescedRunner(loadPluginsNow)
+
+async function loadPluginsNow() {
     console.log('Loading plugins...')
     let db = getDatabase()
 
@@ -839,15 +844,27 @@ function keepPluginStorageInternals(current: {[key:string]:any} | undefined, inc
 export async function loadV2Plugin(plugins: RisuPlugin[]) {
 
     if (pluginV2.loaded) {
-        for (const unload of pluginV2.unload) {
-            await unload()
+        // Take the handlers out first so they run once, even if a later load starts
+        // or one of them throws.
+        const unloads = [...pluginV2.unload]
+        pluginV2.unload.clear()
+        for (const unload of unloads) {
+            try {
+                await unload()
+            } catch (error) {
+                console.error('Error in plugin unload handler:', error)
+            }
         }
 
         pluginV2.providers.clear()
+        pluginV2.providerOptions.clear()
+        customProviderStore.set([])
         pluginV2.editdisplay.clear()
         pluginV2.editoutput.clear()
         pluginV2.editprocess.clear()
         pluginV2.editinput.clear()
+        pluginV2.replacerbeforeRequest.clear()
+        pluginV2.replacerafterRequest.clear()
         pluginV2.chatOutput.clear()
     }
 

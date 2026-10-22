@@ -446,6 +446,11 @@ export class SandboxHost {
 
     private pendingCallbacks = new Map<string, { resolve: Function, reject: Function }>();
 
+    // Set once the sandbox is torn down. Callback wrappers handed to host code
+    // can outlive the iframe (e.g. a replacer stored in a global Set), so they
+    // must fail fast instead of waiting for a reply that can never arrive.
+    private terminated = false;
+
     // Teardown hooks for streams bridged over MessagePort. MessagePort has no
     // 'close' event in stable browsers, so without these the other side of an
     // active stream would wait forever once the iframe is gone.
@@ -559,6 +564,9 @@ export class SandboxHost {
                 if (cached) return cached;
 
                 const wrapper = async (...innerArgs: any[]) => {
+                    if (this.terminated) {
+                        throw new Error('Plugin sandbox has been terminated');
+                    }
                     return new Promise((resolve, reject) => {
                         const reqId = 'cb_req_' + Math.random().toString(36).substring(2);
                         this.pendingCallbacks.set(reqId, { resolve, reject });
@@ -856,6 +864,10 @@ export class SandboxHost {
                         result = await instance[data.method!](...args);
                     }
 
+                    // The sandbox may have been torn down while the call was
+                    // pending; do not register instances or streams for it.
+                    if (this.terminated) return;
+
 
                     response.result = this.serialize(result);
                     const { result: streamResult, ports: streamPorts, cleanups } = this.replaceStreamsWithPorts(response.result);
@@ -928,6 +940,7 @@ export class SandboxHost {
     }
 
     public terminate() {
+        this.terminated = true;
         if (this.messageHandlerRef) {
             window.removeEventListener('message', this.messageHandlerRef);
             this.messageHandlerRef = null;
@@ -937,7 +950,17 @@ export class SandboxHost {
         }
         this.closeActiveStreams();
         this.instanceRegistry.clear();
+
+        const pending = [...this.pendingCallbacks.values()];
         this.pendingCallbacks.clear();
+        for (const { reject } of pending) {
+            reject(new Error('Plugin sandbox has been terminated'));
+        }
+
+        // Nobody is left to abort these from the guest side.
+        for (const controller of this.abortControllers.values()) {
+            controller.abort();
+        }
         this.abortControllers.clear();
         this.callbackWrapperCache.clear();
     }

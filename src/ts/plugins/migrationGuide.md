@@ -163,7 +163,6 @@ The following APIs from v2.1 are still available in v3.0:
 - `pluginStorage`: Plugin-specific storage (save file-specific, syncable)
 - `setDatabaseLite`: Set database (lightweight)
 - `setDatabase`: Set database (full)
-- `loadPlugins`: Load additional plugins
 - `readImage`: Read image assets
 - `saveAsset`: Save assets
 - `onUnload`: Cleanup handler (deprecated - cleanup only happens on shutdown)

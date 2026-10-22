@@ -38,6 +38,10 @@ export async function initializeMCPs(additionalMCPs?:string[]) {
         }
     }
     for(const mcp of mcpUrls) {
+        // A plugin MCP may have been unregistered or replaced since it was cached.
+        if(mcp.startsWith('plugin:') && MCPs[mcp] && MCPs[mcp] !== registeredCustomPluginMCPs.get(mcp)) {
+            delete MCPs[mcp];
+        }
         if(!MCPs[mcp]) {
 
             let mcpUrl = mcp;

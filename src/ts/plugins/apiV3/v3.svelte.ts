@@ -1,4 +1,4 @@
-import { allowedDbKeys, customProviderStore, getV2PluginAPIs, handlePluginInstallViaPlugin, pluginV2, type PluginV2ProviderArgument, type PluginV2ProviderOptions, type RisuPlugin } from "../plugins.svelte";
+import { allowedDbKeys, customProviderStore, getV2PluginAPIs, handlePluginInstallViaPlugin, pluginV2, type EditFunction, type PluginV2ProviderArgument, type PluginV2ProviderOptions, type RisuPlugin } from "../plugins.svelte";
 import { SandboxHost } from "./factory";
 import { createPluginScriptHashGetter, getPluginPermissionKey, PluginPermissionSessionCache, runWithPluginPermission, type PluginPermission } from "./pluginPermissionCache";
 import { getDatabase } from "src/ts/storage/database.svelte";
@@ -6,14 +6,13 @@ import { SafeLocalPluginStorage, tagWhitelist } from "../pluginSafeClass";
 import DOMPurify from 'dompurify';
 import { additionalChatMenu, additionalFloatingActionButtons, additionalHamburgerMenu, additionalSettingsMenu, bodyIntercepterStore, chatPanelStore, DBState, selectedCharID, type MenuDef } from "src/ts/stores.svelte";
 import { v4 } from "uuid";
-import { sleep } from "src/ts/util";
 import { alertConfirm, alertError, alertNormal } from "src/ts/alert";
 import { language } from "src/lang";
 import { checkCharOrder, forageStorage, getFetchLogs } from "src/ts/globalApi.svelte";
 import { changeColorScheme, updateColorScheme, updateTextThemeAndCSS, type ColorScheme } from "src/ts/gui/colorscheme";
 import { isNodeServer, isTauri } from "src/ts/platform";
 import { get } from "svelte/store";
-import { registerMCPModule, unregisterMCPModule } from "src/ts/process/mcp/pluginmcp";
+import { registeredCustomPluginMCPs, registerMCPModule, unregisterMCPModule } from "src/ts/process/mcp/pluginmcp";
 import { pluginStorage } from "src/ts/process/coldstorage.svelte";
 import { getInlayAsset } from "src/ts/process/files/inlays";
 import { getLLMCache, searchLLMCache } from "src/ts/translator/translator";
@@ -38,6 +37,7 @@ import {
     type TTSHookFn,
 } from "src/ts/process/ttsHooks";
 import isEqual from "lodash/isEqual";
+import { PluginUnloadRegistry, type PluginLifecycle } from "./pluginLifecycle";
 
 /*
     V3 API for RisuAI Plugins
@@ -513,14 +513,7 @@ class SafeMutationObserver {
 
 }
 
-const pluginUnloadCallbacks: Map<string, Function[]> = new Map();
-
-const addPluginUnloadCallback = (pluginName: string, callback: Function) => {
-    if(!pluginUnloadCallbacks.has(pluginName)){
-        pluginUnloadCallbacks.set(pluginName, []);
-    }
-    pluginUnloadCallbacks.get(pluginName)?.push(callback);
-}
+const pluginUnloadRegistry = new PluginUnloadRegistry();
 
 const makeMenuUnloadCallback = (menuId:string, menuStore: MenuDef[]) =>{
     return () => {
@@ -546,34 +539,16 @@ const removePluginChatPanels = (pluginName: string) => {
     }
 }
 
-const unloadV3Plugin = async (pluginName: string) => {
-    const callbacks = pluginUnloadCallbacks.get(pluginName);
-    const instance = v3PluginInstances.find(p => p.name === pluginName);
-    if(instance){
-        const index = v3PluginInstances.findIndex(p => p.name === pluginName);
-        if(index !== -1){
-            v3PluginInstances.splice(index, 1);
-        }
+const unloadV3Plugin = async (instance: V3PluginInstance) => {
+    const index = v3PluginInstances.indexOf(instance);
+    if(index !== -1){
+        v3PluginInstances.splice(index, 1);
     }
-    if(callbacks){
-        pluginUnloadCallbacks.delete(pluginName); 
-        let promises: Promise<void>[] = [];
-        for(const callback of callbacks){
-            const result = callback();
-            if(result instanceof Promise){
-                promises.push(result);
-            }
-        }
-
-        await Promise.any([
-            Promise.all(promises),
-            sleep(1000) //timeout after 1 second
-        ])
-    }
+    await pluginUnloadRegistry.run(instance.name, instance.lifecycle, 1000);
     try {
-        instance?.host?.terminate();        
+        instance.host.terminate();
     } catch (error) {
-        console.error(`Error terminating plugin ${pluginName}:`, error);
+        console.error(`Error terminating plugin ${instance.name}:`, error);
     }
 }
 
@@ -653,9 +628,12 @@ const authorizationHeaders = [
     'proxy-authorization',
 ]
 
-const makeRisuaiAPIV3 = (iframe:HTMLIFrameElement,plugin:RisuPlugin) => {
+const makeRisuaiAPIV3 = (iframe:HTMLIFrameElement,plugin:RisuPlugin,lifecycle:PluginLifecycle) => {
 
     const oldApis = getV2PluginAPIs();
+    const addUnloadCallback = (callback: () => unknown) => {
+        pluginUnloadRegistry.add(plugin.name, lifecycle, callback);
+    }
     const getPluginScriptHash = createPluginScriptHashGetter(plugin.script, hasher)
     const getPermission = async (permissionDesc: PluginPermission, reconfirm: boolean|'periodically' = false) => {
         return getPluginPermission(plugin.name, await getPluginScriptHash(), permissionDesc, reconfirm)
@@ -702,7 +680,7 @@ const makeRisuaiAPIV3 = (iframe:HTMLIFrameElement,plugin:RisuPlugin) => {
             console.warn(`[WARN] addProvider is a powerful API that can potentially be unsafe if used incorrectly. addProvider's functionality might be limited or changed in future updates to ensure security. please use other APIs if possible.`);
             let provs = get(customProviderStore)
             provs.push(name)
-            pluginV2.providers.set(name, (arg, abortSignal) => {
+            const provider: Parameters<typeof pluginV2.providers.set>[1] = (arg, abortSignal) => {
                 return runWithPluginPermission(
                     () => getPermission('provider', 'periodically'),
                     async () => {
@@ -716,7 +694,8 @@ const makeRisuaiAPIV3 = (iframe:HTMLIFrameElement,plugin:RisuPlugin) => {
                         content: language.providerPermissionDenied,
                     },
                 )
-            }),
+            }
+            pluginV2.providers.set(name, provider)
             pluginV2.providerOptions.set(name, options ?? {})
             customProviderStore.set(provs)
 
@@ -733,38 +712,61 @@ const makeRisuaiAPIV3 = (iframe:HTMLIFrameElement,plugin:RisuPlugin) => {
                 tokenizer:options?.model?.tokenizer ??  LLMTokenizer.Unknown
             }
             customV3ProviderMetaStore.push(modelData);
+
+            addUnloadCallback(() => {
+                const metaIndex = customV3ProviderMetaStore.indexOf(modelData);
+                if(metaIndex !== -1){
+                    customV3ProviderMetaStore.splice(metaIndex, 1);
+                }
+                // Another load may have replaced the provider under the same name; leave it alone then.
+                if(pluginV2.providers.get(name) !== provider){
+                    return;
+                }
+                pluginV2.providers.delete(name);
+                pluginV2.providerOptions.delete(name);
+                const names = get(customProviderStore);
+                const nameIndex = names.indexOf(name);
+                if(nameIndex !== -1){
+                    names.splice(nameIndex, 1);
+                    customProviderStore.set(names);
+                }
+            });
         },
         addTTSPreprocessor: async (
             func: TTSHookFn<BeforeTTSContext, BeforeTTSResult>,
         ) => {
             registerTTSPreprocessor(func);
-            addPluginUnloadCallback(plugin.name, () => unregisterTTSPreprocessor(func));
+            addUnloadCallback(() => unregisterTTSPreprocessor(func));
         },
         addTTSPostprocessor: async (
             func: TTSHookFn<AfterTTSContext, AfterTTSResult>,
         ) => {
             registerTTSPostprocessor(func);
-            addPluginUnloadCallback(plugin.name, () => unregisterTTSPostprocessor(func));
+            addUnloadCallback(() => unregisterTTSPostprocessor(func));
         },
-        addRisuScriptHandler: oldApis.addRisuScriptHandler,
+        addRisuScriptHandler: (name: Parameters<typeof oldApis.addRisuScriptHandler>[0], func: EditFunction) => {
+            oldApis.addRisuScriptHandler(name, func);
+            addUnloadCallback(() => oldApis.removeRisuScriptHandler(name, func));
+        },
         removeRisuScriptHandler: oldApis.removeRisuScriptHandler,
         addRisuReplacer: async (name:string,func:Function) => {
             //permission check for replacer
             const conf = await getPermission('replacer', 'periodically');
-            if(!conf){
+            if(!conf || !lifecycle.alive){
                 return;
             }
             oldApis.addRisuReplacer(name, func as any);
+            addUnloadCallback(() => oldApis.removeRisuReplacer(name, func as any));
         },
         removeRisuReplacer: oldApis.removeRisuReplacer,
         addRisuChatListener: async (mode:'output', func:Function) => {
             //permission check, lets use same as replacer
             const conf = await getPermission('replacer', 'periodically');
-            if(!conf){
+            if(!conf || !lifecycle.alive){
                 return;
             }
             oldApis.addRisuChatListener(mode, func as any);
-            addPluginUnloadCallback(plugin.name, () => oldApis.removeRisuChatListener(mode, func as any));
+            addUnloadCallback(() => oldApis.removeRisuChatListener(mode, func as any));
         },
         removeRisuChatListener: oldApis.removeRisuChatListener,
         setDatabaseLite: (newDb: any) => {
@@ -781,7 +783,6 @@ const makeRisuaiAPIV3 = (iframe:HTMLIFrameElement,plugin:RisuPlugin) => {
             return oldApis.setDatabaseLite(newDb);
         },
         setDatabase: oldApis.setDatabase,
-        loadPlugins: oldApis.loadPlugins,
         readImage: oldApis.readImage,
         readInlay: async (id: string) => {
             const conf = await getPermission('inlay', 'periodically');
@@ -1065,22 +1066,20 @@ const makeRisuaiAPIV3 = (iframe:HTMLIFrameElement,plugin:RisuPlugin) => {
             const existingIndex = additionalSettingsMenu.findIndex(item => item.id === menuId)
             if(existingIndex !== -1){
                 additionalSettingsMenu[existingIndex] = menuDef
-                addPluginUnloadCallback(
-                    plugin.name,
+                addUnloadCallback(
                     makeMenuUnloadCallback(menuId, additionalSettingsMenu)
                 )
                 return {id: menuId}
             }
             additionalSettingsMenu.push(menuDef)
-            addPluginUnloadCallback(
-                plugin.name,
+            addUnloadCallback(
                 makeMenuUnloadCallback(menuId, additionalSettingsMenu)
             )
             return {id: menuId};
         },
         registerBodyIntercepter: async (callback: (body: any, type: string) => any) => {
 
-            if(await getPermission('replacer') === false){
+            if(await getPermission('replacer') === false || !lifecycle.alive){
                 return null;
             }
             
@@ -1089,7 +1088,7 @@ const makeRisuaiAPIV3 = (iframe:HTMLIFrameElement,plugin:RisuPlugin) => {
                 id,
                 callback
             })
-            addPluginUnloadCallback(plugin.name, () => {
+            addUnloadCallback(() => {
                 const index = bodyIntercepterStore.findIndex(item => item.id === id);
                 if(index !== -1){
                     bodyIntercepterStore.splice(index, 1);
@@ -1140,8 +1139,7 @@ const makeRisuaiAPIV3 = (iframe:HTMLIFrameElement,plugin:RisuPlugin) => {
                 const existingIndex = store.findIndex(item => item.id === id)
                 if(existingIndex !== -1){
                     store[existingIndex] = menuDef
-                    addPluginUnloadCallback(
-                        plugin.name,
+                    addUnloadCallback(
                         makeMenuUnloadCallback(id, store)
                     )
                     return {id}
@@ -1151,24 +1149,21 @@ const makeRisuaiAPIV3 = (iframe:HTMLIFrameElement,plugin:RisuPlugin) => {
             switch(location){
                 case 'action':{
                     additionalFloatingActionButtons.push(menuDef)
-                    addPluginUnloadCallback(
-                        plugin.name,
+                    addUnloadCallback(
                         makeMenuUnloadCallback(menuDef.id, additionalFloatingActionButtons)
                     )
                     break
                 }
                 case 'hamburger':{
                     additionalHamburgerMenu.push(menuDef)
-                    addPluginUnloadCallback(
-                        plugin.name,
+                    addUnloadCallback(
                         makeMenuUnloadCallback(menuDef.id, additionalHamburgerMenu)
                     )
                     break
                 }
                 case 'chat':{
                     additionalChatMenu.push(menuDef)
-                    addPluginUnloadCallback(
-                        plugin.name,
+                    addUnloadCallback(
                         makeMenuUnloadCallback(menuDef.id, additionalChatMenu)
                     )
                     break
@@ -1213,10 +1208,20 @@ const makeRisuaiAPIV3 = (iframe:HTMLIFrameElement,plugin:RisuPlugin) => {
             else{
                 chatPanelStore.push(panel);
             }
-            addPluginUnloadCallback(plugin.name, () => removePluginChatPanels(plugin.name));
+            addUnloadCallback(() => removePluginChatPanels(plugin.name));
             return {id};
         },
-        registerMCP: registerMCPModule,
+        registerMCP: async (...args: Parameters<typeof registerMCPModule>) => {
+            await registerMCPModule(...args);
+            const identifier = args[0].identifier;
+            const client = registeredCustomPluginMCPs.get(identifier);
+            addUnloadCallback(() => {
+                // Only remove the client this plugin registered, not a later replacement.
+                if(registeredCustomPluginMCPs.get(identifier) === client){
+                    unregisterMCPModule(identifier);
+                }
+            });
+        },
         unregisterMCP: unregisterMCPModule,
         unregisterUIPart: (id: string) => {
             const removeFromMenuStore = (menuStore: MenuDef[]) => {
@@ -1237,13 +1242,13 @@ const makeRisuaiAPIV3 = (iframe:HTMLIFrameElement,plugin:RisuPlugin) => {
         },
         createMutationObserver(callback: SafeMutationCallback): SafeMutationObserver {
             const observer = new SafeMutationObserver(callback)
-            addPluginUnloadCallback(plugin.name, () => {
+            addUnloadCallback(() => {
                 observer.disconnect()
             })
             return observer
         },
         onUnload: (callback: () => void) => {
-            addPluginUnloadCallback(plugin.name, callback);
+            addUnloadCallback(callback);
         },
         getFetchLogs: async () => {
             const unsafeFetchLog = getFetchLogs()
@@ -1427,7 +1432,7 @@ const makeRisuaiAPIV3 = (iframe:HTMLIFrameElement,plugin:RisuPlugin) => {
         },
         addPluginChannelListener: (channelName: string, callback: Function) => {
             pluginChannel.set(plugin.name + channelName, callback);
-            addPluginUnloadCallback(plugin.name, () => {
+            addUnloadCallback(() => {
                 pluginChannel.delete(plugin.name + channelName);
             })
         },
@@ -1471,14 +1476,14 @@ const makeRisuaiAPIV3 = (iframe:HTMLIFrameElement,plugin:RisuPlugin) => {
 type V3PluginInstance = {
     name: string;
     host: SandboxHost;
+    lifecycle: PluginLifecycle;
 }
 
 const v3PluginInstances: V3PluginInstance[] = [];
 
 export async function loadV3Plugins(plugins:RisuPlugin[]){
-    await Promise.all(v3PluginInstances.map(async (instance) => {
-        await unloadV3Plugin(instance.name);
-    }));
+    // unloadV3Plugin removes the instance from v3PluginInstances, so iterate over a copy.
+    await Promise.all([...v3PluginInstances].map((instance) => unloadV3Plugin(instance)));
 
     for(const entry of pluginEventListeners){
         entry.eventTarget.removeEventListener(entry.type, entry.listener, entry.options);
@@ -1500,10 +1505,12 @@ export async function executePluginV3(plugin:RisuPlugin){
     const iframe = document.createElement('iframe');
     iframe.style.display = "none";
     document.body.appendChild(iframe);
-    const host = new SandboxHost(makeRisuaiAPIV3(iframe, plugin));
+    const lifecycle: PluginLifecycle = { alive: true };
+    const host = new SandboxHost(makeRisuaiAPIV3(iframe, plugin, lifecycle));
     v3PluginInstances.push({
         name: plugin.name,
-        host
+        host,
+        lifecycle
     });
     host.run(iframe, plugin.script);
     console.log(`[RisuAI Plugin: ${plugin.name}] Loaded API V3 plugin.`);

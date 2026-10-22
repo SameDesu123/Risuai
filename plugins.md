@@ -1151,14 +1151,6 @@ await Risuai.onUnload(async () => {
 });
 ```
 
-#### Reload All Plugins
-
-Force a reload of all plugins (use sparingly):
-
-```javascript
-await Risuai.loadPlugins();
-```
-
 ### Permissions
 
 Some APIs require explicit user consent. Use `requestPluginPermission` to prompt the user:
