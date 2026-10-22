@@ -37,7 +37,7 @@ import {
     type TTSHookFn,
 } from "src/ts/process/ttsHooks";
 import isEqual from "lodash/isEqual";
-import { PluginUnloadRegistry, type PluginLifecycle } from "./pluginLifecycle";
+import { PluginReloadGuard, PluginUnloadRegistry, type PluginLifecycle } from "./pluginLifecycle";
 
 /*
     V3 API for RisuAI Plugins
@@ -514,6 +514,7 @@ class SafeMutationObserver {
 }
 
 const pluginUnloadRegistry = new PluginUnloadRegistry();
+const pluginReloadGuard = new PluginReloadGuard(5000);
 
 const makeMenuUnloadCallback = (menuId:string, menuStore: MenuDef[]) =>{
     return () => {
@@ -783,6 +784,13 @@ const makeRisuaiAPIV3 = (iframe:HTMLIFrameElement,plugin:RisuPlugin,lifecycle:Pl
             return oldApis.setDatabaseLite(newDb);
         },
         setDatabase: oldApis.setDatabase,
+        loadPlugins: async () => {
+            if(!pluginReloadGuard.request(plugin.name, lifecycle)){
+                console.warn(`[RisuAI Plugin: ${plugin.name}] Ignored loadPlugins() called right after a reload this plugin requested, to prevent a reload loop.`);
+                return;
+            }
+            await oldApis.loadPlugins();
+        },
         readImage: oldApis.readImage,
         readInlay: async (id: string) => {
             const conf = await getPermission('inlay', 'periodically');
@@ -1490,11 +1498,12 @@ export async function loadV3Plugins(plugins:RisuPlugin[]){
     }
     pluginEventListeners.length = 0;
 
-    const loadPromises = plugins.map(plugin => executePluginV3(plugin));
+    const createLifecycle = pluginReloadGuard.beginReload();
+    const loadPromises = plugins.map(plugin => executePluginV3(plugin, createLifecycle(plugin.name)));
     await Promise.all(loadPromises);
 }
 
-export async function executePluginV3(plugin:RisuPlugin){
+export async function executePluginV3(plugin:RisuPlugin, lifecycle:PluginLifecycle = { alive: true }){
 
     const alreadyRunning = v3PluginInstances.find(p => p.name === plugin.name);
     if(alreadyRunning){
@@ -1505,7 +1514,6 @@ export async function executePluginV3(plugin:RisuPlugin){
     const iframe = document.createElement('iframe');
     iframe.style.display = "none";
     document.body.appendChild(iframe);
-    const lifecycle: PluginLifecycle = { alive: true };
     const host = new SandboxHost(makeRisuaiAPIV3(iframe, plugin, lifecycle));
     v3PluginInstances.push({
         name: plugin.name,

@@ -2017,6 +2017,13 @@ interface RisuaiPluginAPI {
     // ========== Plugin Management ==========
 
     /**
+     * Reloads all plugins.
+     * A call made within the first few seconds after a reload this plugin itself
+     * requested is ignored, so calling it on startup cannot loop forever.
+     */
+    loadPlugins(): Promise<void>;
+
+    /**
      * Registers an unload function called when plugin is unloaded
      */
     onUnload(func: () => void | Promise<void>): Promise<void>;

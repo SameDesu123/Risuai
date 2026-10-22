@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createCoalescedRunner, PluginUnloadRegistry, type PluginLifecycle } from './pluginLifecycle'
+import { createCoalescedRunner, PluginReloadGuard, PluginUnloadRegistry, type PluginLifecycle } from './pluginLifecycle'
 
 const deferred = () => {
     let resolve!: () => void
@@ -162,5 +162,58 @@ describe('createCoalescedRunner', () => {
 
         await expect(runner()).resolves.toBeUndefined()
         expect(runs).toBe(3)
+    })
+})
+
+describe('PluginReloadGuard', () => {
+    it('stops a plugin that reloads on every startup after one reload', () => {
+        let now = 0
+        const guard = new PluginReloadGuard(5000, () => now)
+        let lifecycle = guard.beginReload()('looper')
+        let reloads = 0
+
+        // Each start immediately asks for a reload, like a plugin calling loadPlugins() at top level.
+        for (let i = 0; i < 10; i++) {
+            now += 100
+            if (!guard.request('looper', lifecycle)) {
+                break
+            }
+            reloads++
+            lifecycle = guard.beginReload()('looper')
+        }
+
+        expect(reloads).toBe(1)
+    })
+
+    it('allows a later reload from the same plugin, e.g. from a settings button', () => {
+        let now = 0
+        const guard = new PluginReloadGuard(5000, () => now)
+        expect(guard.request('a', guard.beginReload()('a'))).toBe(true)
+
+        const restarted = guard.beginReload()('a')
+        expect(restarted.startedBySelfReload).toBe(true)
+
+        now += 5000
+        expect(guard.request('a', restarted)).toBe(true)
+    })
+
+    it('does not limit plugins restarted by a reload someone else requested', () => {
+        const now = 0
+        const guard = new PluginReloadGuard(5000, () => now)
+        const createLifecycle = guard.beginReload()
+        const a = createLifecycle('a')
+        guard.request('a', a)
+
+        const createNext = guard.beginReload()
+        const nextA = createNext('a')
+        const nextB = createNext('b')
+
+        expect(guard.request('a', nextA)).toBe(false)
+        expect(guard.request('b', nextB)).toBe(true)
+    })
+
+    it('ignores requests from an instance that is already unloading', () => {
+        const guard = new PluginReloadGuard(5000, () => 0)
+        expect(guard.request('a', { alive: false })).toBe(false)
     })
 })
