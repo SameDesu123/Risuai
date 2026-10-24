@@ -24,6 +24,12 @@ export async function checkDriver(type:'save'|'load'|'loadtauri'|'savetauri'|'re
         return authorizationUrl
     }
 
+    //account sync keeps the data on the account server, and reading it back for a Drive upload would transfer everything twice
+    if(forageStorage.isAccount){
+        alertError(language.driveBackupAccountSync)
+        return
+    }
+
     if(type === 'save' || type === 'load'){
         location.href = (authorizationUrl);
     }
@@ -117,6 +123,24 @@ export function syncDrive() {
 
 
 async function backupDrive(ACCESS_TOKEN:string) {
+    if(forageStorage.isAccount){
+        alertError(language.driveBackupAccountSync)
+        return
+    }
+    try {
+        await backupDriveData(ACCESS_TOKEN)
+    } catch (error) {
+        console.error(error)
+        if(error instanceof DriveAuthError){
+            alertError(language.driveTokenExpiredBackup)
+        }
+        else{
+            alertError(language.driveBackupInterrupted(error instanceof Error ? error.message : `${error}`))
+        }
+    }
+}
+
+async function backupDriveData(ACCESS_TOKEN:string) {
     alertStore.set({
         type: "wait",
         msg: "Uploading Backup..."
@@ -205,6 +229,26 @@ type DriveFile = {
 }
 
 async function loadDrive(ACCESS_TOKEN:string, mode: 'backup'|'sync'):Promise<void|"noSync"> {
+    if(mode === 'sync'){
+        return await loadDriveData(ACCESS_TOKEN, mode)
+    }
+    if(forageStorage.isAccount){
+        alertError(language.driveBackupAccountSync)
+        return
+    }
+    try {
+        return await loadDriveData(ACCESS_TOKEN, mode)
+    } catch (error) {
+        if(error instanceof DriveAuthError){
+            console.error(error)
+            alertError(language.driveTokenExpiredRestore)
+            return
+        }
+        throw error
+    }
+}
+
+async function loadDriveData(ACCESS_TOKEN:string, mode: 'backup'|'sync'):Promise<void|"noSync"> {
     if(mode === 'backup'){
         alertStore.set({
             type: "wait",
@@ -437,6 +481,9 @@ async function restoreColdStorageFromDrive(
                     failures.push(key)
                 }
             } catch (error) {
+                if(error instanceof DriveAuthError){
+                    throw error
+                }
                 console.error(`Failed to restore cold storage item ${key}:`, error)
                 failures.push(key)
             }
@@ -473,26 +520,103 @@ function newFormatKeys(name:string) {
     return n + '.bin'
 }
 
-async function getFilesInFolder(ACCESS_TOKEN:string, nextPageToken=''): Promise<DriveFile[]> {
-    const url = `https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&pageSize=300` + nextPageToken;
-    
-    const response = await fetch(url, {
-        method: 'GET',
-        headers: {
-            'Authorization': `Bearer ${ACCESS_TOKEN}`,
-            'Content-Type': 'application/json',
-        },
-    });
-    
-    if (response.ok) {
-        const data = await response.json();
-        if(data.nextPageToken){
-            return (data.files as DriveFile[]).concat(await getFilesInFolder(ACCESS_TOKEN, `&pageToken=${data.nextPageToken}`))
-        }
-        return data.files as DriveFile[];
-    } else {
-        throw(`Error: ${response.status}`);
+/** Thrown when Google rejects the access token, usually because it expired. */
+class DriveAuthError extends Error {
+    constructor(message = 'Google Drive access token expired') {
+        super(message)
+        this.name = 'DriveAuthError'
     }
+}
+
+class DriveRequestError extends Error {
+    constructor(readonly status:number, message:string) {
+        super(message)
+        this.name = 'DriveRequestError'
+    }
+}
+
+function retryDelay(attempt:number) {
+    return Math.min(32000, 1000 * 2 ** attempt) + Math.floor(Math.random() * 1000)
+}
+
+async function isRetryableResponse(response:Response) {
+    if(response.status === 429 || response.status >= 500){
+        return true
+    }
+    if(response.status === 403){
+        const text = await response.clone().text().catch(() => '')
+        //reason is userRateLimitExceeded or rateLimitExceeded, message "User rate limit exceeded."
+        return /rate ?limit ?exceeded/i.test(text)
+    }
+    return false
+}
+
+async function driveRequestError(response:Response) {
+    const text = await response.text().catch(() => '')
+    let message = text
+    try {
+        message = JSON.parse(text)?.error?.message ?? text
+    } catch {
+        //not JSON, keep the raw text
+    }
+    return new DriveRequestError(response.status, `Google Drive request failed (${response.status}): ${message}`)
+}
+
+/**
+ * fetch for the Drive API. Retries network errors, rate limits and server
+ * errors with exponential backoff, and throws DriveAuthError on 401.
+ */
+async function driveFetch(
+    ACCESS_TOKEN:string,
+    url:string,
+    init:Omit<RequestInit, 'headers'> & { headers?: Record<string, string> } = {},
+    retries = 4
+): Promise<Response> {
+    for(let attempt = 0;; attempt++){
+        let response: Response
+        try {
+            response = await fetch(url, {
+                ...init,
+                headers: {
+                    Authorization: `Bearer ${ACCESS_TOKEN}`,
+                    ...init.headers,
+                },
+            })
+        } catch (error) {
+            if(attempt >= retries){
+                throw error
+            }
+            console.warn(`Drive request failed, retrying (${attempt + 1} / ${retries}):`, error)
+            await sleep(retryDelay(attempt))
+            continue
+        }
+        if(response.ok){
+            return response
+        }
+        if(response.status === 401){
+            throw new DriveAuthError()
+        }
+        if(attempt < retries && await isRetryableResponse(response)){
+            console.warn(`Drive request returned ${response.status}, retrying (${attempt + 1} / ${retries})`)
+            await sleep(retryDelay(attempt))
+            continue
+        }
+        throw await driveRequestError(response)
+    }
+}
+
+async function getFilesInFolder(ACCESS_TOKEN:string): Promise<DriveFile[]> {
+    const fields = encodeURIComponent('nextPageToken,files(id,name,mimeType)')
+    const files: DriveFile[] = []
+    let pageToken = ''
+    do {
+        const url = `https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&pageSize=1000&fields=${fields}`
+            + (pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : '')
+        const data = await (await driveFetch(ACCESS_TOKEN, url)).json()
+        files.push(...(data.files as DriveFile[] ?? []))
+        pageToken = data.nextPageToken ?? ''
+    } while(pageToken)
+    return files
 }
 
 async function createFileInFolder(accessToken:string, fileName:string, content:Uint8Array, mimeType = 'application/octet-stream') {
@@ -501,33 +625,24 @@ async function createFileInFolder(accessToken:string, fileName:string, content:U
       mimeType: mimeType,
       parents: ["appDataFolder"],
     };
-  
+
     const body = new FormData();
     body.append(
       "metadata",
       new Blob([JSON.stringify(metadata)], { type: "application/json" })
     );
     body.append("file", new Blob([content as any], { type: mimeType }));
-  
-    const response = await fetch(
-      "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart",
+
+    const response = await driveFetch(
+      accessToken,
+      "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id",
       {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
         body: body,
       }
     );
-  
-    const result = await response.json();
-  
-    if (response.ok) {
-      return result;
-    } else {
-      console.error("Error creating file:", result);
-      throw new Error(result.error.message);
-    }
+
+    return await response.json() as { id: string };
 }
   
 const baseNameRegex = /\\/g
@@ -539,20 +654,6 @@ function getBasename(data:string){
 
 async function getFileData(ACCESS_TOKEN:string,fileId:string) {
     const url = `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`;
-  
-    const request = {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${ACCESS_TOKEN}`
-      }
-    };
-  
-    const response = await fetch(url, request);
-  
-    if (response.ok) {
-      const data = new Uint8Array(await response.arrayBuffer());
-      return data;
-    } else {
-        throw "Error in response when reading files in folder"
-    }
-  }
+    const response = await driveFetch(ACCESS_TOKEN, url)
+    return new Uint8Array(await response.arrayBuffer());
+}
