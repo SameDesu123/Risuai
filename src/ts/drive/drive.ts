@@ -1241,7 +1241,8 @@ async function isRetryableResponse(response:Response) {
     }
     if(response.status === 403){
         const text = await response.clone().text().catch(() => '')
-        return /ratelimitexceeded/i.test(text)
+        //reason is userRateLimitExceeded or rateLimitExceeded, message "User rate limit exceeded."
+        return /rate ?limit ?exceeded/i.test(text)
     }
     return false
 }
