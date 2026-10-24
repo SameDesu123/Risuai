@@ -10,6 +10,8 @@ const state = vi.hoisted(() => ({
     errors: [] as string[],
     normals: [] as string[],
     markdowns: [] as string[],
+    confirms: [] as string[],
+    confirmAnswer: true,
 }))
 
 vi.mock(import('./drivePack'), async (importOriginal) => ({
@@ -18,6 +20,10 @@ vi.mock(import('./drivePack'), async (importOriginal) => ({
 }))
 
 vi.mock(import('../alert'), () => ({
+    alertConfirm: async (msg: string) => {
+        state.confirms.push(msg)
+        return state.confirmAnswer
+    },
     alertError: (msg: string | Error) => { state.errors.push(`${msg}`) },
     alertInput: async () => state.token,
     alertMd: (msg: string) => { state.markdowns.push(msg) },
@@ -65,6 +71,7 @@ vi.mock(import('../../lang'), () => ({
         driveBackupInterrupted: (error: string) => `interrupted: ${error}`,
         driveBackupPartial: (files: string) => `partial: ${files}`,
         driveTokenExpiredRestore: 'expiredRestore',
+        driveRestoreIncomplete: (count: number, files: string) => `incomplete ${count}: ${files}`,
         loadLatest: 'latest',
         loadOthers: 'others',
         pasteAuthCode: 'paste',
@@ -267,6 +274,8 @@ beforeEach(() => {
     state.errors = []
     state.normals = []
     state.markdowns = []
+    state.confirms = []
+    state.confirmAnswer = true
     state.restoredCold = new Map()
 })
 
@@ -414,6 +423,59 @@ describe('drive backup v2', () => {
         }
 
         expectRestored(await restoreOnEmptyDevice(), original)
+    })
+
+    it('keeps assets this device lost if an earlier backup still has them', async () => {
+        setupDevice({
+            'a.png': makeData(300, 1),
+            'b.png': makeData(300, 2),
+            'legacy.png': makeData(200, 5),
+        })
+        drive.add('legacy.png.bin', state.device.get('assets/legacy.png'))
+        await checkDriver('savetauri')
+        expect(state.normals).toEqual(['Success'])
+        const original = snapshotDevice()
+
+        //still referenced by the database, but gone from this device
+        state.device.delete('assets/b.png')
+        state.device.delete('assets/legacy.png')
+        state.db.assets.push('never.png')
+        state.normals = []
+        await new Promise((resolve) => setTimeout(resolve, 2))
+        await checkDriver('savetauri')
+
+        expect(drive.named(/-manifest\.json$/)).toHaveLength(2)
+        expect(state.normals).toEqual([])
+        expect(state.markdowns).toHaveLength(1)
+        expect(state.markdowns[0]).toContain('never.png')
+        expect(state.markdowns[0]).not.toContain('b.png')
+        expect(state.markdowns[0]).not.toContain('legacy.png')
+
+        expectRestored(await restoreOnEmptyDevice(), original)
+    })
+
+    it('asks before replacing the database when assets cannot be restored', async () => {
+        setupDevice({
+            'a.png': makeData(700, 1),
+            'b.png': makeData(700, 2),
+        })
+        await checkDriver('savetauri')
+        const packs = drive.named(/\.risupack$/).sort((a, b) => a.name.localeCompare(b.name))
+        const broken = packs[packs.length - 1]
+        broken.data = broken.data.slice(0, broken.data.byteLength - 10)
+
+        state.confirmAnswer = false
+        let restored = await restoreOnEmptyDevice()
+        expect(state.confirms).toHaveLength(1)
+        expect(state.confirms[0]).toContain('b.png')
+        expect(restored.has('database/database.bin')).toBe(false)
+        expect(restored.get('assets/a.png')).toEqual(makeData(700, 1))
+
+        state.confirmAnswer = true
+        state.confirms = []
+        restored = await restoreOnEmptyDevice()
+        expect(state.confirms).toHaveLength(1)
+        expect(restored.has('database/database.bin')).toBe(true)
     })
 
     it('uploads and downloads two packs at a time', async () => {

@@ -850,6 +850,7 @@ export const languageEnglish = {
     driveBackupInterrupted: (error: string) => `The backup was interrupted: ${error}\n\nThe parts already uploaded are kept, so run "Save Backup to google" again to continue from where it stopped.`,
     driveBackupPartial: (files: string) => `The backup was saved, but these files could not be read and were left out:\n\n${files}`,
     driveTokenExpiredRestore: "Google login expired while loading the backup. Run \"Load Backup from google\" again; files that were already restored will be skipped.",
+    driveRestoreIncomplete: (count: number, files: string) => `${count} file(s) could not be restored from the backup:\n\n${files}\n\nThe database will still refer to them, and they will show up as missing. Replace your current data with this backup anyway?`,
     others: "Others",
     presets: "Presets",
     imageGeneration: "Image Generation",

@@ -1,4 +1,4 @@
-import { alertError, alertInput, alertMd, alertNormal, alertSelect, alertStore } from "../alert";
+import { alertConfirm, alertError, alertInput, alertMd, alertNormal, alertSelect, alertStore } from "../alert";
 import { getDatabase, type Database } from "../storage/database.svelte";
 import { forageStorage, getUncleanables, openURL } from "../globalApi.svelte";
 import { isTauri } from "src/ts/platform"
@@ -189,7 +189,7 @@ async function backupDriveV2(ACCESS_TOKEN:string) {
 
     //snapshot the database first so the uploaded entries match what it references
     const dbData = await encodeRisuSave(db, { compression: true, kv: saveKV })
-    const sources = await collectBackupSources(db, coldStoragePayloads.payloads)
+    const { sources, missing } = await collectBackupSources(db, coldStoragePayloads.payloads)
     const files = await getFilesInFolder(ACCESS_TOKEN)
     const filesByName = groupFilesByName(files)
     const sessions = scanV2Sessions(files)
@@ -310,6 +310,17 @@ async function backupDriveV2(ACCESS_TOKEN:string) {
         plan.entries.push(name)
         planChanged = true
     }
+    const failed: string[] = []
+    //gone from this device, but an earlier backup may still hold it
+    for(const name of missing){
+        const reusable = reusableRef(name)
+        if(reusable){
+            reused.set(name, reusable)
+        }
+        else{
+            failed.push(name)
+        }
+    }
 
     const savePlan = async () => {
         const content = new TextEncoder().encode(JSON.stringify(plan))
@@ -333,7 +344,6 @@ async function backupDriveV2(ACCESS_TOKEN:string) {
         }
     }
     let packed = 0
-    const failed: string[] = []
 
     //packs are uploaded DRIVE_PARALLEL at a time. If one fails, a later one may
     //already be on Drive; resuming keeps only the unbroken chain from pack 1
@@ -408,7 +418,7 @@ async function backupDriveV2(ACCESS_TOKEN:string) {
 
     const manifestEntries: Record<string, DrivePackRef> = {}
     const manifestPacks: Record<string, number> = {}
-    for(const name of sources.keys()){
+    for(const name of [...sources.keys(), ...missing]){
         const index = indexOf.get(name)
         if(index !== undefined){
             const range = entryPacks.get(index)
@@ -460,10 +470,23 @@ async function backupDriveV2(ACCESS_TOKEN:string) {
     }
 }
 
+function formatFileList(names:string[], limit = 10) {
+    const lines = names.slice(0, limit).map((name) => `- ${name}`)
+    if(names.length > limit){
+        lines.push(`- ... (+${names.length - limit})`)
+    }
+    return lines.join('\n')
+}
+
 type BackupSources = Map<string, () => Promise<Uint8Array | null>>
 
-async function collectBackupSources(db:Database, coldPayloads:ColdStorageBackupPayload[]): Promise<BackupSources> {
+/**
+ * Entries that can be read on this device, and the names of assets the
+ * database references but this device no longer has.
+ */
+async function collectBackupSources(db:Database, coldPayloads:ColdStorageBackupPayload[]): Promise<{ sources: BackupSources, missing: string[] }> {
     const sources: BackupSources = new Map()
+    const missing: string[] = []
     const required = await getUncleanables(db)
     let local: Set<string>
     if(isTauri){
@@ -486,13 +509,14 @@ async function collectBackupSources(db:Database, coldPayloads:ColdStorageBackupP
     for(const name of required){
         if(!local.has(name)){
             console.warn(`Asset referenced by the database is missing on this device: ${name}`)
+            missing.push(assetEntryName(name))
             continue
         }
         sources.set(assetEntryName(name), isTauri
             ? () => readFile('assets/' + name, {baseDir: BaseDirectory.AppData})
             : async () => await forageStorage.getItem('assets/' + name) as unknown as Uint8Array)
     }
-    return sources
+    return { sources, missing: [...new Set(missing)] }
 }
 
 type DriveV2Session = {
@@ -1028,6 +1052,7 @@ async function loadDriveData(ACCESS_TOKEN:string, mode: 'backup'|'sync'):Promise
         const requiredImages = (await getUncleanables(db))
         if(source.version === 2){
             const pending: [string, DrivePackRef][] = []
+            const unrestored: string[] = []
             for(const images of requiredImages){
                 if(await checkImageExists(images)){
                     continue
@@ -1035,6 +1060,7 @@ async function loadDriveData(ACCESS_TOKEN:string, mode: 'backup'|'sync'):Promise
                 const ref = source.manifest.entries[assetEntryName(images)]
                 if(!ref){
                     console.warn(`Asset not found in Drive backup: ${images}`)
+                    unrestored.push(images)
                     continue
                 }
                 pending.push([images, ref])
@@ -1051,9 +1077,14 @@ async function loadDriveData(ACCESS_TOKEN:string, mode: 'backup'|'sync'):Promise
                 const fData = await source.reader.read(assetEntryName(images), ref)
                 if(!fData){
                     console.warn(`Could not restore asset from Drive backup: ${images}`)
+                    unrestored.push(images)
                     continue
                 }
                 await writeAsset(images, fData)
+            }
+            //the restored assets are kept either way, so declining still lets a rerun skip them
+            if(unrestored.length > 0 && !await alertConfirm(language.driveRestoreIncomplete(unrestored.length, formatFileList(unrestored)))){
+                return
             }
         }
         else{
