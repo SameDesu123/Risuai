@@ -425,6 +425,31 @@ describe('drive backup v2', () => {
         expectRestored(await restoreOnEmptyDevice(), original)
     })
 
+    it('saves the plan once for files that fail one after another', async () => {
+        setupDevice({
+            'a.png': makeData(300, 1),
+            'bad1.png': undefined,
+            'bad2.png': undefined,
+            'bad3.png': undefined,
+            'c.png': makeData(300, 3),
+        })
+        const fetch = drive.fetch
+        let planUpdates = 0
+        vi.stubGlobal('fetch', async (input: string, init: RequestInit = {}) => {
+            if(init.method === 'PATCH'){
+                planUpdates += 1
+            }
+            return await fetch(input, init)
+        })
+
+        await checkDriver('savetauri')
+        expect(state.errors).toEqual([])
+        expect(state.markdowns).toHaveLength(1)
+        expect(planUpdates).toBe(1)
+        const plan = JSON.parse(new TextDecoder().decode(drive.named(/-plan\.json$/)[0].data))
+        expect(plan.skipped).toEqual([1, 2, 3])
+    })
+
     it('keeps assets this device lost if an earlier backup still has them', async () => {
         setupDevice({
             'a.png': makeData(300, 1),

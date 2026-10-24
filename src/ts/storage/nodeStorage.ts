@@ -1,8 +1,12 @@
 import { language } from "src/lang"
 import { alertError, alertInput, waitAlert } from "../alert"
-import { base64url, getKeypairStore, saveKeypairStore } from "../util"
+import { base64url, getKeypairStore, saveKeypairStore, sleep } from "../util"
 
 const MAX_STORAGE_ERROR_DETAIL_LENGTH = 2000
+//storage routes are rate limited per IP; a request that hits the limit waits it out this many times
+const RATE_LIMIT_RETRIES = 3
+const RATE_LIMIT_MAX_WAIT = 60 * 1000
+const RATE_LIMIT_DEFAULT_WAIT = 5 * 1000
 
 function formatStorageValueSize(byteLength:number) {
     if(byteLength < 1024){
@@ -78,6 +82,21 @@ async function getStorageResponseErrorDetail(response:Response) {
     } catch {}
 
     return normalizeStorageErrorDetail(responseText)
+}
+
+/**
+ * Fetches a storage route, waiting for the server's Retry-After when it is rate
+ * limited. `init` runs again for each attempt so the auth token stays fresh.
+ */
+async function fetchStorageRoute(url:string, init:() => Promise<RequestInit>) {
+    for(let attempt = 0; ; attempt++){
+        const response = await fetch(url, await init())
+        if(response.status !== 429 || attempt >= RATE_LIMIT_RETRIES){
+            return response
+        }
+        const retryAfter = Number(response.headers.get('Retry-After'))
+        await sleep(retryAfter > 0 ? Math.min(retryAfter * 1000, RATE_LIMIT_MAX_WAIT) : RATE_LIMIT_DEFAULT_WAIT)
+    }
 }
 
 function getSetItemContext(key:string, byteLength:number) {
@@ -156,7 +175,7 @@ export class NodeStorage{
         const context = getSetItemContext(key, value.byteLength)
         let response:Response
         try {
-            response = await fetch('/api/write', {
+            response = await fetchStorageRoute('/api/write', async () => ({
                 method: "POST",
                 body: value as any,
                 headers: {
@@ -164,7 +183,7 @@ export class NodeStorage{
                     'file-path': Buffer.from(key, 'utf-8').toString('hex'),
                     'risu-auth': await this.createAuth()
                 }
-            })
+            }))
         } catch (error) {
             throw new Error(`Node storage setItem request failed.\n${context}\nCause: ${formatUnknownError(error)}`)
         }
@@ -190,13 +209,13 @@ export class NodeStorage{
     }
     async getItem(key:string):Promise<Buffer> {
         await this.checkAuth()
-        const da = await fetch('/api/read', {
+        const da = await fetchStorageRoute('/api/read', async () => ({
             method: "GET",
             headers: {
                 'file-path': Buffer.from(key, 'utf-8').toString('hex'),
                 'risu-auth': await this.createAuth()
             }
-        })
+        }))
         if(da.status < 200 || da.status >= 300){
             throw "getItem Error"
         }
