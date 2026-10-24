@@ -1230,6 +1230,107 @@ app.get('/api/read', authenticatedRouteLimiter, async (req, res, next) => {
     }
 });
 
+const READ_BATCH_MAX_ITEMS = 100;
+//a batch stops before the item that would take it past this; bigger files are left to /api/read
+const READ_BATCH_LIMIT = 32 * 1024 * 1024;
+const READ_BATCH_MISSING = 0;
+const READ_BATCH_FOUND = 1;
+//not sent in this batch; the client reads it again
+const READ_BATCH_LEFT_OUT = 2;
+
+//body: { paths: [hex file path, ...] }
+//response: for each path in order, [status u8][length u32 LE][data]
+app.post('/api/read_batch', authenticatedRouteLimiter, async (req, res, next) => {
+    if(!await checkAuth(req, res)){
+        return;
+    }
+    const filePaths = req.body?.paths;
+    if(!Array.isArray(filePaths) || filePaths.length === 0 || filePaths.length > READ_BATCH_MAX_ITEMS){
+        res.status(400).send({
+            error:`paths must hold 1 to ${READ_BATCH_MAX_ITEMS} file paths`
+        });
+        return;
+    }
+    if(!filePaths.every((filePath) => typeof filePath === 'string' && hexRegex.test(filePath))){
+        res.status(400).send({
+            error:'Invaild Path'
+        });
+        return;
+    }
+
+    const write = (chunk) => new Promise((resolve, reject) => {
+        res.write(chunk, (error) => error ? reject(error) : resolve());
+    });
+    const writeItem = async (status, data) => {
+        const header = Buffer.alloc(5);
+        header.writeUInt8(status, 0);
+        header.writeUInt32LE(data ? data.length : 0, 1);
+        await write(header);
+        if(data && data.length > 0){
+            await write(data);
+        }
+    };
+
+    try {
+        res.setHeader('Content-Type','application/octet-stream');
+        let sent = 0;
+        let leftOut = false;
+        for(const filePath of filePaths){
+            if(leftOut){
+                await writeItem(READ_BATCH_LEFT_OUT, null);
+                continue;
+            }
+            const fullPath = path.join(savePath, filePath);
+            let stat = null;
+            try {
+                stat = await fs.stat(fullPath);
+            } catch (error) {
+                if(error?.code !== 'ENOENT'){
+                    throw error;
+                }
+            }
+            if(!stat){
+                await writeItem(READ_BATCH_MISSING, null);
+                continue;
+            }
+            //anything unusual is left to /api/read
+            if(!stat.isFile() || sent + stat.size > READ_BATCH_LIMIT){
+                leftOut = true;
+                await writeItem(READ_BATCH_LEFT_OUT, null);
+                continue;
+            }
+            let data = null;
+            try {
+                data = await fs.readFile(fullPath);
+            } catch (error) {
+                if(error?.code !== 'ENOENT'){
+                    throw error;
+                }
+            }
+            if(!data){
+                await writeItem(READ_BATCH_MISSING, null);
+                continue;
+            }
+            //the file may have grown since stat
+            if(sent + data.length > READ_BATCH_LIMIT){
+                leftOut = true;
+                await writeItem(READ_BATCH_LEFT_OUT, null);
+                continue;
+            }
+            sent += data.length;
+            await writeItem(READ_BATCH_FOUND, data);
+        }
+        res.end();
+    } catch (error) {
+        if(res.headersSent){
+            res.destroy(error);
+        }
+        else{
+            next(error);
+        }
+    }
+});
+
 app.get('/api/remove', authenticatedRouteLimiter, async (req, res, next) => {
     if(!await checkAuth(req, res)){
         return;

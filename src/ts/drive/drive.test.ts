@@ -12,6 +12,8 @@ const state = vi.hoisted(() => ({
     markdowns: [] as string[],
     confirms: [] as string[],
     confirmAnswer: true,
+    platform: 'tauri' as 'tauri' | 'node',
+    node: null as any,
 }))
 
 vi.mock(import('./drivePack'), async (importOriginal) => ({
@@ -39,12 +41,63 @@ vi.mock(import('../storage/database.svelte'), () => ({
 vi.mock(import('../globalApi.svelte'), () => ({
     forageStorage: {
         get isAccount() { return state.isAccount },
+        get realStorage() { return state.node },
+        keys: async () => [...state.device.keys()],
+        getItem: async (key: string) => await state.node.getItem(key),
+        setItem: async (key: string, data: Uint8Array) => { state.device.set(key, new Uint8Array(data)) },
     },
     getUncleanables: async (db: any) => [...db.assets],
     openURL: () => {},
 }) as any)
 
-vi.mock(import('../platform'), () => ({ isTauri: true }) as any)
+vi.mock(import('../platform'), () => ({
+    get isTauri() { return state.platform === 'tauri' },
+    get isNodeServer() { return state.platform === 'node' },
+}) as any)
+
+vi.mock(import('../storage/nodeStorage'), () => {
+    //reads state.device the way the node server does
+    class NodeStorage {
+        //bytes a batch response holds before it leaves the rest out
+        batchLimit = Infinity
+        batchUnsupported = false
+        failBatches = 0
+        //deleted after the backup listed them
+        gone = new Set<string>()
+        batches: string[][] = []
+        singles: string[] = []
+        async readBatch(keys: string[]) {
+            this.batches.push(keys)
+            if(this.failBatches > 0){
+                this.failBatches -= 1
+                throw new Error('batch failed')
+            }
+            let sent = 0
+            let leftOut = this.batchUnsupported
+            return keys.map((key) => {
+                const data = this.gone.has(key) ? undefined : state.device.get(key)
+                if(leftOut){
+                    return undefined
+                }
+                if(!data){
+                    return null
+                }
+                if(sent + data.byteLength > this.batchLimit){
+                    leftOut = true
+                    return undefined
+                }
+                sent += data.byteLength
+                return data.byteLength > 0 ? data : null
+            })
+        }
+        async getItem(key: string) {
+            this.singles.push(key)
+            const data = this.gone.has(key) ? undefined : state.device.get(key)
+            return data && data.byteLength > 0 ? data : null
+        }
+    }
+    return { NodeStorage, READ_BATCH_MAX_ITEMS: 3 } as any
+})
 
 vi.mock(import('@tauri-apps/plugin-fs'), () => ({
     BaseDirectory: { AppData: 0 },
@@ -283,6 +336,8 @@ beforeEach(() => {
     state.confirms = []
     state.confirmAnswer = true
     state.restoredCold = new Map()
+    state.platform = 'tauri'
+    state.node = null
 })
 
 describe('drive backup v2', () => {
@@ -590,6 +645,117 @@ describe('drive backup v2', () => {
         expect(new Set(names).size).toBe(names.length)
 
         expectRestored(await restoreOnEmptyDevice(), original)
+    })
+
+    describe('on the node server', () => {
+        beforeEach(async () => {
+            const { NodeStorage } = await import('../storage/nodeStorage')
+            state.platform = 'node'
+            state.node = new NodeStorage()
+            vi.spyOn(window, 'open').mockReturnValue(null)
+        })
+
+        async function backUpAndRestore(assets: Record<string, Uint8Array>) {
+            setupDevice(assets, { chat1: { hello: 'world' } })
+            const original = snapshotDevice()
+            await checkDriver('savetauri')
+            expect(state.errors).toEqual([])
+            expect(state.normals).toEqual(['Success'])
+            state.platform = 'tauri'
+            expectRestored(await restoreOnEmptyDevice(), original)
+            expect(state.restoredCold.get('chat1')).toEqual({ hello: 'world' })
+        }
+
+        it('reads the assets in batches, in the order they are packed', async () => {
+            await backUpAndRestore({
+                'a.png': makeData(100, 1),
+                'b.png': makeData(200, 2),
+                'c.png': makeData(1500, 3),
+                'd.png': makeData(50, 4),
+                'e.png': makeData(60, 5),
+                'f.png': makeData(70, 6),
+                'g.png': makeData(80, 7),
+            })
+            expect(state.node.batches).toEqual([
+                ['assets/a.png', 'assets/b.png', 'assets/c.png'],
+                ['assets/d.png', 'assets/e.png', 'assets/f.png'],
+                ['assets/g.png'],
+            ])
+            expect(state.node.singles).toEqual([])
+        })
+
+        it('requests the assets a batch left out again', async () => {
+            state.node.batchLimit = 500
+            await backUpAndRestore({
+                'a.png': makeData(400, 1),
+                'b.png': makeData(400, 2),
+                'c.png': makeData(400, 3),
+                'd.png': makeData(400, 4),
+            })
+            expect(state.node.batches).toEqual([
+                ['assets/a.png', 'assets/b.png', 'assets/c.png'],
+                ['assets/b.png', 'assets/c.png', 'assets/d.png'],
+                ['assets/c.png', 'assets/d.png'],
+                ['assets/d.png'],
+            ])
+            expect(state.node.singles).toEqual([])
+        })
+
+        it('reads a file too big for any batch on its own', async () => {
+            state.node.batchLimit = 500
+            await backUpAndRestore({
+                'a.png': makeData(100, 1),
+                'big.mp4': makeData(600, 2),
+                'c.png': makeData(100, 3),
+            })
+            expect(state.node.batches).toEqual([
+                ['assets/a.png', 'assets/big.mp4', 'assets/c.png'],
+                ['assets/big.mp4', 'assets/c.png'],
+                ['assets/c.png'],
+            ])
+            expect(state.node.singles).toEqual(['assets/big.mp4'])
+        })
+
+        it('reads the assets of a failed batch one by one', async () => {
+            state.node.failBatches = 1
+            await backUpAndRestore({
+                'a.png': makeData(100, 1),
+                'b.png': makeData(200, 2),
+                'c.png': makeData(300, 3),
+                'd.png': makeData(400, 4),
+            })
+            expect(state.node.batches).toHaveLength(2)
+            expect(state.node.singles).toEqual(['assets/a.png', 'assets/b.png', 'assets/c.png'])
+        })
+
+        it('reads one by one from servers without batch reads', async () => {
+            state.node.batchUnsupported = true
+            await backUpAndRestore({
+                'a.png': makeData(100, 1),
+                'b.png': makeData(200, 2),
+                'c.png': makeData(300, 3),
+                'd.png': makeData(400, 4),
+            })
+            expect(state.node.batches).toEqual([])
+            expect(state.node.singles).toEqual(['assets/a.png', 'assets/b.png', 'assets/c.png', 'assets/d.png'])
+        })
+
+        it('leaves out assets deleted after the backup listed them', async () => {
+            setupDevice({
+                'a.png': makeData(100, 1),
+                'b.png': makeData(200, 2),
+                'c.png': makeData(300, 3),
+            })
+            state.node.gone.add('assets/b.png')
+            await checkDriver('savetauri')
+            expect(state.errors).toEqual([])
+            expect(state.markdowns).toEqual(['partial: - `b.png`'])
+
+            state.platform = 'tauri'
+            const restored = await restoreOnEmptyDevice()
+            expect(restored.get('assets/a.png')).toEqual(makeData(100, 1))
+            expect(restored.get('assets/c.png')).toEqual(makeData(300, 3))
+        })
     })
 
     it('still restores v1 backups', async () => {

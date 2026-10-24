@@ -7,6 +7,10 @@ const MAX_STORAGE_ERROR_DETAIL_LENGTH = 2000
 const RATE_LIMIT_RETRIES = 3
 const RATE_LIMIT_MAX_WAIT = 60 * 1000
 const RATE_LIMIT_DEFAULT_WAIT = 5 * 1000
+export const READ_BATCH_MAX_ITEMS = 100
+const READ_BATCH_MISSING = 0
+const READ_BATCH_FOUND = 1
+const READ_BATCH_LEFT_OUT = 2
 
 function formatStorageValueSize(byteLength:number) {
     if(byteLength < 1024){
@@ -97,6 +101,45 @@ async function fetchStorageRoute(url:string, init:() => Promise<RequestInit>) {
         const retryAfter = Number(response.headers.get('Retry-After'))
         await sleep(retryAfter > 0 ? Math.min(retryAfter * 1000, RATE_LIMIT_MAX_WAIT) : RATE_LIMIT_DEFAULT_WAIT)
     }
+}
+
+/**
+ * Splits a /api/read_batch response into one result per requested key:
+ * the data, null if it does not exist, or undefined if the server left it out.
+ */
+function parseReadBatch(bytes:Uint8Array, count:number) {
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+    const results:(Buffer | null | undefined)[] = []
+    let offset = 0
+    for(let i = 0; i < count; i++){
+        if(offset + 5 > bytes.byteLength){
+            throw new Error('Node storage read_batch response ended early')
+        }
+        const status = view.getUint8(offset)
+        const length = view.getUint32(offset + 1, true)
+        offset += 5
+        if(offset + length > bytes.byteLength){
+            throw new Error('Node storage read_batch response ended early')
+        }
+        if(status === READ_BATCH_FOUND){
+            //an empty file reads as missing, like getItem
+            results.push(length > 0 ? Buffer.from(bytes.buffer, bytes.byteOffset + offset, length) : null)
+        }
+        else if(status === READ_BATCH_MISSING){
+            results.push(null)
+        }
+        else if(status === READ_BATCH_LEFT_OUT){
+            results.push(undefined)
+        }
+        else{
+            throw new Error(`Node storage read_batch response has an unknown status ${status}`)
+        }
+        offset += length
+    }
+    if(offset !== bytes.byteLength){
+        throw new Error('Node storage read_batch response is longer than expected')
+    }
+    return results
 }
 
 function getSetItemContext(key:string, byteLength:number) {
@@ -225,6 +268,43 @@ export class NodeStorage{
             return null
         }
         return data
+    }
+    //servers from before /api/read_batch
+    batchUnsupported = false
+
+    /**
+     * Reads up to READ_BATCH_MAX_ITEMS keys in one request. Each result is the
+     * data, null if the key does not exist, or undefined if it was not sent,
+     * either because the response was already large or because the server
+     * does not support batch reads; read those with getItem.
+     */
+    async readBatch(keys:string[]):Promise<(Buffer | null | undefined)[]> {
+        if(keys.length === 0 || keys.length > READ_BATCH_MAX_ITEMS){
+            throw new Error(`readBatch takes 1 to ${READ_BATCH_MAX_ITEMS} keys`)
+        }
+        if(this.batchUnsupported){
+            return keys.map(() => undefined)
+        }
+        await this.checkAuth()
+        const body = JSON.stringify({
+            paths: keys.map((key) => Buffer.from(key, 'utf-8').toString('hex'))
+        })
+        const da = await fetchStorageRoute('/api/read_batch', async () => ({
+            method: "POST",
+            body,
+            headers: {
+                'content-type': 'application/json',
+                'risu-auth': await this.createAuth()
+            }
+        }))
+        if(da.status === 404){
+            this.batchUnsupported = true
+            return keys.map(() => undefined)
+        }
+        if(da.status < 200 || da.status >= 300){
+            throw new Error(`Node storage read_batch failed with HTTP ${da.status}`)
+        }
+        return parseReadBatch(new Uint8Array(await da.arrayBuffer()), keys.length)
     }
     async keys():Promise<string[]>{
         await this.checkAuth()

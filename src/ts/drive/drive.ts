@@ -1,7 +1,7 @@
 import { alertConfirm, alertError, alertInput, alertMd, alertNormal, alertSelect, alertStore } from "../alert";
 import { getDatabase, type Database } from "../storage/database.svelte";
 import { forageStorage, getUncleanables, openURL } from "../globalApi.svelte";
-import { isTauri } from "src/ts/platform"
+import { isNodeServer, isTauri } from "src/ts/platform"
 import { BaseDirectory, exists, readFile, readDir, writeFile } from "@tauri-apps/plugin-fs";
 import { language } from "../../lang";
 import { relaunch } from '@tauri-apps/plugin-process';
@@ -31,9 +31,13 @@ import {
     type PackPosition,
     type PackSegment,
 } from "./drivePack";
+import { createRequestPacer } from "./requestPacer";
+import { NodeStorage, READ_BATCH_MAX_ITEMS } from "../storage/nodeStorage";
 
 //how many packs are uploaded or downloaded at the same time
 const DRIVE_PARALLEL = 2
+//the node server allows 2000 storage requests a minute; leave room for chat saves and proxy calls
+const nodeStoragePacer = createRequestPacer(1400, 60 * 1000)
 
 export async function checkDriver(type:'save'|'load'|'loadtauri'|'savetauri'|'reftoken'){
     const CLIENT_ID = '580075990041-l26k2d3c0nemmqiu3d3aag01npfrkn76.apps.googleusercontent.com';
@@ -189,7 +193,7 @@ async function backupDriveV2(ACCESS_TOKEN:string) {
 
     //snapshot the database first so the uploaded entries match what it references
     const dbData = await encodeRisuSave(db, { compression: true, kv: saveKV })
-    const { sources, missing } = await collectBackupSources(db, coldStoragePayloads.payloads)
+    const { sources, missing, readAhead } = await collectBackupSources(db, coldStoragePayloads.payloads)
     const files = await getFilesInFolder(ACCESS_TOKEN)
     const filesByName = groupFilesByName(files)
     const sessions = scanV2Sessions(files)
@@ -395,6 +399,7 @@ async function backupDriveV2(ACCESS_TOKEN:string) {
         uploads.add(task)
     })
 
+    readAhead(plan.entries.filter((name, index) => index >= position.entry && !skipped.has(index)))
     for(let index = position.entry; index < plan.entries.length; index++){
         if(skipped.has(index)){
             continue
@@ -487,11 +492,13 @@ type BackupSources = Map<string, () => Promise<Uint8Array | null>>
  * Entries that can be read on this device, and the names of assets the
  * database references but this device no longer has.
  */
-async function collectBackupSources(db:Database, coldPayloads:ColdStorageBackupPayload[]): Promise<{ sources: BackupSources, missing: string[] }> {
+async function collectBackupSources(db:Database, coldPayloads:ColdStorageBackupPayload[]): Promise<{ sources: BackupSources, missing: string[], readAhead: (names:string[]) => void }> {
     const sources: BackupSources = new Map()
     const missing: string[] = []
-    const required = await getUncleanables(db)
+    const required = await getUncleanables(db, 'basename', new Map(coldPayloads.map((payload) => [payload.key, payload.value])))
     let local: Set<string>
+    const storage = forageStorage.realStorage
+    const reader = !isTauri && isNodeServer && storage instanceof NodeStorage ? new NodeStorageBatchReader(storage) : null
     if(isTauri){
         try {
             const assets = await readDir('assets', {baseDir: BaseDirectory.AppData})
@@ -517,9 +524,99 @@ async function collectBackupSources(db:Database, coldPayloads:ColdStorageBackupP
         }
         sources.set(assetEntryName(name), isTauri
             ? () => readFile('assets/' + name, {baseDir: BaseDirectory.AppData})
-            : async () => await forageStorage.getItem('assets/' + name) as unknown as Uint8Array)
+            : async () => (reader ? await reader.read('assets/' + name) : await forageStorage.getItem('assets/' + name)) as unknown as Uint8Array)
     }
-    return { sources, missing: [...new Set(missing)] }
+    const readAhead = (names:string[]) => {
+        reader?.readAhead(names.filter((name) => name.startsWith('a:')).map((name) => 'assets/' + name.slice(2)))
+    }
+    return { sources, missing: [...new Set(missing)], readAhead }
+}
+
+/**
+ * Reads assets from the node server. After `readAhead`, they are fetched in
+ * that order up to READ_BATCH_MAX_ITEMS a request, the next batch starting
+ * while the current one is being used.
+ */
+class NodeStorageBatchReader {
+    private keys: string[] = []
+    private positions = new Map<string, number>()
+    //first position not requested yet
+    private next = 0
+    //where the latest batch starts
+    private latest = 0
+    private loading: Promise<void> | null = null
+    private items = new Map<string, Uint8Array | null>()
+
+    constructor(private readonly storage:NodeStorage) {}
+
+    readAhead(keys:string[]) {
+        this.keys = keys
+        this.positions = new Map(keys.map((key, index) => [key, index]))
+        this.next = 0
+        this.latest = 0
+        this.items.clear()
+    }
+
+    async read(key:string): Promise<Uint8Array | null> {
+        const position = this.positions.get(key)
+        if(position === undefined || this.storage.batchUnsupported){
+            return await this.readOne(key)
+        }
+        let data: Uint8Array | null
+        for(;;){
+            if(this.items.has(key)){
+                data = this.items.get(key)
+                this.items.delete(key)
+                break
+            }
+            if(this.loading){
+                await this.loading
+                continue
+            }
+            if(position >= this.next){
+                this.next = position
+                this.request()
+                continue
+            }
+            //requested already but not sent, or the batch failed
+            data = await this.readOne(key)
+            break
+        }
+        if(!this.loading && position >= this.latest && this.next < this.keys.length){
+            this.request()
+        }
+        return data
+    }
+
+    private request() {
+        const start = this.next
+        const keys = this.keys.slice(start, start + READ_BATCH_MAX_ITEMS)
+        this.latest = start
+        this.loading = (async () => {
+            try {
+                await nodeStoragePacer()
+                const results = await this.storage.readBatch(keys)
+                //the server sends a leading run of the keys; the rest go in the next batch
+                let sent = 0
+                while(sent < keys.length && results[sent] !== undefined){
+                    this.items.set(keys[sent], results[sent])
+                    sent += 1
+                }
+                //a first key left out is read on its own
+                this.next = start + Math.max(sent, 1)
+            } catch (error) {
+                console.warn('Batch read failed, reading the assets one by one:', error)
+                this.next = start + keys.length
+            } finally {
+                this.loading = null
+            }
+        })()
+    }
+
+    private async readOne(key:string) {
+        await nodeStoragePacer()
+        return await this.storage.getItem(key)
+    }
 }
 
 type DriveV2Session = {
@@ -924,6 +1021,9 @@ async function loadDriveData(ACCESS_TOKEN:string, mode: 'backup'|'sync'):Promise
             await writeFile(`assets/` + images, data ,{baseDir: BaseDirectory.AppData})
         }
         else{
+            if(isNodeServer){
+                await nodeStoragePacer()
+            }
             await forageStorage.setItem('assets/' + images, data)
         }
     }
