@@ -13,9 +13,11 @@ vi.mock('../alert', () => ({
 vi.mock('../util', () => ({
     base64url: vi.fn(),
     getKeypairStore: vi.fn(),
-    saveKeypairStore: vi.fn()
+    saveKeypairStore: vi.fn(),
+    sleep: vi.fn(async () => {})
 }))
 
+import { sleep } from '../util'
 import { NodeStorage } from './nodeStorage'
 
 describe('NodeStorage.setItem', () => {
@@ -103,5 +105,59 @@ describe('NodeStorage.setItem', () => {
             'Size: 3 bytes\n' +
             'Cause: Failed to fetch'
         )
+    })
+})
+
+describe('NodeStorage rate limits', () => {
+    const fetchMock = vi.fn()
+    let storage:NodeStorage
+
+    beforeEach(() => {
+        fetchMock.mockReset()
+        vi.mocked(sleep).mockClear()
+        vi.stubGlobal('fetch', fetchMock)
+        storage = new NodeStorage()
+        vi.spyOn(storage as any, 'checkAuth').mockResolvedValue(undefined)
+        vi.spyOn(storage, 'createAuth').mockResolvedValue('test-auth')
+    })
+
+    afterEach(() => {
+        vi.unstubAllGlobals()
+        vi.restoreAllMocks()
+    })
+
+    function limited(retryAfter?:string) {
+        return new Response(JSON.stringify({ error: 'Too many requests. Please retry shortly.' }), {
+            status: 429,
+            headers: retryAfter ? { 'Retry-After': retryAfter } : {}
+        })
+    }
+
+    it('waits for Retry-After and reads again', async () => {
+        fetchMock
+            .mockResolvedValueOnce(limited('12'))
+            .mockResolvedValueOnce(new Response(new Uint8Array([1, 2, 3])))
+
+        expect([...await storage.getItem('assets/a.png')]).toEqual([1, 2, 3])
+        expect(fetchMock).toHaveBeenCalledTimes(2)
+        expect(sleep).toHaveBeenCalledWith(12000)
+        expect(storage.createAuth).toHaveBeenCalledTimes(2)
+    })
+
+    it('writes again after being rate limited', async () => {
+        fetchMock
+            .mockResolvedValueOnce(limited())
+            .mockResolvedValueOnce(new Response(JSON.stringify({ success: true })))
+
+        await storage.setItem('assets/a.png', new Uint8Array(3))
+        expect(fetchMock).toHaveBeenCalledTimes(2)
+        expect(sleep).toHaveBeenCalledWith(5000)
+    })
+
+    it('gives up after a few rate limited attempts', async () => {
+        fetchMock.mockImplementation(async () => limited('1'))
+
+        await expect(storage.setItem('assets/a.png', new Uint8Array(3))).rejects.toThrow('HTTP: 429')
+        expect(fetchMock).toHaveBeenCalledTimes(4)
     })
 })
