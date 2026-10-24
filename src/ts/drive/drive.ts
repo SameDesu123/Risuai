@@ -11,7 +11,6 @@ import { decodeRisuSave, encodeRisuSave } from "../storage/risuSave";
 import { saveKV, saveKVSourceFromData, type SaveKVData } from "../storage/saveKV";
 import { collectColdStorageBackupPayloads, confirmIncompleteColdStorageOperation, getColdStorageBackupName, isValidColdStorageItem, listColdDataKeysFromDb, listPluginStorageColdKeys, pluginStorage, setColdStorageItem, type ColdStorageBackupPayload } from "../process/coldstorage.svelte";
 import {
-    assembleEntry,
     assetEntryName,
     coldEntryName,
     coveredEntries,
@@ -19,6 +18,7 @@ import {
     DRIVE_PACK_LIMIT,
     DRIVE_V2_VERSION,
     DrivePackSegmenter,
+    EntryAssembler,
     manifestFileName,
     packFileName,
     parsePack,
@@ -708,7 +708,9 @@ class DrivePackReader {
             const file = pickFile(this.filesByName, ref.l)
             return file ? await getFileData(this.accessToken, file.id) : null
         }
-        const pieces: PackPiece[] = []
+        //pieces are copied as each pack is read, so a file spanning many packs
+        //never keeps more than the cached packs in memory
+        const assembler = new EntryAssembler()
         for(let seq = ref.s; seq <= ref.e; seq++){
             const pack = await this.loadPack(packFileName(ref.b, seq))
             if(!pack){
@@ -716,12 +718,11 @@ class DrivePackReader {
             }
             for(const piece of pack){
                 if(piece.name === name){
-                    pieces.push(piece)
+                    assembler.add(piece)
                 }
             }
         }
-        //always a fresh buffer, so storing it does not keep the whole pack alive
-        return assembleEntry(pieces)
+        return assembler.value
     }
 
     private async loadPack(name:string) {

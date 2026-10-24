@@ -423,33 +423,58 @@ export function parsePack(bytes: Uint8Array): { seq: number, pieces: PackPiece[]
 }
 
 /**
+ * Joins the pieces of one entry, fed in pack order, into a fresh buffer.
+ * Each piece is copied as it is added, so the pack it came from can be
+ * released before the next pack is read.
+ */
+export class EntryAssembler {
+    private buffer: Uint8Array | null = null
+    private size = 0
+    private filled = 0
+    private result: Uint8Array | null = null
+
+    add(piece: PackPiece) {
+        if(this.result){
+            return
+        }
+        if(piece.offset === 0){
+            this.size = piece.size
+            this.buffer = new Uint8Array(this.size)
+            this.filled = 0
+        }
+        else if(!this.buffer || piece.offset !== this.filled || piece.size !== this.size){
+            this.buffer = null
+            return
+        }
+        if(this.filled + piece.data.byteLength > this.size){
+            this.buffer = null
+            return
+        }
+        this.buffer.set(piece.data, this.filled)
+        this.filled += piece.data.byteLength
+        if(piece.complete){
+            this.result = this.filled === this.size ? this.buffer : null
+            this.buffer = null
+        }
+    }
+
+    /** The complete entry, or null when the pieces did not form one. */
+    get value() {
+        return this.result
+    }
+}
+
+/**
  * Joins the pieces of one entry, given in pack order, into a fresh buffer.
  * Returns null when the pieces do not form a complete entry.
  */
 export function assembleEntry(pieces: PackPiece[]): Uint8Array | null {
-    let buffer: Uint8Array | null = null
-    let size = 0
-    let filled = 0
-
+    const assembler = new EntryAssembler()
     for(const piece of pieces){
-        if(piece.offset === 0){
-            size = piece.size
-            buffer = new Uint8Array(size)
-            filled = 0
-        }
-        else if(!buffer || piece.offset !== filled || piece.size !== size){
-            buffer = null
-            continue
-        }
-        if(filled + piece.data.byteLength > size){
-            buffer = null
-            continue
-        }
-        buffer.set(piece.data, filled)
-        filled += piece.data.byteLength
-        if(piece.complete){
-            return filled === size ? buffer : null
+        assembler.add(piece)
+        if(assembler.value){
+            break
         }
     }
-    return null
+    return assembler.value
 }
