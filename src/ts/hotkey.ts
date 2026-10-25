@@ -7,6 +7,7 @@ import { updateTextThemeAndCSS } from "./gui/colorscheme"
 import { defaultHotkeys } from "./defaulthotkeys"
 import { doingChat, previewBody, sendChat } from "./process/index.svelte"
 import { RISU_SIDEBAR_DRAG_TYPE } from "./dragTypes"
+import { changeChar } from "./characters"
 
 export function initHotkey(){
     document.addEventListener('keydown', async (ev) => {
@@ -99,9 +100,12 @@ export function initHotkey(){
                     if(currentIndex >= sorted.length - 1){
                         return
                     }
-                    selectedCharID.set(sorted[currentIndex - 1].i)
-                    PlaygroundStore.set(0)
-                    OpenRealmStore.set(false)
+                    changeChar(sorted[currentIndex - 1].i).then((changed) => {
+                        if(changed){
+                            PlaygroundStore.set(0)
+                            OpenRealmStore.set(false)
+                        }
+                    })
                     break
                 }
                 case 'nextChar':{
@@ -115,9 +119,12 @@ export function initHotkey(){
                     if(currentIndex >= sorted.length - 1){
                         return
                     }
-                    selectedCharID.set(sorted[currentIndex + 1].i)
-                    PlaygroundStore.set(0)
-                    OpenRealmStore.set(false)
+                    changeChar(sorted[currentIndex + 1].i).then((changed) => {
+                        if(changed){
+                            PlaygroundStore.set(0)
+                            OpenRealmStore.set(false)
+                        }
+                    })
                     break
                 }
                 case 'quickMenu':{

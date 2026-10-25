@@ -1,13 +1,13 @@
 <script lang="ts">
     import { ArrowLeft } from "@lucide/svelte";
     import { language } from "src/lang";
-    import { PlaygroundStore, SizeStore, selectedCharID } from "src/ts/stores.svelte";
+    import { PlaygroundStore, SizeStore } from "src/ts/stores.svelte";
     import PlaygroundEmbedding from "./PlaygroundEmbedding.svelte";
     import PlaygroundTokenizer from "./PlaygroundTokenizer.svelte";
     import PlaygroundJinja from "./PlaygroundJinja.svelte";
     import PlaygroundSyntax from "./PlaygroundSyntax.svelte";
     import { findCharacterIndexbyId } from "src/ts/util";
-    import { characterFormatUpdate, createBlankChar } from "src/ts/characters";
+    import { changeChar, characterFormatUpdate, createBlankChar } from "src/ts/characters";
     import { type character } from "src/ts/storage/database.svelte";
     import { DBState } from 'src/ts/stores.svelte';
     import PlaygroundImageGen from "./PlaygroundImageGen.svelte";
@@ -23,11 +23,16 @@
 
     let easterEggTouch = $state(0)
 
-    const playgroundChat = () => {
+    const playgroundChat = async () => {
         const charIndex = findCharacterIndexbyId('§playground')
-        PlaygroundStore.set(2)
 
         if (charIndex !== -1) {
+
+            // restores the character first if it was moved to cold storage
+            if (!(await changeChar(charIndex))) {
+                return
+            }
+            PlaygroundStore.set(2)
 
             const char = DBState.db.characters[charIndex] as character
             char.utilityBot = true
@@ -35,8 +40,6 @@
             char.firstMessage = '{{none}}'
             DBState.db.characters[charIndex] = char
             characterFormatUpdate(charIndex)
-
-            selectedCharID.set(charIndex)
             return
         }
 

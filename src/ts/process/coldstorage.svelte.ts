@@ -416,7 +416,8 @@ export async function confirmIncompleteColdStorageOperation(
 
 async function makeColdDataForCharacter(i:number, coldTime:number): Promise<boolean>{
     const lastInteraction = DBState.db.characters[i].lastInteraction ?? Date.now()
-    if(lastInteraction < coldTime && !DBState.db.characters[i].coldstorage){
+    // system characters (§playground, §temp, ...) are never frozen
+    if(lastInteraction < coldTime && !DBState.db.characters[i].coldstorage && !DBState.db.characters[i].chaId?.startsWith('§')){
         console.log(`Character ${DBState.db.characters[i].name ?? i} has not been interacted with since ${new Date(lastInteraction).toLocaleDateString()}, moving to cold storage`)
         const id = crypto.randomUUID()
         const writeSuccess = await setColdStorageItem(id, {

@@ -875,10 +875,10 @@ export async function addCharacter(arg:{
 
 export async function changeChar(index: number, arg:{
     reseter?:()=>any,
-} = {}) {
+} = {}): Promise<boolean> {
     const reseter = arg.reseter ?? (() => {})
     if(get(doingChat)){
-      return
+      return false
     }
     reseter();
     if(DBState.db.characters?.[index]?.coldstorage){
@@ -888,11 +888,12 @@ export async function changeChar(index: number, arg:{
         }
         else{
             alertError(language.errors.coldStorageRestoreFailed)
-            return
+            return false
         }
     }
     characterFormatUpdate(index, {
       updateInteraction: true,
     });
     selectedCharID.set(index);
+    return true
 }
