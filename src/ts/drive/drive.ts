@@ -9,7 +9,7 @@ import { sleep } from "../util";
 import { hubURL } from "../characterCards";
 import { decodeRisuSave, encodeRisuSave } from "../storage/risuSave";
 import { saveKV, saveKVSourceFromData, type SaveKVData } from "../storage/saveKV";
-import { collectColdStorageBackupPayloads, confirmIncompleteColdStorageOperation, getColdStorageBackupName, isValidColdStorageItem, listColdDataKeysFromDb, listPluginStorageColdKeys, pluginStorage, setColdStorageItem } from "../process/coldstorage.svelte";
+import { confirmIncompleteColdStorageOperation, getColdStorageBackupName, getColdStorageBackupSnapshot, isValidColdStorageItem, listColdDataKeysFromDb, listColdStorageBackupItems, listPluginStorageColdKeys, pluginStorage, readColdStorageBackupPayload, setColdStorageItem } from "../process/coldstorage.svelte";
 
 export async function checkDriver(type:'save'|'load'|'loadtauri'|'savetauri'|'reftoken'){
     const CLIENT_ID = '580075990041-l26k2d3c0nemmqiu3d3aag01npfrkn76.apps.googleusercontent.com';
@@ -128,9 +128,11 @@ async function backupDrive(ACCESS_TOKEN:string) {
         return d.name
     })
 
-    const coldStoragePayloads = await collectColdStorageBackupPayloads(getDatabase())
-    const unavailableColdStorageKeys = [...coldStoragePayloads.missingKeys, ...coldStoragePayloads.invalidKeys]
-    if(!await confirmIncompleteColdStorageOperation(getDatabase(), unavailableColdStorageKeys, 'backup')){
+    //cold storage items are listed from and the database is encoded from the same snapshot
+    const db = await getColdStorageBackupSnapshot()
+    const coldStorageItems = await listColdStorageBackupItems(db)
+    const unavailableColdStorageKeys = [...coldStorageItems.missingKeys, ...coldStorageItems.invalidKeys]
+    if(!await confirmIncompleteColdStorageOperation(db, unavailableColdStorageKeys, 'backup')){
         return
     }
 
@@ -172,20 +174,27 @@ async function backupDrive(ACCESS_TOKEN:string) {
         }
     }
 
-    for(let i=0;i<coldStoragePayloads.payloads.length;i++){
-        const payload = coldStoragePayloads.payloads[i]
+    const lostColdStorageKeys:string[] = []
+    for(let i=0;i<coldStorageItems.items.length;i++){
+        const item = coldStorageItems.items[i]
         alertStore.set({
             type: "wait",
-            msg: `Uploading Cold Storage... (${i + 1} / ${coldStoragePayloads.payloads.length})`
+            msg: `Uploading Cold Storage... (${i + 1} / ${coldStorageItems.items.length})`
         })
         //cold storage items never change under the same key, so existing uploads can be skipped
-        if(fileNames.includes(payload.backupName)){
+        if(fileNames.includes(item.backupName)){
+            continue
+        }
+        //read one item at a time so only one payload is kept in memory
+        const payload = await readColdStorageBackupPayload(item)
+        if(!payload){
+            lostColdStorageKeys.push(item.key)
             continue
         }
         await createFileInFolder(ACCESS_TOKEN, payload.backupName, payload.encoded)
     }
 
-    const dbData = await encodeRisuSave(getDatabase(), { compression: true, kv: saveKV })
+    const dbData = await encodeRisuSave(db, { compression: true, kv: saveKV })
 
     alertStore.set({
         type: "wait",
@@ -194,6 +203,10 @@ async function backupDrive(ACCESS_TOKEN:string) {
 
     await createFileInFolder(ACCESS_TOKEN, `${(Date.now() / 1000).toFixed(0)}-database.risudat`, dbData)
 
+    if(lostColdStorageKeys.length > 0){
+        alertError(`Backup saved, but ${lostColdStorageKeys.length} cold storage item(s) could not be read and were skipped: ${lostColdStorageKeys.join(', ')}`)
+        return
+    }
 
     alertNormal('Success')
 }

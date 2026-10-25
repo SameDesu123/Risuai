@@ -5,12 +5,12 @@ import { LocalWriter, forageStorage, requiresFullEncoderReload } from "../global
 import { isTauri } from "src/ts/platform"
 import { decodeRisuSave, encodeRisuSave } from "../storage/risuSave";
 import { saveKV } from "../storage/saveKV";
-import { getDatabase, setDatabaseLite } from "../storage/database.svelte";
+import { setDatabaseLite } from "../storage/database.svelte";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { decryptBuffer, encryptBuffer, sleep } from "../util";
 import { hubURL } from "../characterCards";
 import { language } from "src/lang";
-import { collectColdStorageBackupPayloads, confirmIncompleteColdStorageOperation, getColdStorageBackupKey, getColdStorageItem, isColdStorageBackupData, isValidColdStorageItem, listColdDataKeys, listPluginStorageColdKeys, pluginStorage, setColdStorageItem } from "../process/coldstorage.svelte";
+import { confirmIncompleteColdStorageOperation, getColdStorageBackupKey, getColdStorageBackupSnapshot, getColdStorageItem, isColdStorageBackupData, isValidColdStorageItem, listColdDataKeys, listColdStorageBackupItems, listPluginStorageColdKeys, pluginStorage, readColdStorageBackupPayload, setColdStorageItem } from "../process/coldstorage.svelte";
 import { getPluginStorageIndexPointer } from "../process/coldstorageData";
 import { DBState } from "../stores.svelte";
 
@@ -23,9 +23,10 @@ function getBasename(data:string){
 
 export async function SaveLocalBackup(){
     alertWait("Saving local backup...")
-    const db = getDatabase()
-    const coldStoragePayloads = await collectColdStorageBackupPayloads(db)
-    const unavailableColdStorageKeys = [...coldStoragePayloads.missingKeys, ...coldStoragePayloads.invalidKeys]
+    //cold storage items are listed from and the database is encoded from the same snapshot
+    const db = await getColdStorageBackupSnapshot()
+    const coldStorageItems = await listColdStorageBackupItems(db)
+    const unavailableColdStorageKeys = [...coldStorageItems.missingKeys, ...coldStorageItems.invalidKeys]
     if(!await confirmIncompleteColdStorageOperation(db, unavailableColdStorageKeys, 'backup')){
         return
     }
@@ -153,10 +154,17 @@ export async function SaveLocalBackup(){
         }
     }
 
-    for(let i=0;i<coldStoragePayloads.payloads.length;i++){
-        const payload = coldStoragePayloads.payloads[i]
-        let message = `Saving local Backup Cold data... (${i + 1} / ${coldStoragePayloads.payloads.length})`
+    const lostColdStorageKeys: string[] = []
+    for(let i=0;i<coldStorageItems.items.length;i++){
+        const item = coldStorageItems.items[i]
+        let message = `Saving local Backup Cold data... (${i + 1} / ${coldStorageItems.items.length})`
         alertWait(message)
+        //read one item at a time so only one payload is kept in memory
+        const payload = await readColdStorageBackupPayload(item)
+        if(!payload){
+            lostColdStorageKeys.push(item.key)
+            continue
+        }
         await writer.writeBackup(payload.backupName, payload.encoded)
     }
 
@@ -176,7 +184,9 @@ export async function SaveLocalBackup(){
     await writer.writeBackup('database.risudat', dbData)
     await writer.close()
 
-    if (missingAssets.length > 0) {
+    if (lostColdStorageKeys.length > 0) {
+        alertError(`Backup saved, but ${lostColdStorageKeys.length} cold storage item(s) could not be read and were skipped: ${lostColdStorageKeys.join(', ')}`)
+    } else if (missingAssets.length > 0) {
         let message = 'Backup Successful, but the following assets were missing and skipped:\n\n'
         for (const key of missingAssets) {
             const assetInfo = assetMap.get(key)
@@ -218,9 +228,10 @@ export async function SavePartialLocalBackup(){
     }
     
     alertWait("Saving partial local backup...")
-    const db = getDatabase()
-    const coldStoragePayloads = await collectColdStorageBackupPayloads(db)
-    const unavailableColdStorageKeys = [...coldStoragePayloads.missingKeys, ...coldStoragePayloads.invalidKeys]
+    //cold storage items are listed from and the database is encoded from the same snapshot
+    const db = await getColdStorageBackupSnapshot()
+    const coldStorageItems = await listColdStorageBackupItems(db)
+    const unavailableColdStorageKeys = [...coldStorageItems.missingKeys, ...coldStorageItems.invalidKeys]
     if(!await confirmIncompleteColdStorageOperation(db, unavailableColdStorageKeys, 'backup')){
         return
     }
@@ -373,10 +384,17 @@ export async function SavePartialLocalBackup(){
         }
     }
 
-    for(let i=0;i<coldStoragePayloads.payloads.length;i++){
-        const payload = coldStoragePayloads.payloads[i]
-        let message = `Saving partial local Backup Cold data... (${i + 1} / ${coldStoragePayloads.payloads.length})`
+    const lostColdStorageKeys: string[] = []
+    for(let i=0;i<coldStorageItems.items.length;i++){
+        const item = coldStorageItems.items[i]
+        let message = `Saving partial local Backup Cold data... (${i + 1} / ${coldStorageItems.items.length})`
         alertWait(message)
+        //read one item at a time so only one payload is kept in memory
+        const payload = await readColdStorageBackupPayload(item)
+        if(!payload){
+            lostColdStorageKeys.push(item.key)
+            continue
+        }
         await writer.writeBackup(payload.backupName, payload.encoded)
     }
 
@@ -388,7 +406,9 @@ export async function SavePartialLocalBackup(){
     await writer.writeBackup('database.risudat', dbData)
     await writer.close()
 
-    if (missingAssets.length > 0) {
+    if (lostColdStorageKeys.length > 0) {
+        alertError(`Backup saved, but ${lostColdStorageKeys.length} cold storage item(s) could not be read and were skipped: ${lostColdStorageKeys.join(', ')}`)
+    } else if (missingAssets.length > 0) {
         let message = 'Partial backup successful, but the following profile images were missing and skipped:\n\n'
         for (const key of missingAssets) {
             const assetInfo = assetMap.get(key)

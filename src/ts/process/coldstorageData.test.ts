@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+    checkColdStorageBackupValue,
     coldStorageHeader,
     getColdStorageAffectedCharacters,
     getColdStorageBackupKey,
@@ -178,5 +179,23 @@ describe('coldstorageData', () => {
         expect(replaceColdStoragePayloadResources(payload, {
             'assets/local.png': 'assets/account.png',
         })).toBe(payload)
+    })
+
+    it('classifies cold storage values read for a backup', () => {
+        const chat = { message: [] }
+        expect(checkColdStorageBackupValue(chat, false, false)).toEqual({ status: 'ok', value: chat })
+        expect(checkColdStorageBackupValue(null, false, false)).toEqual({ status: 'missing' })
+        expect(checkColdStorageBackupValue(undefined, false, false)).toEqual({ status: 'missing' })
+        expect(checkColdStorageBackupValue('', false, false)).toEqual({ status: 'missing' })
+        expect(checkColdStorageBackupValue({ other: 1 }, false, false)).toEqual({ status: 'invalid' })
+
+        //plugin storage values may be any JSON value, but must exist
+        expect(checkColdStorageBackupValue(0, true, false)).toEqual({ status: 'ok', value: 0 })
+        expect(checkColdStorageBackupValue('', true, false)).toEqual({ status: 'ok', value: '' })
+        expect(checkColdStorageBackupValue(null, true, false)).toEqual({ status: 'missing' })
+
+        //legacy per-key plugin storage items may hold null
+        expect(checkColdStorageBackupValue(null, true, true)).toEqual({ status: 'ok', value: null })
+        expect(checkColdStorageBackupValue(undefined, true, true)).toEqual({ status: 'ok', value: null })
     })
 })

@@ -32,6 +32,28 @@ export function isValidColdStorageItem(data: unknown, isPluginStorage: boolean):
     return isColdStorageBackupData(data)
 }
 
+export type ColdStorageBackupValueCheck =
+    | { status: 'ok', value: unknown }
+    | { status: 'missing' }
+    | { status: 'invalid' }
+
+/**
+ * Checks a cold storage value read for a backup.
+ * Legacy per-key plugin storage items may legitimately hold null/falsy values.
+ */
+export function checkColdStorageBackupValue(value: unknown, isPluginStorage: boolean, isLegacyPluginStorage: boolean): ColdStorageBackupValueCheck {
+    if (isLegacyPluginStorage) {
+        value ??= null
+    }
+    else if (value === null || value === undefined || (!isPluginStorage && !value)) {
+        return { status: 'missing' }
+    }
+    if (!isValidColdStorageItem(value, isPluginStorage)) {
+        return { status: 'invalid' }
+    }
+    return { status: 'ok', value }
+}
+
 /**
  * Cold storage ids of the legacy per-key plugin storage layout (db.pluginCustomStorage._coldplugin values).
  * These are migrated into the plugin storage index on load.

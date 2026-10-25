@@ -15,7 +15,7 @@ import { fetchProtectedResource } from "../sionyw"
 import { alertClear, alertConfirm, alertError, alertWait } from "../alert"
 import { language } from "src/lang"
 import type { Database, character } from "../storage/database.svelte"
-import { coldStorageHeader, getColdStorageAffectedCharacters, getColdStorageBackupName, isValidColdStorageItem, listColdDataKeysFromDb, listPluginStorageColdKeys } from "./coldstorageData"
+import { checkColdStorageBackupValue, coldStorageHeader, getColdStorageAffectedCharacters, getColdStorageBackupName, listColdDataKeysFromDb, listPluginStorageColdKeys } from "./coldstorageData"
 import { PluginStorageStore } from "./pluginStorageStore"
 
 export {
@@ -335,6 +335,94 @@ export type ColdStorageBackupPayload = {
     encoded: Uint8Array
 }
 
+export type ColdStorageBackupItem = {
+    key: string
+    backupName: string
+    isPluginStorage: boolean
+    isLegacyPluginStorage: boolean
+}
+
+/**
+ * Flushes plugin storage and takes a deep snapshot of the database.
+ * Backups must list cold items from and encode this same snapshot, so the backed up
+ * plugin storage index is the one its database points to.
+ */
+export async function getColdStorageBackupSnapshot(): Promise<Database> {
+    //make sure the database pointer refers to an index containing the latest plugin storage changes
+    await pluginStorage.flush().catch((error) => {
+        console.error('Failed to save plugin storage before backup:', error)
+    })
+    //no await between the flush and the snapshot. Later flushes only trash the snapshot's index,
+    //and trashed items are deleted on a later load after a grace period, so they stay readable
+    return $state.snapshot(DBState.db) as Database
+}
+
+async function getColdStorageBackupItems(db: Pick<Database, 'characters'|'pluginCustomStorage'>): Promise<ColdStorageBackupItem[]> {
+    const coldKeys = await listColdDataKeys(db)
+    const legacyPluginStorageKeys = new Set(listPluginStorageColdKeys(db))
+    const pluginStorageKeys = new Set([...legacyPluginStorageKeys, ...await pluginStorage.referencedIds(db?.pluginCustomStorage)])
+    return coldKeys.map((key) => ({
+        key,
+        backupName: getColdStorageBackupName(key),
+        isPluginStorage: pluginStorageKeys.has(key),
+        isLegacyPluginStorage: legacyPluginStorageKeys.has(key),
+    }))
+}
+
+async function readColdStorageBackupValue(item: ColdStorageBackupItem) {
+    try {
+        return checkColdStorageBackupValue(await getColdStorageItem(item.key), item.isPluginStorage, item.isLegacyPluginStorage)
+    } catch (error) {
+        console.error(`Failed to read cold storage item ${item.key}:`, error)
+        return { status: 'missing' } as const
+    }
+}
+
+/**
+ * Lists the cold items the database references and validates them, without keeping their values.
+ * Read each item with readColdStorageBackupPayload afterwards, one at a time.
+ */
+export async function listColdStorageBackupItems(db: Pick<Database, 'characters'|'pluginCustomStorage'>): Promise<{
+    items: ColdStorageBackupItem[]
+    missingKeys: string[]
+    invalidKeys: string[]
+}> {
+    const items: ColdStorageBackupItem[] = []
+    const missingKeys: string[] = []
+    const invalidKeys: string[] = []
+
+    for (const item of await getColdStorageBackupItems(db)) {
+        const checked = await readColdStorageBackupValue(item)
+        if (checked.status === 'missing') {
+            missingKeys.push(item.key)
+        }
+        else if (checked.status === 'invalid') {
+            invalidKeys.push(item.key)
+        }
+        else {
+            items.push(item)
+        }
+    }
+
+    return { items, missingKeys, invalidKeys }
+}
+
+/** Reads and encodes one listed item. Returns null if it can no longer be read. */
+export async function readColdStorageBackupPayload(item: ColdStorageBackupItem): Promise<ColdStorageBackupPayload | null> {
+    const checked = await readColdStorageBackupValue(item)
+    if (checked.status !== 'ok') {
+        console.error(`Cold storage item ${item.key} became ${checked.status} during backup`)
+        return null
+    }
+    return {
+        key: item.key,
+        backupName: item.backupName,
+        value: checked.value,
+        encoded: new TextEncoder().encode(JSON.stringify(checked.value)),
+    }
+}
+
+/** Collects every payload in memory at once. Backups use listColdStorageBackupItems to read items one at a time instead. */
 export async function collectColdStorageBackupPayloads(db: Pick<Database, 'characters'|'pluginCustomStorage'> = DBState.db): Promise<{
     payloads: ColdStorageBackupPayload[]
     missingKeys: string[]
@@ -346,41 +434,25 @@ export async function collectColdStorageBackupPayloads(db: Pick<Database, 'chara
             console.error('Failed to save plugin storage before backup:', error)
         })
     }
-    const coldKeys = await listColdDataKeys(db)
-    //legacy per-key plugin storage items may legitimately hold null/falsy values
-    const legacyPluginStorageKeys = new Set(listPluginStorageColdKeys(db))
-    const pluginStorageKeys = new Set([...legacyPluginStorageKeys, ...await pluginStorage.referencedIds(db?.pluginCustomStorage)])
     const payloads: ColdStorageBackupPayload[] = []
     const missingKeys: string[] = []
     const invalidKeys: string[] = []
 
-    for (const key of coldKeys) {
-        try {
-            const isPluginStorage = pluginStorageKeys.has(key)
-            let value = await getColdStorageItem(key)
-
-            if (legacyPluginStorageKeys.has(key)) {
-                value ??= null
-            }
-            else if (value === null || value === undefined || (!isPluginStorage && !value)) {
-                missingKeys.push(key)
-                continue
-            }
-
-            if (!isValidColdStorageItem(value, isPluginStorage)) {
-                invalidKeys.push(key)
-                continue
-            }
-
+    for (const item of await getColdStorageBackupItems(db)) {
+        const checked = await readColdStorageBackupValue(item)
+        if (checked.status === 'missing') {
+            missingKeys.push(item.key)
+        }
+        else if (checked.status === 'invalid') {
+            invalidKeys.push(item.key)
+        }
+        else {
             payloads.push({
-                key,
-                backupName: getColdStorageBackupName(key),
-                value,
-                encoded: new TextEncoder().encode(JSON.stringify(value)),
+                key: item.key,
+                backupName: item.backupName,
+                value: checked.value,
+                encoded: new TextEncoder().encode(JSON.stringify(checked.value)),
             })
-        } catch (error) {
-            console.error(`Failed to read cold storage item ${key}:`, error)
-            missingKeys.push(key)
         }
     }
 
