@@ -45,21 +45,12 @@ export async function getColdStorageItem(key:string, opts:{
 } = {}) {
 
     if(forageStorage.isAccount && !opts.accountFallback){
-        let d:Response
-        try {
-            d = await fetchProtectedResource('/hub/account/coldstorage', {
-                method: 'GET',
-                headers: {
-                    'x-risu-key': key,
-                }
-            })
-        } catch (error) {
-            //network failure: fall back to local like a non-200 response, so the read never throws
-            console.error('Failed to fetch account cold storage item:', key, error)
-            return await getColdStorageItem(key, {
-                accountFallback: true
-            })
-        }
+        const d = await fetchProtectedResource('/hub/account/coldstorage', {
+            method: 'GET',
+            headers: {
+                'x-risu-key': key,
+            }
+        })
 
         if(d.status === 200){
             try {
