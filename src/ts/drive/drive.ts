@@ -9,7 +9,7 @@ import { sleep } from "../util";
 import { hubURL } from "../characterCards";
 import { decodeRisuSave, encodeRisuSave } from "../storage/risuSave";
 import { saveKV, saveKVSourceFromData, type SaveKVData } from "../storage/saveKV";
-import { collectColdStorageBackupPayloads, confirmIncompleteColdStorageOperation, getColdStorageBackupName, isValidColdStorageItem, listColdDataKeysFromDb, listPluginStorageColdKeys, pluginStorage, setColdStorageItem } from "../process/coldstorage.svelte";
+import { collectColdStorageBackupPayloads, confirmIncompleteColdStorageOperation, getColdStorageBackupName, isValidColdStorageItem, listColdDataKeysFromDb, listExistingColdStorageKeys, listPluginStorageColdKeys, pluginStorage, removeCancelledRestoreItems, setColdStorageItem } from "../process/coldstorage.svelte";
 
 export async function checkDriver(type:'save'|'load'|'loadtauri'|'savetauri'|'reftoken'){
     const CLIENT_ID = '580075990041-l26k2d3c0nemmqiu3d3aag01npfrkn76.apps.googleusercontent.com';
@@ -303,13 +303,17 @@ async function loadDrive(ACCESS_TOKEN:string, mode: 'backup'|'sync'):Promise<voi
         const { database: db, kv }: { database: Database, kv: SaveKVData } = mode === 'backup'
             ? await getDbFromList()
             : { database: JSON.parse(Buffer.from(await getFileData(ACCESS_TOKEN, dbs[0][0].id)).toString('utf-8')), kv: {} }
-        const coldStorageRestoreFailures = await restoreColdStorageFromDrive(ACCESS_TOKEN, files, db, mode)
+        //cold items are written before the restore is confirmed; a cancelled restore removes the ones it added
+        const existingColdStorageKeys = await listExistingColdStorageKeys()
+        const { failures: coldStorageRestoreFailures, written: coldStorageWritten } = await restoreColdStorageFromDrive(ACCESS_TOKEN, files, db, mode)
         if(coldStorageRestoreFailures.length > 0){
             if(mode === 'sync'){
+                await removeCancelledRestoreItems(coldStorageWritten, existingColdStorageKeys)
                 alertError(`Sync failed. ${coldStorageRestoreFailures.length} cold storage item(s) could not be restored.`)
                 return
             }
             if(!await confirmIncompleteColdStorageOperation(db, coldStorageRestoreFailures, 'restore')){
+                await removeCancelledRestoreItems(coldStorageWritten, existingColdStorageKeys)
                 return
             }
         }
@@ -363,6 +367,8 @@ async function loadDrive(ACCESS_TOKEN:string, mode: 'backup'|'sync'):Promise<voi
                 }
             }
         }
+        //this device's plugin storage must not keep writing while the restored database replaces it
+        pluginStorage.suspend()
         db.didFirstSetup = true
         //a restored backup brings its own SaveKV data; sync data has none, so this device's data is kept
         const dbData = await encodeRisuSave(db, { compression: true, kv: mode === 'sync' ? saveKV : saveKVSourceFromData(kv) })
@@ -400,6 +406,7 @@ async function restoreColdStorageFromDrive(
     mode:'backup'|'sync'
 ) {
     const failures:string[] = []
+    const written:string[] = []
     const restored = new Set<string>()
     const legacyPluginStorageKeys = new Set(listPluginStorageColdKeys(db))
 
@@ -428,7 +435,10 @@ async function restoreColdStorageFromDrive(
             try {
                 const jsonData = JSON.parse(new TextDecoder().decode(await getFileData(ACCESS_TOKEN, file.id)))
                 if(isValidColdStorageItem(jsonData, pluginStorageKeys.has(key))){
-                    if(!await setColdStorageItem(key, jsonData)){
+                    if(await setColdStorageItem(key, jsonData)){
+                        written.push(key)
+                    }
+                    else{
                         failures.push(key)
                     }
                 }
@@ -455,7 +465,7 @@ async function restoreColdStorageFromDrive(
     const pluginStorageKeys = new Set(await pluginStorage.referencedIds(db.pluginCustomStorage))
     await restoreKeys(Array.from(pluginStorageKeys), pluginStorageKeys)
 
-    return failures
+    return { failures, written }
 }
 
 function checkImageExist(image:string){

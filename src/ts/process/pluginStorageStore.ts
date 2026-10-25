@@ -10,6 +10,10 @@
     - Cold items are never modified in place. Every flush writes a new index item, and the database
       pointer is only moved after that write succeeded, so the saved database always points to a
       complete index (at worst an older one, if the app shuts down before the database is saved).
+    - A flush only moves the pointer if the database still holds the pointer the flush started from.
+      If the database was replaced meanwhile (restore, sync), the new index was never referenced, so it
+      is deleted right away and the store reloads from the replaced database.
+    - suspend() stops all writes until the app reloads (used while a restore replaces the database).
     - Items that are no longer referenced are moved to a trash list stored inside the index, and only
       deleted on a later load once a grace period passed. They are never deleted while a saved
       database could still reference them.
@@ -82,6 +86,9 @@ export function isPluginStorageIndex(data: unknown): data is PluginStorageIndex 
 
 const hasOwn = (obj: object, key: string) => Object.prototype.hasOwnProperty.call(obj, key)
 
+const readPointer = (storage: StorageObject | undefined) =>
+    typeof storage?.[PLUGIN_STORAGE_INDEX_KEY] === 'string' ? storage[PLUGIN_STORAGE_INDEX_KEY] as string : null
+
 /**
  * Whether the database holds an inline (legacy) value for the key.
  * Svelte $state proxies keep reporting a deleted property as an own property with value undefined,
@@ -104,6 +111,7 @@ export class PluginStorageStore {
     private dirty = false
     private flushTimer: ReturnType<typeof setTimeout> | null = null
     private flushing: Promise<void> | null = null
+    private suspended = false
     private tokenSeq = 0
     private options: PluginStorageOptions
     /** progress handler of a running migrate() call, used instead of options.onProgress */
@@ -122,8 +130,7 @@ export class PluginStorageStore {
 
     /** Loads the index (and migrates legacy layouts). Safe to call repeatedly. */
     async load(): Promise<void> {
-        const storage = this.getStorage()
-        const currentPointer = typeof storage?.[PLUGIN_STORAGE_INDEX_KEY] === 'string' ? storage[PLUGIN_STORAGE_INDEX_KEY] : null
+        const currentPointer = readPointer(this.getStorage())
         if (this.loaded && !this.loading && currentPointer !== this.pointer) {
             //the database was replaced from outside (restore, sync); the stored state wins
             console.warn('Plugin storage index changed outside the store (restore/sync?); reloading', {
@@ -432,10 +439,10 @@ export class PluginStorageStore {
 
     /** Writes pending changes now. Resolves once the database pointer points to an index containing them. */
     async flush(): Promise<void> {
-        if (!this.loaded) {
+        if (!this.loaded || this.suspended) {
             return
         }
-        while (this.flushing || this.dirty) {
+        while (this.flushing || (this.dirty && this.loaded && !this.suspended)) {
             if (this.flushing) {
                 await this.flushing.catch(() => {})
                 continue
@@ -469,6 +476,21 @@ export class PluginStorageStore {
             this.trash.push({ id, at: now, index: true })
             this.scheduleFlush(this.options.maxFlushDelay)
             throw new Error('Failed to write plugin storage index')
+        }
+
+        if (this.suspended || readPointer(this.getStorage()) !== oldPointer) {
+            //the database was replaced while writing (restore, sync): never point it to an index of the old state
+            console.warn('Plugin storage index changed outside the store (restore/sync?); not committing', {
+                store: oldPointer,
+                database: readPointer(this.getStorage()),
+            })
+            this.loaded = false
+            this.dirty = false
+            //never referenced by any database, so it can be deleted without a grace period
+            this.backend.remove([id]).catch((error) => {
+                console.error('Failed to delete uncommitted plugin storage index', error)
+            })
+            return
         }
 
         //commit: move the pointer and drop superseded legacy copies in one synchronous step
@@ -506,8 +528,21 @@ export class PluginStorageStore {
         this.scheduleFlush(delay)
     }
 
-    private scheduleFlush(delay: number) {
+    /**
+     * Stops writing until the app reloads: cancels the scheduled flush and turns flush() into a no-op.
+     * Called before a restore replaces the database, so a pending flush cannot point the restored
+     * database to this device's index. Unsaved changes are dropped.
+     */
+    suspend() {
+        this.suspended = true
         if (this.flushTimer) {
+            clearTimeout(this.flushTimer)
+            this.flushTimer = null
+        }
+    }
+
+    private scheduleFlush(delay: number) {
+        if (this.flushTimer || this.suspended) {
             return
         }
         this.flushTimer = setTimeout(() => {

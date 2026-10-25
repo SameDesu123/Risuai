@@ -10,7 +10,7 @@ import { relaunch } from "@tauri-apps/plugin-process";
 import { decryptBuffer, encryptBuffer, sleep } from "../util";
 import { hubURL } from "../characterCards";
 import { language } from "src/lang";
-import { collectColdStorageBackupPayloads, confirmIncompleteColdStorageOperation, getColdStorageBackupKey, getColdStorageItem, isColdStorageBackupData, isValidColdStorageItem, listColdDataKeys, listPluginStorageColdKeys, pluginStorage, setColdStorageItem } from "../process/coldstorage.svelte";
+import { collectColdStorageBackupPayloads, confirmIncompleteColdStorageOperation, getColdStorageBackupKey, getColdStorageItem, isColdStorageBackupData, isValidColdStorageItem, listColdDataKeys, listExistingColdStorageKeys, listPluginStorageColdKeys, pluginStorage, removeCancelledRestoreItems, setColdStorageItem } from "../process/coldstorage.svelte";
 import { getPluginStorageIndexPointer } from "../process/coldstorageData";
 import { DBState } from "../stores.svelte";
 
@@ -432,6 +432,8 @@ export function LoadLocalBackup(){
             //items that don't look like character/chat data may be pluginStorage values,
             //which can only be identified once the database (written last) is decoded
             const pendingPluginColdStorage = new Map<string, unknown>();
+            //cold items are written before the restore is confirmed; a cancelled restore removes the ones it added
+            const existingColdStorageKeys = await listExistingColdStorageKeys();
 
             while (true) {
                 const { done, value } = await reader.read();
@@ -530,6 +532,7 @@ export function LoadLocalBackup(){
             }
 
             if(!pendingDatabase){
+                await removeCancelledRestoreItems(restoredColdStorageKeys, existingColdStorageKeys)
                 alertError('Failed, Is file corrupted?')
                 return
             }
@@ -594,9 +597,12 @@ export function LoadLocalBackup(){
                 }
             }
             if(!await confirmIncompleteColdStorageOperation(dbData, missingColdStorageKeys, 'restore')){
+                await removeCancelledRestoreItems(restoredColdStorageKeys, existingColdStorageKeys)
                 return
             }
 
+            //a pending plugin storage flush must not point the restored database to this device's index
+            pluginStorage.suspend();
             setDatabaseLite(dbData);
             saveKV.load(kvData);
             requiresFullEncoderReload.state = true;

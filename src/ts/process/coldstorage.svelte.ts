@@ -4,7 +4,8 @@ import {
     readFile,
     mkdir,
     remove,
-    readDir
+    readDir,
+    exists
 } from "@tauri-apps/plugin-fs"
 import { forageStorage, requiresFullEncoderReload } from "../globalApi.svelte"
 import { isTauri, isNodeServer } from "src/ts/platform"
@@ -412,6 +413,35 @@ export async function confirmIncompleteColdStorageOperation(
         )
 
     return await alertConfirm(message)
+}
+
+/**
+ * Cold storage keys that exist before a restore writes anything, so a cancelled restore only removes
+ * the items it added. null when the items could not be listed (a cancelled restore then removes nothing).
+ */
+export async function listExistingColdStorageKeys(): Promise<Set<string> | null> {
+    try {
+        if(isTauri && !forageStorage.isAccount && !isNodeServer && !await exists('./coldstorage', { baseDir: BaseDirectory.AppData })){
+            return new Set()
+        }
+        const list = await listColdStorageItems()
+        return Array.isArray(list?.items) ? new Set(list.items) : null
+    } catch (error) {
+        console.error('Failed to list cold storage items before restore:', error)
+        return null
+    }
+}
+
+/** Removes the items a cancelled restore wrote, except the ones that already existed before it. */
+export async function removeCancelledRestoreItems(written: Iterable<string>, existing: Set<string> | null) {
+    if(!existing){
+        console.warn('Cancelled restore keeps its cold storage items: the existing items could not be listed')
+        return
+    }
+    const added = Array.from(written).filter((key) => !existing.has(key))
+    if(added.length > 0){
+        await removeColdStorageItems(added)
+    }
 }
 
 async function makeColdDataForCharacter(i:number, coldTime:number): Promise<boolean>{
