@@ -105,3 +105,56 @@ describe('NodeStorage.setItem', () => {
         )
     })
 })
+
+describe('NodeStorage.removeItem', () => {
+    const fetchMock = vi.fn()
+    let storage:NodeStorage
+    const hex = (value:string) => Buffer.from(value, 'utf-8').toString('hex')
+    const sentPaths = () => fetchMock.mock.calls.map(([, init]) => init.headers['file-path'])
+
+    beforeEach(() => {
+        fetchMock.mockReset()
+        fetchMock.mockImplementation(async () => new Response(JSON.stringify({ success: true })))
+        vi.stubGlobal('fetch', fetchMock)
+        storage = new NodeStorage()
+        vi.spyOn(storage as any, 'checkAuth').mockResolvedValue(undefined)
+        vi.spyOn(storage, 'createAuth').mockResolvedValue('test-auth')
+    })
+
+    afterEach(() => {
+        vi.unstubAllGlobals()
+        vi.restoreAllMocks()
+    })
+
+    it('sends a single key hex encoded as before', async () => {
+        await storage.removeItem('coldstorage/a')
+        expect(fetchMock).toHaveBeenCalledWith('/api/remove', expect.objectContaining({ method: 'GET' }))
+        expect(sentPaths()).toEqual([hex('coldstorage/a')])
+    })
+
+    it('hex encodes each key on its own and joins them with $$', async () => {
+        await storage.removeItem(['coldstorage/a', 'coldstorage/b$$c'])
+        expect(sentPaths()).toEqual([hex('coldstorage/a') + '$$' + hex('coldstorage/b$$c')])
+        //the server splits on $$ and gets one valid hex path per key
+        expect(sentPaths()[0].split('$$').map((part:string) => Buffer.from(part, 'hex').toString('utf-8')))
+            .toEqual(['coldstorage/a', 'coldstorage/b$$c'])
+    })
+
+    it('splits large removals into several requests', async () => {
+        const keys = Array.from({ length: 120 }, (_, i) => `coldstorage/${i}`)
+        await storage.removeItem(keys)
+        const parts = sentPaths().map((value:string) => value.split('$$'))
+        expect(parts.map((p:string[]) => p.length)).toEqual([50, 50, 20])
+        expect(parts.flat()).toEqual(keys.map(hex))
+    })
+
+    it('skips the request for an empty key list', async () => {
+        await storage.removeItem([])
+        expect(fetchMock).not.toHaveBeenCalled()
+    })
+
+    it('throws when the server fails', async () => {
+        fetchMock.mockImplementation(async () => new Response('error', { status: 500 }))
+        await expect(storage.removeItem(['coldstorage/a', 'coldstorage/b'])).rejects.toBe('removeItem Error')
+    })
+})

@@ -26,7 +26,8 @@ const INDEX_TYPE = 'risu-plugin-storage-index'
 export type PluginStorageBackend = {
     get(id: string): Promise<unknown>
     set(id: string, value: unknown): Promise<boolean>
-    remove(ids: string[]): Promise<void>
+    /** resolves to the ids that could not be removed; ids that are already gone count as removed */
+    remove(ids: string[]): Promise<string[]>
     newId(): string
     now(): number
 }
@@ -320,14 +321,14 @@ export class PluginStorageStore {
     private collectTrash() {
         const now = this.backend.now()
         const referenced = this.referencedInMemory()
-        const due: string[] = []
+        const due: TrashItem[] = []
         const keep: TrashItem[] = []
         for (const item of this.trash) {
             if (referenced.has(item.id)) {
                 continue
             }
             if (now - item.at >= (item.index ? this.options.indexTrashGrace : this.options.trashGrace)) {
-                due.push(item.id)
+                due.push(item)
             }
             else {
                 keep.push(item)
@@ -336,9 +337,29 @@ export class PluginStorageStore {
         this.trash = keep
         if (due.length > 0) {
             //the remaining trash is persisted with the next flush; deleting again later is harmless
-            this.backend.remove(due).catch((error) => {
+            const pointer = this.pointer
+            this.backend.remove(due.map((item) => item.id)).catch((error) => {
                 console.error('Failed to delete unused plugin storage items', error)
+                return due.map((item) => item.id)
+            }).then((failed) => {
+                this.restoreTrash(due.filter((item) => failed.includes(item.id)), pointer)
             })
+        }
+    }
+
+    /** Puts trash items whose deletion failed back, so a later load retries them. */
+    private restoreTrash(items: TrashItem[], pointer: string | null) {
+        const trashed = new Set(this.trash.map((item) => item.id))
+        const referenced = this.referencedInMemory()
+        const restore = items.filter((item) => !trashed.has(item.id) && !referenced.has(item.id))
+        if (restore.length === 0) {
+            return
+        }
+        console.error('Failed to delete unused plugin storage items; retrying on a later load', restore.map((item) => item.id))
+        this.trash.push(...restore)
+        //the saved index still lists them unless a flush wrote a new one (or is writing it) meanwhile
+        if (this.pointer !== pointer || this.flushing) {
+            this.markDirty()
         }
     }
 

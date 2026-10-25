@@ -3,6 +3,8 @@ import { alertError, alertInput, waitAlert } from "../alert"
 import { base64url, getKeypairStore, saveKeypairStore } from "../util"
 
 const MAX_STORAGE_ERROR_DETAIL_LENGTH = 2000
+/** keys per /api/remove request; every key is sent hex encoded in the file-path header */
+const MAX_REMOVE_KEYS_PER_REQUEST = 50
 
 function formatStorageValueSize(byteLength:number) {
     if(byteLength < 1024){
@@ -225,20 +227,28 @@ export class NodeStorage{
         return data.content
     }
     async removeItem(key:string|string[]){
-        await this.checkAuth()
-        const da = await fetch('/api/remove', {
-            method: "GET",
-            headers: {
-                'file-path': Buffer.from(Array.isArray(key) ? key.join('$$') : key, 'utf-8').toString('hex'),
-                'risu-auth': await this.createAuth()
-            }
-        })
-        if(da.status < 200 || da.status >= 300){
-            throw "removeItem Error"
+        const keys = Array.isArray(key) ? key : [key]
+        if(keys.length === 0){
+            return
         }
-        const data = await da.json()
-        if(data.error){
-            throw data.error
+        await this.checkAuth()
+        //keys travel in a header, so large removals are split to stay under header size limits
+        for(let i=0;i<keys.length;i+=MAX_REMOVE_KEYS_PER_REQUEST){
+            const da = await fetch('/api/remove', {
+                method: "GET",
+                headers: {
+                    //hex encode each key on its own; the server splits on '$$', which hex never contains
+                    'file-path': keys.slice(i, i + MAX_REMOVE_KEYS_PER_REQUEST).map((k) => Buffer.from(k, 'utf-8').toString('hex')).join('$$'),
+                    'risu-auth': await this.createAuth()
+                }
+            })
+            if(da.status < 200 || da.status >= 300){
+                throw "removeItem Error"
+            }
+            const data = await da.json()
+            if(data.error){
+                throw data.error
+            }
         }
     }
 

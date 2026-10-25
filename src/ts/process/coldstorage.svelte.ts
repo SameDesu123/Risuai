@@ -4,7 +4,8 @@ import {
     readFile,
     mkdir,
     remove,
-    readDir
+    readDir,
+    exists
 } from "@tauri-apps/plugin-fs"
 import { forageStorage, requiresFullEncoderReload } from "../globalApi.svelte"
 import { isTauri, isNodeServer } from "src/ts/platform"
@@ -255,22 +256,30 @@ export async function cleanColdStorage(){
     const unusedKeys = allKeys.filter(k => !actualUsedKeys.includes(k))
     console.log('Cleaning cold storage, actual used keys:', actualUsedKeys, 'all keys:', allKeys, 'unused keys:', unusedKeys)
 
+    const failedKeys:string[] = []
     if(forageStorage.isAccount || isNodeServer){
-        await removeColdStorageItems(unusedKeys)
+        failedKeys.push(...await removeColdStorageItems(unusedKeys))
     }
     else{
         for(let i=0;i<unusedKeys.length;i++){
             const key = unusedKeys[i]
             alertWait(`Removing unused cold storage item: ${key} (${i + 1} / ${unusedKeys.length})`)
-            await removeColdStorageItems([key])
+            failedKeys.push(...await removeColdStorageItems([key]))
         }
     }
 
     alertClear()
+    if(failedKeys.length > 0){
+        alertError(`Failed to remove ${failedKeys.length} / ${unusedKeys.length} unused cold storage items. Check the console for details.`)
+    }
 }
 
-export async function removeColdStorageItems(keys:string[]) {
-    
+/** Removes cold storage items. Resolves to the keys that could not be removed; missing items count as removed. */
+export async function removeColdStorageItems(keys:string[]):Promise<string[]> {
+    if(keys.length === 0){
+        return []
+    }
+
     if(forageStorage.isAccount){
         try {
             const res = await fetchProtectedResource('/hub/account/coldstorage', {
@@ -283,39 +292,61 @@ export async function removeColdStorageItems(keys:string[]) {
             })
             if(res.status !== 200){
                 console.error('Error removing cold storage item:', await res.text().catch(() => 'unknown'))
+                return keys
             }
+            return []
         } catch (error) {
             console.error('Cold storage account remove failed:', error)
+            return keys
         }
     }
     else if(isNodeServer){
         try {
             const storage = forageStorage.realStorage as NodeStorage
             const deleteKeys = keys.map(k => 'coldstorage/' + k);
-            (storage as NodeStorage).removeItem(deleteKeys)
+            await (storage as NodeStorage).removeItem(deleteKeys)
+            return []
         } catch (error) {
             console.error(error)
+            return keys
         }
     }
     else if(isTauri){
-        try {
-            for(let i=0;i<keys.length;i++){
-                await remove('./coldstorage/'+keys[i]+'.json', { baseDir: BaseDirectory.AppData })
+        const failed:string[] = []
+        for(let i=0;i<keys.length;i++){
+            const path = './coldstorage/'+keys[i]+'.json'
+            try {
+                await remove(path, { baseDir: BaseDirectory.AppData })
+            } catch (error) {
+                if(await exists(path, { baseDir: BaseDirectory.AppData }).catch(() => true)){
+                    console.error(error)
+                    failed.push(keys[i])
+                }
             }
-        } catch (error) {
-            console.error(error)
         }
+        return failed
     }
     else{
         //use opfs
+        let opfs:FileSystemDirectoryHandle
         try {
-            const opfs = await navigator.storage.getDirectory()
-            for(let i=0;i<keys.length;i++){
-                await opfs.removeEntry('coldstorage_' + keys[i]+'.json')
-            }
+            opfs = await navigator.storage.getDirectory()
         } catch (error) {
             console.error(error)
+            return keys
         }
+        const failed:string[] = []
+        for(let i=0;i<keys.length;i++){
+            try {
+                await opfs.removeEntry('coldstorage_' + keys[i]+'.json')
+            } catch (error) {
+                if((error as DOMException)?.name !== 'NotFoundError'){
+                    console.error(error)
+                    failed.push(keys[i])
+                }
+            }
+        }
+        return failed
     }
 }
 

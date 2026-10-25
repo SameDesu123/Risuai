@@ -1234,6 +1234,7 @@ app.get('/api/remove', authenticatedRouteLimiter, async (req, res, next) => {
     if(!await checkAuth(req, res)){
         return;
     }
+    //each key is hex encoded on its own and joined with '$$', which is never part of a hex string
     const filePaths = req.headers['file-path']?.split('$$') || []
 
     for(const filePath of filePaths){
@@ -1249,17 +1250,19 @@ app.get('/api/remove', authenticatedRouteLimiter, async (req, res, next) => {
             });
             return;
         }
-
-        try {
-            await fs.rm(path.join(savePath, filePath));
-            res.send({
-                success: true,
-            });
-        } catch (error) {
-            next(error);
-        }
     }
-    
+
+    try {
+        for(const filePath of filePaths){
+            //an already missing file counts as removed
+            await fs.rm(path.join(savePath, filePath), { force: true });
+        }
+        res.send({
+            success: true,
+        });
+    } catch (error) {
+        next(error);
+    }
 });
 
 app.get('/api/list', authenticatedRouteLimiter, async (req, res, next) => {
