@@ -15,7 +15,7 @@ import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { checkRisuUpdate } from "./update";
 import { MobileGUI, botMakerMode, selectedCharID, loadedStore, DBState, LoadingStatusState } from "./stores.svelte";
 import { loadPlugins } from "./plugins/plugins.svelte";
-import { alertError, alertMd, alertTOS, waitAlert, alertConfirm, alertInput } from "./alert";
+import { alertError, alertMd, alertTOS, waitAlert, alertConfirm, alertInput, alertClear } from "./alert";
 import { checkDriverInit } from "./drive/drive";
 import { characterURLImport } from "./characterCards";
 import { defaultJailbreak, defaultMainPrompt, oldJailbreak, oldMainPrompt } from "./storage/defaultPrompts";
@@ -250,7 +250,11 @@ export async function loadData() {
                 initMobileGesture()
                 MobileGUI.set(true)
             }
-            await makeColdData()
+            await makeColdData().catch((error) => {
+                //cold storage failures must never block startup, the uncompleted items just stay in the db
+                console.error('Failed to make cold data:', error)
+                alertClear()
+            })
             loadedStore.set(true)
             selectedCharID.set(-1)
             startObserveDom()

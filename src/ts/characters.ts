@@ -882,7 +882,12 @@ export async function changeChar(index: number, arg:{
     }
     reseter();
     if(DBState.db.characters?.[index]?.coldstorage){
-        const coldData = await getColdStorageItem(DBState.db.characters[index].coldstorage!)
+        let coldData:any = null
+        try {
+            coldData = await getColdStorageItem(DBState.db.characters[index].coldstorage!)
+        } catch (error) {
+            console.error('Failed to read cold storage character:', error)
+        }
         if(coldData?.character && coldData.character.chaId === DBState.db.characters[index].chaId){
             DBState.db.characters[index] = coldData.character
         }

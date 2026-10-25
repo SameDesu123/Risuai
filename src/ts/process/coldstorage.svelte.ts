@@ -45,12 +45,21 @@ export async function getColdStorageItem(key:string, opts:{
 } = {}) {
 
     if(forageStorage.isAccount && !opts.accountFallback){
-        const d = await fetchProtectedResource('/hub/account/coldstorage', {
-            method: 'GET',
-            headers: {
-                'x-risu-key': key,
-            }
-        })
+        let d:Response
+        try {
+            d = await fetchProtectedResource('/hub/account/coldstorage', {
+                method: 'GET',
+                headers: {
+                    'x-risu-key': key,
+                }
+            })
+        } catch (error) {
+            //network failure: fall back to local like a non-200 response, so the read never throws
+            console.error('Failed to fetch account cold storage item:', key, error)
+            return await getColdStorageItem(key, {
+                accountFallback: true
+            })
+        }
 
         if(d.status === 200){
             try {
@@ -590,7 +599,11 @@ export async function makeColdData(){
     while(queue.length > 0){
         const batch = queue.splice(0, 5) //process 5 at a time to avoid blocking
         alertWait(`Creating character cold storage data... ${queue.length} items left`)
-        const results = await Promise.all(batch.map(fn => fn()))
+        const results = await Promise.all(batch.map(fn => fn().catch((error) => {
+            //one failing item must not abort the rest, its original data is kept
+            console.error('Cold storage item failed, keeping original data:', error)
+            return false
+        })))
 
         if(results.some(Boolean)){
             didChange = true
@@ -606,7 +619,11 @@ export async function makeColdData(){
     while(queue.length > 0){
         const batch = queue.splice(0, 5) //process 5 at a time to avoid blocking
         alertWait(`Creating chat cold storage data... ${queue.length} items left`)
-        const results = await Promise.all(batch.map(fn => fn()))
+        const results = await Promise.all(batch.map(fn => fn().catch((error) => {
+            //one failing item must not abort the rest, its original data is kept
+            console.error('Cold storage item failed, keeping original data:', error)
+            return false
+        })))
 
         if(results.some(Boolean)){
             didChange = true
