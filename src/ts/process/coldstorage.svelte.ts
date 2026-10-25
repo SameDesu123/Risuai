@@ -14,8 +14,8 @@ import { compress as fflateCompress, decompress as fflateDecompress } from "ffla
 import { fetchProtectedResource } from "../sionyw"
 import { alertClear, alertConfirm, alertError, alertWait } from "../alert"
 import { language } from "src/lang"
-import type { Database, character } from "../storage/database.svelte"
-import { coldStorageHeader, getColdStorageAffectedCharacters, getColdStorageBackupName, isValidColdStorageItem, listColdDataKeysFromDb, listPluginStorageColdKeys } from "./coldstorageData"
+import type { Database } from "../storage/database.svelte"
+import { coldStorageHeader, getColdStorageAffectedCharacters, getColdStorageBackupName, isValidColdStorageItem, listColdDataKeysFromDb, listPluginStorageColdKeys, makeColdStorageCharacterStub } from "./coldstorageData"
 import { PluginStorageStore } from "./pluginStorageStore"
 
 export {
@@ -429,7 +429,11 @@ async function makeColdDataForCharacter(i:number, coldTime:number): Promise<bool
         }
 
         const verifyData = await getColdStorageItem(id)
-        if(!verifyData || (!Array.isArray(verifyData) && !verifyData.character)){
+        if(
+            !verifyData?.character
+            || typeof verifyData.character !== 'object'
+            || verifyData.character.chaId !== DBState.db.characters[i].chaId
+        ){
             console.error(`Cold storage verification failed for character ${DBState.db.characters[i].chaId ?? i}, keeping original data`, verifyData)
             return false
         }
@@ -444,28 +448,7 @@ async function makeColdDataForCharacter(i:number, coldTime:number): Promise<bool
             }
         }
 
-        // Not a full character object,
-        // just the data needed to show in the character list and load the chat when clicked. The rest will be loaded back when the character is opened.
-        const coldCharacter:character = {
-            type: 'character',
-            image: DBState.db.characters[i].image,
-            name: DBState.db.characters[i].name,
-            chats: [{
-                message: [{
-                    time: Date.now(),
-                    data: '',
-                    role: 'char'
-                }],
-                note: "",
-                name: "",
-                localLore: []
-            }],
-            chatPage: 0,
-            chaId: DBState.db.characters[i].chaId,
-            firstMsgIndex: 0,
-            coldstorage: id,
-            coldStoragedChats: coldStoragedChats
-        } as any
+        const coldCharacter = makeColdStorageCharacterStub(DBState.db.characters[i], id, coldStoragedChats)
 
         DBState.db.characters[i] = coldCharacter
         return true

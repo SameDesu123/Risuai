@@ -44,6 +44,47 @@ export function listPluginStorageColdKeys(db: Pick<Database, 'pluginCustomStorag
     return Object.values(coldPlugin).filter((key): key is string => typeof key === 'string')
 }
 
+/**
+ * Not a full character object,
+ * just the data needed to show in the character list and load the chat when clicked. The rest will be loaded back when the character is opened.
+ * Groups keep their type with empty member arrays so group-specific code doesn't break on the stub.
+ */
+export function makeColdStorageCharacterStub(
+    original: character | groupChat,
+    coldStorageKey: string,
+    coldStoragedChats: string[],
+    now: number = Date.now(),
+): character | groupChat {
+    const stub = {
+        type: original.type,
+        image: original.image,
+        name: original.name,
+        chats: [{
+            message: [{
+                time: now,
+                data: '',
+                role: 'char'
+            }],
+            note: "",
+            name: "",
+            localLore: []
+        }],
+        chatPage: 0,
+        chaId: original.chaId,
+        firstMsgIndex: 0,
+        coldstorage: coldStorageKey,
+        coldStoragedChats: coldStoragedChats
+    } as any
+
+    if (original.type === 'group') {
+        stub.characters = []
+        stub.characterTalks = []
+        stub.characterActive = []
+    }
+
+    return stub
+}
+
 function replaceData(data: string | undefined, replacer: { [key: string]: string }) {
     if (!data) {
         return data

@@ -8,6 +8,7 @@ import {
     isValidColdStorageItem,
     listColdDataKeysFromDb,
     listPluginStorageColdKeys,
+    makeColdStorageCharacterStub,
     replaceColdStoragePayloadResources,
 } from './coldstorageData'
 
@@ -178,5 +179,43 @@ describe('coldstorageData', () => {
         expect(replaceColdStoragePayloadResources(payload, {
             'assets/local.png': 'assets/account.png',
         })).toBe(payload)
+    })
+
+    it('builds a cold storage stub that keeps the character type', () => {
+        const stub = makeColdStorageCharacterStub({
+            type: 'character',
+            name: 'Alice',
+            image: 'assets/alice.png',
+            chaId: 'alice-id',
+            desc: 'long description',
+        } as any, 'cold-key', ['chat-key'], 1000) as any
+
+        expect(stub.type).toBe('character')
+        expect(stub.name).toBe('Alice')
+        expect(stub.image).toBe('assets/alice.png')
+        expect(stub.chaId).toBe('alice-id')
+        expect(stub.coldstorage).toBe('cold-key')
+        expect(stub.coldStoragedChats).toEqual(['chat-key'])
+        expect(stub.chats[0].message[0].time).toBe(1000)
+        expect(stub.desc).toBeUndefined()
+        expect(stub.characters).toBeUndefined()
+    })
+
+    it('builds a group cold storage stub with empty member arrays', () => {
+        const stub = makeColdStorageCharacterStub({
+            type: 'group',
+            name: 'Party',
+            chaId: 'group-id',
+            characters: ['a', 'b'],
+            characterTalks: [0.5, 0.5],
+            characterActive: [true, false],
+        } as any, 'cold-key', []) as any
+
+        expect(stub.type).toBe('group')
+        expect(stub.chaId).toBe('group-id')
+        expect(stub.characters).toEqual([])
+        expect(stub.characterTalks).toEqual([])
+        expect(stub.characterActive).toEqual([])
+        expect(listColdDataKeysFromDb({ characters: [stub] } as any)).toEqual(['cold-key'])
     })
 })
