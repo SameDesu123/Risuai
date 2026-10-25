@@ -14,8 +14,8 @@ import { compress as fflateCompress, decompress as fflateDecompress } from "ffla
 import { fetchProtectedResource } from "../sionyw"
 import { alertClear, alertConfirm, alertError, alertWait } from "../alert"
 import { language } from "src/lang"
-import type { Database, character } from "../storage/database.svelte"
-import { coldStorageHeader, getColdStorageAffectedCharacters, getColdStorageBackupName, isValidColdStorageItem, listColdDataKeysFromDb, listPluginStorageColdKeys } from "./coldstorageData"
+import type { Chat, Database, character } from "../storage/database.svelte"
+import { coldStorageHeader, getColdChatKey, getColdStorageAffectedCharacters, getColdStorageBackupName, isValidColdStorageItem, listColdDataKeysFromDb, listPluginStorageColdKeys, mergeColdChatData } from "./coldstorageData"
 import { PluginStorageStore } from "./pluginStorageStore"
 
 export {
@@ -658,6 +658,23 @@ export async function preLoadChat(characterIndex:number, chatIndex:number){
         }
     }
 
+}
+
+/**
+ * Returns the chat with its cold storage data loaded, for exporting, without modifying the database.
+ * Returns the chat as is if it is not in cold storage, or null if its cold storage data could not be read.
+ */
+export async function loadColdChatForExport<T extends Chat>(chat:T): Promise<T|null>{
+    const coldDataKey = getColdChatKey(chat)
+    if(coldDataKey === null){
+        return chat
+    }
+    try {
+        return mergeColdChatData(chat, await getColdStorageItem(coldDataKey))
+    } catch (error) {
+        console.error(`Failed to load cold storage data for export, key: ${coldDataKey}`, error)
+        return null
+    }
 }
 
 export const pluginStorage = new PluginStorageStore(

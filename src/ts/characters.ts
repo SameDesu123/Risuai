@@ -13,7 +13,7 @@ import { translateHTML } from "./translator/translator";
 import { doingChat } from "./process/index.svelte";
 import { importCharacter } from "./characterCards";
 import { PngChunk } from "./pngChunk";
-import { getColdStorageItem } from "./process/coldstorage.svelte";
+import { getColdStorageItem, loadColdChatForExport } from "./process/coldstorage.svelte";
 
 export function createNewCharacter() {
     DBState.db.characters.push(createBlankChar())
@@ -197,8 +197,13 @@ export async function exportChat(page:number){
         const anonymous = (mode === '2' || mode === '3') ? ((await alertSelect([language.includePersonaName, language.hidePersonaName])) === '1') : false
         const selectedID = get(selectedCharID)
         const db = DBState.db
-        const chat = db.characters[selectedID].chats[page]
         const char = db.characters[selectedID]
+        //the chat may still be in cold storage if it was not opened since it was frozen
+        const chat = await loadColdChatForExport(char.chats[page])
+        if(!chat){
+            alertError(language.errors.coldStorageExportFailed(char.chats[page].name || `Chat ${page + 1}`))
+            return
+        }
         const date = new Date().toJSON();
         const htmlChatParse = async (v:string) => {
             v = parseMarkdownSafe(v)
@@ -510,7 +515,16 @@ export async function exportAllChats() {
         const db = getDatabase()
         const char = db.characters[selectedID]
         const date = new Date().toISOString().replace(/[:.]/g, "-")
-        const allChats = char.chats
+        const allChats = []
+        for(let i=0;i<char.chats.length;i++){
+            //chats not opened since they were frozen are still in cold storage
+            const chat = await loadColdChatForExport(char.chats[i])
+            if(!chat){
+                alertError(language.errors.coldStorageExportFailed(char.chats[i].name || `Chat ${i + 1}`))
+                return
+            }
+            allChats.push(chat)
+        }
         const allFolders = char.chatFolders
         const stringl = Buffer.from(JSON.stringify({
             type: 'risuAllChats',

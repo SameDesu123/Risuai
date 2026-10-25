@@ -1,5 +1,5 @@
 import { safeStructuredClone } from "../polyfill"
-import type { Database, character, groupChat } from "../storage/database.svelte"
+import type { Chat, Database, character, groupChat } from "../storage/database.svelte"
 
 export const coldStorageHeader = '\uEF01COLDSTORAGE\uEF01'
 
@@ -160,4 +160,35 @@ export function getColdStorageAffectedCharacters(
         characterNames,
         unresolvedKeys: Array.from(targetKeys).filter((key) => !resolvedKeys.has(key)),
     }
+}
+
+export function getColdChatKey(chat: Pick<Chat, 'message'> | null | undefined): string | null {
+    const data = chat?.message?.[0]?.data
+    if (typeof data !== 'string' || !data.startsWith(coldStorageHeader)) {
+        return null
+    }
+    return data.slice(coldStorageHeader.length)
+}
+
+/**
+ * Returns a copy of a cold chat with its cold storage payload merged in, without touching the original.
+ * Handles the same payload shapes as preLoadChat (legacy message array, or the object form).
+ * Returns null if the payload is missing or invalid.
+ */
+export function mergeColdChatData<T extends Chat>(chat: T, coldData: unknown): T | null {
+    if (Array.isArray(coldData)) {
+        return { ...chat, message: coldData }
+    }
+    if (coldData && typeof coldData === 'object' && Array.isArray((coldData as any).message)) {
+        const data = coldData as Pick<Chat, 'message' | 'hypaV2Data' | 'hypaV3Data' | 'scriptstate' | 'localLore'>
+        return {
+            ...chat,
+            message: data.message,
+            hypaV2Data: data.hypaV2Data,
+            hypaV3Data: data.hypaV3Data,
+            scriptstate: data.scriptstate,
+            localLore: data.localLore,
+        }
+    }
+    return null
 }

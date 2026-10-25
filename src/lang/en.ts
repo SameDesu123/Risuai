@@ -37,6 +37,7 @@ export const languageEnglish = {
             `Cold storage data for ${characterNames || "unknown characters"} is missing or invalid.${unresolvedCount > 0 ? ` ${unresolvedCount} item(s) could not be linked to a character.` : ""}\n\nIf you continue, this backup will be missing ${unavailableCount} cold storage item(s), and the affected character or chat data may not be recoverable from it.\n\nCreate the incomplete backup anyway?`,
         coldStorageIncompleteRestoreConfirm: (characterNames: string, unavailableCount: number, unresolvedCount: number) =>
             `Cold storage data for ${characterNames || "unknown characters"} could not be restored.${unresolvedCount > 0 ? ` ${unresolvedCount} item(s) could not be linked to a character.` : ""}\n\nIf you continue, ${unavailableCount} cold storage item(s) will remain unavailable, and the affected character or chat data may be permanently lost.\n\nContinue with the incomplete restore anyway?`,
+        coldStorageExportFailed: (chatName: string) => `Cold storage data for chat "${chatName}" could not be loaded, so it was not exported.`,
     },
     showHelp: "Show Help",
     help: {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
     coldStorageHeader,
+    getColdChatKey,
     getColdStorageAffectedCharacters,
     getColdStorageBackupKey,
     getColdStorageBackupName,
@@ -8,6 +9,7 @@ import {
     isValidColdStorageItem,
     listColdDataKeysFromDb,
     listPluginStorageColdKeys,
+    mergeColdChatData,
     replaceColdStoragePayloadResources,
 } from './coldstorageData'
 
@@ -178,5 +180,56 @@ describe('coldstorageData', () => {
         expect(replaceColdStoragePayloadResources(payload, {
             'assets/local.png': 'assets/account.png',
         })).toBe(payload)
+    })
+
+    it('reads the cold storage key of a frozen chat only', () => {
+        const key = '44444444-4444-4444-4444-444444444444'
+        expect(getColdChatKey({ message: [{ role: 'char', data: coldStorageHeader + key }] })).toBe(key)
+        expect(getColdChatKey({ message: [{ role: 'char', data: 'hello' }] })).toBeNull()
+        expect(getColdChatKey({ message: [] })).toBeNull()
+        expect(getColdChatKey(null)).toBeNull()
+    })
+
+    it('merges both cold chat payload shapes into a copy without touching the original', () => {
+        const chat = {
+            name: 'Chat 1',
+            note: 'note',
+            message: [{ role: 'char' as const, data: coldStorageHeader + 'key' }],
+            localLore: [],
+            scriptstate: {},
+        }
+        const message = [{ role: 'user' as const, data: 'hi' }, { role: 'char' as const, data: 'hello' }]
+
+        const legacy = mergeColdChatData(chat, message)
+        expect(legacy).toEqual({ ...chat, message })
+        expect(legacy).not.toBe(chat)
+
+        const localLore = [{ key: 'k', content: 'c' }] as any
+        const merged = mergeColdChatData(chat, {
+            message,
+            hypaV2Data: { chunks: [], mainChunks: [], lastMainChunkID: 3 },
+            hypaV3Data: { summaries: [] },
+            scriptstate: { a: 1 },
+            localLore,
+        })
+        expect(merged).toEqual({
+            ...chat,
+            message,
+            hypaV2Data: { chunks: [], mainChunks: [], lastMainChunkID: 3 },
+            hypaV3Data: { summaries: [] },
+            scriptstate: { a: 1 },
+            localLore,
+        })
+
+        expect(chat.message[0].data).toBe(coldStorageHeader + 'key')
+        expect(chat.localLore).toEqual([])
+    })
+
+    it('rejects missing or invalid cold chat payloads', () => {
+        const chat = { name: '', note: '', message: [], localLore: [] }
+        expect(mergeColdChatData(chat, null)).toBeNull()
+        expect(mergeColdChatData(chat, undefined)).toBeNull()
+        expect(mergeColdChatData(chat, { character: {} })).toBeNull()
+        expect(mergeColdChatData(chat, 'text')).toBeNull()
     })
 })
