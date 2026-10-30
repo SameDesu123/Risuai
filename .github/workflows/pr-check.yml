@@ -54,3 +54,14 @@ jobs:
 
       - name: Run tests
         run: pnpm test
+
+      # Advisory only: a failure here shows as a warning but does not fail the check.
+      - name: Run contrast checks (optional)
+        id: contrast
+        continue-on-error: true
+        run: pnpm test:contrast
+
+      - name: Report contrast check failure
+        if: steps.contrast.outcome == 'failure'
+        run: |
+          echo "::warning title=Contrast checks failed::Built-in color presets have new contrast failures or stale baseline entries. See the 'Run contrast checks (optional)' step. Fix the colors or regenerate with UPDATE_CONTRAST_BASELINE=1 pnpm test:contrast."

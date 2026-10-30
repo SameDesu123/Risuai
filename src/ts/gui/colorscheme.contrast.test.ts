@@ -4,7 +4,7 @@
 // check fails that is not in the baseline, or when a baseline entry now passes
 // (remove it). To regenerate the baseline after intentional color changes:
 //
-//     UPDATE_CONTRAST_BASELINE=1 pnpm test src/ts/gui/colorscheme.contrast.test.ts
+//     UPDATE_CONTRAST_BASELINE=1 pnpm test:contrast
 //
 // Ratios in the baseline are rounded for readability only; pass/fail is always
 // decided on the raw ratio.
