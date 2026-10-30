@@ -18,7 +18,10 @@ export function addOpenRouterAttribution(headers: Record<string, string>): Recor
         headers['HTTP-Referer'] = 'https://risuai.xyz'
     }
     if (!names.has('x-title') && !names.has('x-openrouter-title')) {
-        headers['X-Title'] = 'RisuAI'
+        headers['X-OpenRouter-Title'] = 'Risuai'
+    }
+    if (!names.has('x-openrouter-categories')) {
+        headers['X-OpenRouter-Categories'] = 'roleplay,general-chat'
     }
     return headers
 }

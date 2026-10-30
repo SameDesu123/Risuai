@@ -22,14 +22,28 @@ describe('addOpenRouterAttribution', () => {
         expect(addOpenRouterAttribution({ Authorization: 'Bearer k' })).toEqual({
             Authorization: 'Bearer k',
             'HTTP-Referer': 'https://risuai.xyz',
-            'X-Title': 'RisuAI',
+            'X-OpenRouter-Title': 'Risuai',
+            'X-OpenRouter-Categories': 'roleplay,general-chat',
         })
     })
 
     it('keeps headers the caller already set, case-insensitively', () => {
-        expect(addOpenRouterAttribution({ 'http-referer': 'https://plugin.example', 'X-OpenRouter-Title': 'Plugin' })).toEqual({
+        expect(addOpenRouterAttribution({
             'http-referer': 'https://plugin.example',
             'X-OpenRouter-Title': 'Plugin',
+            'x-openrouter-categories': 'programming-app',
+        })).toEqual({
+            'http-referer': 'https://plugin.example',
+            'X-OpenRouter-Title': 'Plugin',
+            'x-openrouter-categories': 'programming-app',
+        })
+    })
+
+    it('treats the legacy X-Title header as a title override', () => {
+        expect(addOpenRouterAttribution({ 'X-Title': 'Plugin' })).toEqual({
+            'X-Title': 'Plugin',
+            'HTTP-Referer': 'https://risuai.xyz',
+            'X-OpenRouter-Categories': 'roleplay,general-chat',
         })
     })
 })
@@ -41,14 +55,14 @@ describe('withOpenRouterAttribution', () => {
         const result = withOpenRouterAttribution('https://openrouter.ai/api/v1/chat/completions', arg)
         expect(result).toEqual({
             method: 'POST',
-            headers: { Authorization: 'Bearer k', 'HTTP-Referer': 'https://risuai.xyz', 'X-Title': 'RisuAI' },
+            headers: { Authorization: 'Bearer k', 'HTTP-Referer': 'https://risuai.xyz', 'X-OpenRouter-Title': 'Risuai', 'X-OpenRouter-Categories': 'roleplay,general-chat' },
         })
         expect(headers).toEqual({ Authorization: 'Bearer k' })
     })
 
     it('handles missing options', () => {
         expect(withOpenRouterAttribution('https://openrouter.ai/api/v1/models')).toEqual({
-            headers: { 'HTTP-Referer': 'https://risuai.xyz', 'X-Title': 'RisuAI' },
+            headers: { 'HTTP-Referer': 'https://risuai.xyz', 'X-OpenRouter-Title': 'Risuai', 'X-OpenRouter-Categories': 'roleplay,general-chat' },
         })
     })
 
