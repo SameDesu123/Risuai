@@ -34,9 +34,21 @@ export function withOpenRouterAttribution<T extends { headers?: unknown }>(url: 
     if (!isOpenRouterUrl(url)) {
         return arg
     }
-    const headers = arg?.headers ?? {}
-    if (typeof headers !== 'object' || Array.isArray(headers) || (typeof Headers !== 'undefined' && headers instanceof Headers)) {
+    const rawHeaders = arg?.headers ?? {}
+    if (typeof rawHeaders !== 'object') {
         return arg
     }
-    return { ...arg, headers: addOpenRouterAttribution({ ...(headers as Record<string, string>) }) } as T
+    let headers: Record<string, string>
+    if (Array.isArray(rawHeaders) || (typeof Headers !== 'undefined' && rawHeaders instanceof Headers)) {
+        // Header lists and Headers objects become a plain object. Headers may lowercase
+        // the names, which addOpenRouterAttribution already matches case-insensitively.
+        try {
+            headers = Object.fromEntries(new Headers(rawHeaders as HeadersInit))
+        } catch {
+            return arg
+        }
+    } else {
+        headers = { ...(rawHeaders as Record<string, string>) }
+    }
+    return { ...arg, headers: addOpenRouterAttribution(headers) } as T
 }

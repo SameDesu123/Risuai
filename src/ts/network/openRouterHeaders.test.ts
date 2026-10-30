@@ -72,6 +72,34 @@ describe('withOpenRouterAttribution', () => {
         expect(result?.headers).toMatchObject({ Authorization: secret })
     })
 
+    // Headers may lowercase names depending on the runtime, so compare them case-insensitively.
+    const lowercaseNames = (headers: unknown) => Object.fromEntries(Object.entries(headers as Record<string, string>).map(([name, value]) => [name.toLowerCase(), value]))
+
+    it('adds attribution to header lists and Headers objects', () => {
+        const expected = {
+            authorization: 'Bearer k',
+            'http-referer': 'https://risuai.xyz',
+            'x-openrouter-title': 'Risuai',
+            'x-openrouter-categories': 'roleplay,general-chat',
+        }
+        expect(lowercaseNames(withOpenRouterAttribution('https://openrouter.ai/api/v1/models', { headers: [['Authorization', 'Bearer k']] })?.headers)).toEqual(expected)
+        expect(lowercaseNames(withOpenRouterAttribution('https://openrouter.ai/api/v1/models', { headers: new Headers({ Authorization: 'Bearer k' }) })?.headers)).toEqual(expected)
+    })
+
+    it('keeps headers the caller set in a header list', () => {
+        const result = withOpenRouterAttribution('https://openrouter.ai/api/v1/models', { headers: [['X-Title', 'Plugin'], ['HTTP-Referer', 'https://plugin.example']] })
+        expect(lowercaseNames(result?.headers)).toEqual({
+            'x-title': 'Plugin',
+            'http-referer': 'https://plugin.example',
+            'x-openrouter-categories': 'roleplay,general-chat',
+        })
+    })
+
+    it('passes invalid header lists through untouched', () => {
+        const arg = { headers: [['only-a-name']] }
+        expect(withOpenRouterAttribution('https://openrouter.ai/api/v1/models', arg)).toBe(arg)
+    })
+
     it('passes other requests through untouched', () => {
         const arg = { headers: { Authorization: 'Bearer k' } }
         expect(withOpenRouterAttribution('https://api.openai.com/v1/chat/completions', arg)).toBe(arg)
