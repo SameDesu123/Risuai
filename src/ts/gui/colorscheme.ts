@@ -16,8 +16,14 @@ export interface ColorScheme{
     textcolor2: string;
     darkBorderc: string;
     darkbutton: string;
+    actionbg?: string;
+    onaction?: string;
+    controlborder?: string;
+    focusring?: string;
     type:'light'|'dark';
 }
+
+const semanticColorKeys = ['actionbg', 'onaction', 'controlborder', 'focusring'] as const
 
 
 export const defaultColorScheme: ColorScheme = {
@@ -281,6 +287,15 @@ export function updateColorScheme(){
         document.documentElement.style.setProperty("--risu-theme-textcolor2", colorScheme.textcolor2);
         document.documentElement.style.setProperty("--risu-theme-darkborderc", colorScheme.darkBorderc);
         document.documentElement.style.setProperty("--risu-theme-darkbutton", colorScheme.darkbutton);
+        //semantic tokens fall back to their base colors in styles.css when unset
+        for(const key of semanticColorKeys){
+            if(typeof colorScheme[key] === 'string'){
+                document.documentElement.style.setProperty(`--risu-theme-${key}`, colorScheme[key]);
+            }
+            else{
+                document.documentElement.style.removeProperty(`--risu-theme-${key}`);
+            }
+        }
         ColorSchemeTypeStore.set(colorScheme.type)
     } catch (error) {}
 }
@@ -317,6 +332,7 @@ export async function importColorScheme(){
             typeof colorScheme.textcolor2 !== 'string' ||
             typeof colorScheme.darkBorderc !== 'string' ||
             typeof colorScheme.darkbutton !== 'string' ||
+            semanticColorKeys.some((key) => colorScheme[key] != null && typeof colorScheme[key] !== 'string') ||
             typeof colorScheme.type !== 'string'
         ){
             alertError('Invalid color scheme')

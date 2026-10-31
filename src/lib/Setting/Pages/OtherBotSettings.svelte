@@ -432,11 +432,11 @@
                     }
                 }}>
                     {#if !DBState.db.NAIImgConfig.vibe_data || !DBState.db.NAIImgConfig.vibe_data.thumbnail}
-                        <div class="rounded-md h-20 w-20 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500 flex items-center justify-center">
+                        <div class="rounded-md h-20 w-20 shadow-lg bg-actionbg cursor-pointer hover:text-green-500 flex items-center justify-center">
                             <span class="text-sm">Upload<br />Vibe</span>
                         </div>
                     {:else}
-                        <img src={DBState.db.NAIImgConfig.vibe_data.thumbnail} alt="Vibe Preview" class="rounded-md h-40 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500" />
+                        <img src={DBState.db.NAIImgConfig.vibe_data.thumbnail} alt="Vibe Preview" class="rounded-md h-40 shadow-lg bg-actionbg cursor-pointer hover:text-green-500" />
                     {/if}
                 </button>
 
@@ -520,16 +520,16 @@
                         console.log('Character image set:', DBState.db.NAIImgConfig.character_image)
                     }}>
                         {#if !DBState.db.NAIImgConfig.character_image || DBState.db.NAIImgConfig.character_image === ''}
-                            <div class="rounded-md h-20 w-20 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500 flex items-center justify-center">
+                            <div class="rounded-md h-20 w-20 shadow-lg bg-actionbg cursor-pointer hover:text-green-500 flex items-center justify-center">
                                 <span class="text-sm">Upload<br />Image</span>
                             </div>
                         {:else}
                             {#await getCharImage(DBState.db.NAIImgConfig.character_image, 'plain')}
-                                <div class="rounded-md h-20 w-20 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500 flex items-center justify-center">
+                                <div class="rounded-md h-20 w-20 shadow-lg bg-actionbg cursor-pointer hover:text-green-500 flex items-center justify-center">
                                     <span class="text-sm">Uploading<br />Image..</span>
                                 </div>
                             {:then im}
-                                <img src={im} class="rounded-md h-40 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500" alt="Base Preview"/>
+                                <img src={im} class="rounded-md h-40 shadow-lg bg-actionbg cursor-pointer hover:text-green-500" alt="Base Preview"/>
                             {/await}
                         {/if}
                     </button>
@@ -599,16 +599,16 @@
                         DBState.db.NAIImgConfig.image = saveId
                     }}>
                         {#if !DBState.db.NAIImgConfig.image || DBState.db.NAIImgConfig.image === ''}
-                            <div class="rounded-md h-20 w-20 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500 flex items-center justify-center">
+                            <div class="rounded-md h-20 w-20 shadow-lg bg-actionbg cursor-pointer hover:text-green-500 flex items-center justify-center">
                                 <span class="text-sm">Upload<br />Image</span>
                             </div>
                         {:else}
                             {#await getCharImage(DBState.db.NAIImgConfig.image, 'plain')}
-                                <div class="rounded-md h-20 w-20 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500 flex items-center justify-center">
+                                <div class="rounded-md h-20 w-20 shadow-lg bg-actionbg cursor-pointer hover:text-green-500 flex items-center justify-center">
                                     <span class="text-sm">Uploading<br />Image..</span>
                                 </div>
                             {:then im}
-                                <img src={im} class="rounded-md h-40 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500" alt="Base Preview"/>
+                                <img src={im} class="rounded-md h-40 shadow-lg bg-actionbg cursor-pointer hover:text-green-500" alt="Base Preview"/>
                             {/await}
                         {/if}
                     </button>
@@ -820,7 +820,7 @@
 
             <span class="text-textcolor">Model</span>
             <button
-              class="px-3 py-2 bg-darkbutton rounded-md hover:bg-textcolor2 transition-colors disabled:opacity-50"
+              class="px-3 py-2 bg-darkbutton rounded-md hover:bg-actionbg transition-colors disabled:opacity-50"
               disabled={isWavespeedLoading}
               onclick={fetchWavespeedModels}
             >
@@ -902,16 +902,16 @@
                             console.log('Character image set:', DBState.db.wavespeedImage.reference_image)
                         }}>
                             {#if !DBState.db.wavespeedImage.reference_image || DBState.db.wavespeedImage.reference_image === ''}
-                                <div class="rounded-md h-20 w-20 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500 flex items-center justify-center">
+                                <div class="rounded-md h-20 w-20 shadow-lg bg-actionbg cursor-pointer hover:text-green-500 flex items-center justify-center">
                                     <span class="text-sm">Upload<br />Image</span>
                                 </div>
                             {:else}
                                 {#await getCharImage(DBState.db.wavespeedImage.reference_image, 'plain')}
-                                    <div class="rounded-md h-20 w-20 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500 flex items-center justify-center">
+                                    <div class="rounded-md h-20 w-20 shadow-lg bg-actionbg cursor-pointer hover:text-green-500 flex items-center justify-center">
                                         <span class="text-sm">Uploading<br />Image..</span>
                                     </div>
                                 {:then im}
-                                    <img src={im} class="rounded-md h-40 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500" alt="Base Preview"/>
+                                    <img src={im} class="rounded-md h-40 shadow-lg bg-actionbg cursor-pointer hover:text-green-500" alt="Base Preview"/>
                                 {/await}
                             {/if}
                         </button>
@@ -1056,7 +1056,7 @@
         {:else if DBState.db.hypaV3}
             <span class="max-w-full mb-6 text-sm text-wrap wrap-break-word text-textcolor2">{language.hypaV3Settings.descriptionLabel}</span>
             <span class="text-textcolor">Preset</span>
-            <select class={"risu-select border border-darkborderc focus:border-borderc rounded-md shadow-xs text-textcolor bg-transparent focus:ring-borderc focus:ring-2 focus:outline-hidden transition-colors duration-200 text-md px-4 py-2 mb-1"}
+            <select class={"risu-select border border-controlborder focus:border-focusring rounded-md shadow-xs text-textcolor bg-transparent focus:ring-focusring focus:ring-2 focus:outline-hidden transition-colors duration-200 text-md px-4 py-2 mb-1"}
                 bind:value={DBState.db.hypaV3PresetId}
             >
                 {#each DBState.db.hypaV3Presets as preset, i}

@@ -159,14 +159,14 @@
 
 <div class="ml-4 flex flex-wrap">
     {#if progress}
-        <div class="flex bg-textcolor2 p-2 rounded-lg items-center">
+        <div class="flex bg-actionbg p-2 rounded-lg items-center">
             <div class="loadmove mx-2"></div>
             <div>{language.creatingSuggestions}</div>
         </div>        
     {:else if !$doingChat}
         {#if DBState.db.translator !== ''}
             <div class="flex mr-2 mb-2">
-                <button class={"bg-textcolor2 hover:bg-darkbutton font-bold py-2 px-4 rounded-sm " + (toggleTranslate ? 'text-green-500' : 'text-textcolor')}
+                <button class={"bg-actionbg hover:bg-darkbutton font-bold py-2 px-4 rounded-sm " + (toggleTranslate ? 'text-green-500' : 'text-onaction')}
                     onclick={() => {
                         toggleTranslate = !toggleTranslate
                     }}
@@ -178,7 +178,7 @@
         
 
         <div class="flex mr-2 mb-2">
-            <button class="bg-textcolor2 hover:bg-darkbutton font-bold py-2 px-4 rounded-sm text-textcolor"
+            <button class="bg-actionbg hover:bg-darkbutton font-bold py-2 px-4 rounded-sm text-onaction"
                 onclick={() => {
                     alertConfirm(language.askReRollAutoSuggestions).then((result) => {
                         if(result) {
@@ -194,7 +194,7 @@
         </div>
         {#each suggestMessages??[] as suggest, i}
             <div class="flex mr-2 mb-2">
-                <button class="bg-textcolor2 hover:bg-darkbutton text-textcolor font-bold py-2 px-4 rounded-sm" onclick={() => {
+                <button class="bg-actionbg hover:bg-darkbutton text-onaction font-bold py-2 px-4 rounded-sm" onclick={() => {
                     suggestMessages = []
                     messageInput(suggest)
                     send()
@@ -203,7 +203,7 @@
                     {@html md}
                 {/await}
                 </button>
-                <button class="bg-textcolor2 hover:bg-darkbutton text-textcolor font-bold py-2 px-4 rounded-sm ml-1" onclick={() => {
+                <button class="bg-actionbg hover:bg-darkbutton text-onaction font-bold py-2 px-4 rounded-sm ml-1" onclick={() => {
                     messageInput(suggest)
                 }}>
                     <CopyIcon/>

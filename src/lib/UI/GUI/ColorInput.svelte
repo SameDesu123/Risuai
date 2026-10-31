@@ -35,7 +35,7 @@
 <style>
     .cl{
         --cp-bg-color: var(--risu-theme-bgcolor);
-        --cp-border-color: var(--risu-theme-darkborderc);
+        --cp-border-color: var(--risu-theme-controlborder);
         --cp-text-color: var(--risu-theme-textcolor);
         --cp-input-color: #555;
         --cp-button-hover-color: #777;

@@ -21,7 +21,7 @@
 </script>
 
 <div class="flex items-center justify-center" class:mb-4={marginBottom}>
-    <div class="flex justify-center items-center border-darkborderc rounded-l-md rounded-t-md rounded-b-md border h-full">
+    <div class="flex justify-center items-center border-controlborder rounded-l-md rounded-t-md rounded-b-md border h-full">
         <CheckInput hiddenName check={!(value === null || value === undefined)} onChange={() => {
             if(value === null || value === undefined){
                 if(numberMode){
@@ -47,8 +47,8 @@
     {:else if typeof(value) === 'number'}
         <NumberInput bind:value={value}  className="flex-1"/>
     {:else if typeof(value) === 'boolean'}
-        <button class="px-2 py-2 border border-darkborderc flex-1" class:text-textcolor2={!value} onclick={valToggle}>True</button>
-        <button class="px-2 py-2 border border-darkborderc flex-1" class:text-textcolor2={value} onclick={valToggle}>False</button>
+        <button class="px-2 py-2 border border-controlborder flex-1" class:text-textcolor2={!value} onclick={valToggle}>True</button>
+        <button class="px-2 py-2 border border-controlborder flex-1" class:text-textcolor2={value} onclick={valToggle}>False</button>
     {:else}
         <TextInput value={"Using default"}  className="flex-1" disabled/>
     {/if}

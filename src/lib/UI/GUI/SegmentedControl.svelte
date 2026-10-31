@@ -103,7 +103,7 @@
         align-items: center;
         border-radius: 0.5rem;
         background-color: var(--risu-theme-darkbg);
-        border: 1px solid var(--risu-theme-darkborderc);
+        border: 1px solid var(--risu-theme-controlborder);
         padding: 4px;
         gap: 2px;
         user-select: none;
@@ -151,7 +151,7 @@
     }
 
     .segmented-btn:focus-visible {
-        outline: 2px solid var(--risu-theme-borderc);
+        outline: 2px solid var(--risu-theme-focusring);
         outline-offset: -2px;
     }
 </style>

@@ -32,7 +32,7 @@
     {#each colorSchemeList as scheme}
         <button
             type="button"
-            class="flex min-h-28 flex-col items-center justify-center gap-2 rounded-md border p-3 text-center transition-colors hover:bg-darkbutton focus:outline-hidden focus:ring-2 focus:ring-borderc"
+            class="flex min-h-28 flex-col items-center justify-center gap-2 rounded-md border p-3 text-center transition-colors hover:bg-darkbutton focus:outline-hidden focus:ring-2 focus:ring-focusring"
             class:border-borderc={DBState.db.colorSchemeName === scheme}
             class:border-darkborderc={DBState.db.colorSchemeName !== scheme}
             class:bg-darkbutton={DBState.db.colorSchemeName === scheme}
@@ -52,7 +52,7 @@
 
     <button
         type="button"
-        class="flex min-h-28 flex-col items-center justify-center gap-2 rounded-md border p-3 text-center transition-colors hover:bg-darkbutton focus:outline-hidden focus:ring-2 focus:ring-borderc"
+        class="flex min-h-28 flex-col items-center justify-center gap-2 rounded-md border p-3 text-center transition-colors hover:bg-darkbutton focus:outline-hidden focus:ring-2 focus:ring-focusring"
         class:border-borderc={DBState.db.colorSchemeName === 'custom'}
         class:border-darkborderc={DBState.db.colorSchemeName !== 'custom'}
         class:bg-darkbutton={DBState.db.colorSchemeName === 'custom'}

@@ -12,6 +12,10 @@
   --color-textcolor2: var(--risu-theme-textcolor2);
   --color-darkborderc: var(--risu-theme-darkborderc);
   --color-darkbutton: var(--risu-theme-darkbutton);
+  --color-actionbg: var(--risu-theme-actionbg);
+  --color-onaction: var(--risu-theme-onaction);
+  --color-controlborder: var(--risu-theme-controlborder);
+  --color-focusring: var(--risu-theme-focusring);
 
   --color-primary-50: var(--risu-theme-primary-50);
   --color-primary-100: var(--risu-theme-primary-100);
@@ -177,6 +181,11 @@ body {
   --risu-theme-textcolor2: #64748b;
   --risu-theme-darkborderc: #4b5563;
   --risu-theme-darkbutton: #374151;
+  /* Semantic tokens: fall back to the base colors unless a scheme overrides them */
+  --risu-theme-actionbg: var(--risu-theme-textcolor2);
+  --risu-theme-onaction: var(--risu-theme-textcolor);
+  --risu-theme-controlborder: var(--risu-theme-darkborderc);
+  --risu-theme-focusring: var(--risu-theme-borderc);
   --risu-height-size: 100%;
   --risu-font-family: Arial, sans-serif, serif;
 
