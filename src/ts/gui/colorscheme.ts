@@ -18,12 +18,13 @@ export interface ColorScheme{
     darkbutton: string;
     actionbg?: string;
     onaction?: string;
+    placeholderbg?: string;
     controlborder?: string;
     focusring?: string;
     type:'light'|'dark';
 }
 
-const semanticColorKeys = ['actionbg', 'onaction', 'controlborder', 'focusring'] as const
+const semanticColorKeys = ['actionbg', 'onaction', 'placeholderbg', 'controlborder', 'focusring'] as const
 
 
 export const defaultColorScheme: ColorScheme = {

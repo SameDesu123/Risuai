@@ -14,6 +14,7 @@
   --color-darkbutton: var(--risu-theme-darkbutton);
   --color-actionbg: var(--risu-theme-actionbg);
   --color-onaction: var(--risu-theme-onaction);
+  --color-placeholderbg: var(--risu-theme-placeholderbg);
   --color-controlborder: var(--risu-theme-controlborder);
   --color-focusring: var(--risu-theme-focusring);
 
@@ -184,6 +185,7 @@ body {
   /* Semantic tokens: fall back to the base colors unless a scheme overrides them */
   --risu-theme-actionbg: var(--risu-theme-textcolor2);
   --risu-theme-onaction: var(--risu-theme-textcolor);
+  --risu-theme-placeholderbg: var(--risu-theme-textcolor2);
   --risu-theme-controlborder: var(--risu-theme-darkborderc);
   --risu-theme-focusring: var(--risu-theme-borderc);
   --risu-height-size: 100%;

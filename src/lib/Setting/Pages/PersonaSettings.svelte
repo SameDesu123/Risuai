@@ -74,12 +74,12 @@
             changeUserPersona(i)
         }}>
             {#if persona.icon === ''}
-                <div class="rounded-md h-20 w-20 shadow-lg bg-actionbg cursor-pointer hover:text-green-500" class:ring-3={i === DBState.db.selectedPersona}></div>
+                <div class="rounded-md h-20 w-20 shadow-lg bg-placeholderbg cursor-pointer hover:text-green-500" class:ring-3={i === DBState.db.selectedPersona}></div>
             {:else}
                 {#await getCharImage(persona.icon, 'css')}
-                    <div class="rounded-md h-20 w-20 shadow-lg bg-actionbg cursor-pointer hover:text-green-500" class:ring-3={i === DBState.db.selectedPersona}></div>
+                    <div class="rounded-md h-20 w-20 shadow-lg bg-placeholderbg cursor-pointer hover:text-green-500" class:ring-3={i === DBState.db.selectedPersona}></div>
                 {:then im} 
-                    <div class="rounded-md h-20 w-20 shadow-lg bg-actionbg cursor-pointer hover:text-green-500" style={im} class:ring-3={i === DBState.db.selectedPersona}></div>                
+                    <div class="rounded-md h-20 w-20 shadow-lg bg-placeholderbg cursor-pointer hover:text-green-500" style={im} class:ring-3={i === DBState.db.selectedPersona}></div>                
                 {/await}
             {/if}
         </button>
@@ -119,12 +119,12 @@
     <div class="flex flex-col mt-4 mr-4">
         <button onclick={() => {selectUserImg()}}>
             {#if DBState.db.userIcon === ''}
-                <div class="rounded-md h-28 w-28 shadow-lg bg-actionbg cursor-pointer hover:text-green-500"></div>
+                <div class="rounded-md h-28 w-28 shadow-lg bg-placeholderbg cursor-pointer hover:text-green-500"></div>
             {:else}
                 {#await getCharImage(DBState.db.userIcon, DBState.db.personas[DBState.db.selectedPersona].largePortrait ? 'lgcss' : 'css')}
-                    <div class="rounded-md h-28 w-28 shadow-lg bg-actionbg cursor-pointer hover:text-green-500"></div>
+                    <div class="rounded-md h-28 w-28 shadow-lg bg-placeholderbg cursor-pointer hover:text-green-500"></div>
                 {:then im} 
-                    <div class="rounded-md h-28 w-28 shadow-lg bg-actionbg cursor-pointer hover:text-green-500" style={im}></div>                
+                    <div class="rounded-md h-28 w-28 shadow-lg bg-placeholderbg cursor-pointer hover:text-green-500" style={im}></div>                
                 {/await}
             {/if}
         </button>
