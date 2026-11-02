@@ -250,7 +250,7 @@
                     {/if}
                     <p class="confirm-message">{confirmMessage}</p>
                 </div>
-            {:else if $alertStore.type !== 'select' && $alertStore.type !== 'requestdata' && $alertStore.type !== 'addchar' && $alertStore.type !== 'hypaV2' && $alertStore.type !== 'chatOptions'}
+            {:else if $alertStore.type !== 'select' && $alertStore.type !== 'requestdata' && $alertStore.type !== 'addchar' && $alertStore.type !== 'hypaV2' && $alertStore.type !== 'chatOptions' && $alertStore.type !== 'backupSelect'}
                 <span class="text-gray-300 whitespace-pre-wrap">{$alertStore.msg}</span>
                 {#if $alertStore.submsg && $alertStore.type !== 'progress'}
                     <span class="text-gray-500 text-sm">{$alertStore.submsg}</span>
@@ -707,6 +707,44 @@
                         </button>
                     {/if}
                     <button class="border-darkborderc border py-2 px-8 flex rounded-md hover:ring-2 items-center mt-2" onclick={() => {
+                        alertStore.set({
+                            type: 'none',
+                            msg: 'cancel'
+                        })
+                    }}>
+                        <div class="flex flex-col justify-start items-start">
+                            <span>{language.cancel}</span>
+                        </div>
+                    </button>
+                </div>
+            {:else if $alertStore.type === 'backupSelect'}
+                {@const backupOptions = [
+                    { mode: 'full', name: language.localBackupFull, desc: language.localBackupFullDesc },
+                    { mode: 'partial', name: language.localBackupPartial, desc: language.localBackupPartialDesc },
+                    { mode: 'settings', name: language.localBackupSettings, desc: language.localBackupSettingsDesc },
+                ]}
+                <div class="w-2xl flex flex-col max-w-full">
+                    <h1 class="text-xl mb-2 font-bold">
+                        {language.saveBackupLocal}
+                    </h1>
+                    <span class="text-textcolor2 text-sm mb-2">{language.localBackupSelectDesc}</span>
+                    {#each backupOptions as option}
+                        <button class="border-darkborderc border py-2 px-4 md:px-8 flex rounded-md hover:ring-2 items-center mt-2 text-left" onclick={() => {
+                            alertStore.set({
+                                type: 'none',
+                                msg: option.mode
+                            })
+                        }}>
+                            <div class="flex flex-col justify-start items-start flex-1 min-w-0">
+                                <span>{option.name}</span>
+                                <span class="text-textcolor2 text-sm">{option.desc}</span>
+                            </div>
+                            <div class="ml-4 shrink-0 flex justify-end">
+                                <ChevronRightIcon />
+                            </div>
+                        </button>
+                    {/each}
+                    <button class="border-darkborderc border py-2 px-4 md:px-8 flex rounded-md hover:ring-2 items-center mt-2" onclick={() => {
                         alertStore.set({
                             type: 'none',
                             msg: 'cancel'

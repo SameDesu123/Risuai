@@ -5,12 +5,12 @@
     
     import { DBState } from 'src/ts/stores.svelte';
     import Check from "src/lib/UI/GUI/CheckInput.svelte";
-    import { alertConfirm} from "src/ts/alert";
+    import { alertConfirm, alertLocalBackupSelect } from "src/ts/alert";
     import { forageStorage, loadInternalBackup } from "src/ts/globalApi.svelte";
     import { isTauri, isNodeServer } from "src/ts/platform"
     import { unMigrationAccount } from "src/ts/storage/accountStorage";
     import { checkDriver } from "src/ts/drive/drive";
-    import { LoadLocalBackup, SaveLocalBackup, SavePartialLocalBackup } from "src/ts/drive/backuplocal";
+    import { LoadLocalBackup, SaveLocalBackup } from "src/ts/drive/backuplocal";
     import Button from "src/lib/UI/GUI/Button.svelte";
     import { exportAsDataset } from "src/ts/storage/exportAsDataset";
     import { loginToSionyw, testSionywLogin } from "src/ts/sionyw";
@@ -46,20 +46,12 @@
 
 <Button
     onclick={async () => {
-        if(await alertConfirm(language.backupConfirm)){
-            SaveLocalBackup()
+        const mode = await alertLocalBackupSelect()
+        if(mode){
+            SaveLocalBackup(mode)
         }
     }} className="mt-2">
     {language.saveBackupLocal}
-</Button>
-
-<Button
-    onclick={async () => {
-        if(await alertConfirm(language.backupConfirm)){
-            SavePartialLocalBackup()
-        }
-    }} className="mt-2">
-    {language.savePartialLocalBackup}
 </Button>
 
 <Button

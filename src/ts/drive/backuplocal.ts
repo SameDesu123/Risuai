@@ -4,8 +4,8 @@ import { alertError, alertNormal, alertStore, alertWait, alertMd, alertConfirm }
 import { LocalWriter, forageStorage, requiresFullEncoderReload } from "../globalApi.svelte";
 import { isTauri } from "src/ts/platform"
 import { decodeRisuSave, encodeRisuSave } from "../storage/risuSave";
-import { saveKV } from "../storage/saveKV";
-import { getDatabase, setDatabaseLite } from "../storage/database.svelte";
+import { saveKV, saveKVSourceFromData } from "../storage/saveKV";
+import { getDatabase, setDatabaseLite, type Database } from "../storage/database.svelte";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { decryptBuffer, encryptBuffer, sleep } from "../util";
 import { hubURL } from "../characterCards";
@@ -13,6 +13,7 @@ import { language } from "src/lang";
 import { collectColdStorageBackupPayloads, confirmIncompleteColdStorageOperation, getColdStorageBackupKey, getColdStorageItem, isColdStorageBackupData, isValidColdStorageItem, listColdDataKeys, listPluginStorageColdKeys, pluginStorage, setColdStorageItem } from "../process/coldstorage.svelte";
 import { getPluginStorageIndexPointer } from "../process/coldstorageData";
 import { DBState } from "../stores.svelte";
+import { collectSettingsBackupAssets, localBackupDatabaseName, localBackupSettingsDatabaseName, mergeSettingsBackup, toSettingsBackupDatabase, type BackupAssetLabel, type LocalBackupMode } from "./backuplocalData";
 
 function getBasename(data:string){
     const baseNameRegex = /\\/g
@@ -21,7 +22,123 @@ function getBasename(data:string){
     return lasts
 }
 
-export async function SaveLocalBackup(){
+/**
+ * Saves a local backup of the given kind. Every kind is loaded back with LoadLocalBackup.
+ * @see LocalBackupMode
+ */
+export async function SaveLocalBackup(mode: LocalBackupMode = 'full'){
+    switch(mode){
+        case 'partial':
+            return await savePartialLocalBackup()
+        case 'settings':
+            return await saveSettingsLocalBackup()
+        default:
+            return await saveFullLocalBackup()
+    }
+}
+
+function describeSkippedAssets(missingAssets: string[], assetMap: Map<string, BackupAssetLabel>){
+    return missingAssets.map(key => {
+        const assetInfo = assetMap.get(key);
+        return assetInfo ? `'${assetInfo.assetName}' from ${assetInfo.charName}` : `'${key}'`;
+    }).join(', ');
+}
+
+/**
+ * Writes the assets listed in assetMap to the backup.
+ * @returns the assets that could not be read and were skipped
+ */
+async function writeReferencedAssets(writer: LocalWriter, assetMap: Map<string, BackupAssetLabel>, progressLabel: string){
+    const missingAssets: string[] = []
+    const assetKeys = Array.from(assetMap.keys())
+
+    for(let i=0;i<assetKeys.length;i++){
+        const key = assetKeys[i]
+        let message = `${progressLabel}... (${i + 1} / ${assetKeys.length})`
+        if (missingAssets.length > 0) {
+            message += `\n(Skipping... ${describeSkippedAssets(missingAssets, assetMap)})`;
+        }
+        alertWait(message)
+
+        let data: Uint8Array | undefined;
+        let fetchedFromServer = false;
+        try {
+            if(isTauri){
+                data = await readFile(key, {baseDir: BaseDirectory.AppData})
+            }
+            else{
+                if(forageStorage.isAccount && key.startsWith('assets/')){
+                    const cached = await localforage.getItem(key) as ArrayBuffer;
+                    if(cached) {
+                        data = new Uint8Array(cached);
+                    }
+                }
+                if (!data) {
+                    fetchedFromServer = forageStorage.isAccount
+                    data = await forageStorage.getItem(key) as unknown as Uint8Array
+                }
+            }
+        } catch (error) {
+            console.error(`Failed to read asset ${key} for backup:`, error)
+        }
+
+        if (data) {
+            await writer.writeBackup(key, data)
+        } else {
+            missingAssets.push(key)
+        }
+        if(fetchedFromServer){
+            await sleep(100)
+        }
+    }
+
+    return missingAssets
+}
+
+async function writeColdStoragePayloads(writer: LocalWriter, payloads: { backupName: string, encoded: Uint8Array }[], progressLabel: string){
+    for(let i=0;i<payloads.length;i++){
+        const payload = payloads[i]
+        alertWait(`${progressLabel}... (${i + 1} / ${payloads.length})`)
+        await writer.writeBackup(payload.backupName, payload.encoded)
+    }
+}
+
+/**
+ * Encodes the database for a backup. On risuai.xyz an encrypted database is returned
+ * (and the encryption metadata is written to the backup) when encrypt is set.
+ */
+async function encodeBackupDatabase(writer: LocalWriter, db: Database, encrypt: boolean){
+    let dbData = await encodeRisuSave(db, { compression: true, kv: saveKV })
+
+    if(encrypt && location.origin.endsWith('risuai.xyz')){
+        const time = Date.now()
+        const key = (await (await fetch(`https://sv.risuai.xyz/cryptokey?key=${time}`)).json()).key
+        const encrypted = await encryptBuffer(dbData, key)
+        await writer.writeBackup('encryption.risudat', new TextEncoder().encode(JSON.stringify({ time, type: 'account' })))
+        dbData = new Uint8Array(encrypted)
+    }
+
+    return dbData
+}
+
+function alertBackupResult(missingAssets: string[], assetMap: Map<string, BackupAssetLabel>, missingHeader: string){
+    if (missingAssets.length > 0) {
+        let message = `${missingHeader}\n\n`
+        for (const key of missingAssets) {
+            const assetInfo = assetMap.get(key)
+            if (assetInfo) {
+                message += `* **${assetInfo.assetName}** (from *${assetInfo.charName}*)  \n  *File: ${key}*\n`
+            } else {
+                message += `* **Unknown Asset**  \n  *File: ${key}*\n`
+            }
+        }
+        alertMd(message)
+    } else {
+        alertNormal('Success')
+    }
+}
+
+async function saveFullLocalBackup(){
     alertWait("Saving local backup...")
     const db = getDatabase()
     const coldStoragePayloads = await collectColdStorageBackupPayloads(db)
@@ -86,11 +203,7 @@ export async function SaveLocalBackup(){
             i += 1;
             let message = `Saving local Backup... (${i} / ${assets.length})`
             if (missingAssets.length > 0) {
-                const skippedItems = missingAssets.map(key => {
-                    const assetInfo = assetMap.get(key);
-                    return assetInfo ? `'${assetInfo.assetName}' from ${assetInfo.charName}` : `'${key}'`;
-                }).join(', ');
-                message += `\n(Skipping... ${skippedItems})`;
+                message += `\n(Skipping... ${describeSkippedAssets(missingAssets, assetMap)})`;
             }
             alertWait(message)
 
@@ -113,11 +226,7 @@ export async function SaveLocalBackup(){
             const key = keys[i]
             let message = `Saving local Backup... (${i + 1} / ${keys.length})`
             if (missingAssets.length > 0) {
-                const skippedItems = missingAssets.map(key => {
-                    const assetInfo = assetMap.get(key);
-                    return assetInfo ? `'${assetInfo.assetName}' from ${assetInfo.charName}` : `'${key}'`;
-                }).join(', ');
-                message += `\n(Skipping... ${skippedItems})`;
+                message += `\n(Skipping... ${describeSkippedAssets(missingAssets, assetMap)})`;
             }
             alertWait(message)
 
@@ -153,56 +262,30 @@ export async function SaveLocalBackup(){
         }
     }
 
-    for(let i=0;i<coldStoragePayloads.payloads.length;i++){
-        const payload = coldStoragePayloads.payloads[i]
-        let message = `Saving local Backup Cold data... (${i + 1} / ${coldStoragePayloads.payloads.length})`
-        alertWait(message)
-        await writer.writeBackup(payload.backupName, payload.encoded)
-    }
+    await writeColdStoragePayloads(writer, coldStoragePayloads.payloads, 'Saving local Backup Cold data')
 
     const dbWithoutAccount = { ...db, account: undefined }
-    let dbData = await encodeRisuSave(dbWithoutAccount, { compression: true, kv: saveKV })
+    const dbData = await encodeBackupDatabase(writer, dbWithoutAccount, true)
 
-    if(location.origin.endsWith('risuai.xyz')){
-        const time = Date.now()
-        const key = (await (await fetch(`https://sv.risuai.xyz/cryptokey?key=${time}`)).json()).key
-        const encrypted = await encryptBuffer(dbData, key)
-        await writer.writeBackup('encryption.risudat', new TextEncoder().encode(JSON.stringify({ time, type: 'account' })))
-        dbData = new Uint8Array(encrypted)
-    }
+    alertWait(`Saving local Backup... (Saving database)`)
 
-    alertWait(`Saving local Backup... (Saving database)`) 
-
-    await writer.writeBackup('database.risudat', dbData)
+    await writer.writeBackup(localBackupDatabaseName, dbData)
     await writer.close()
 
-    if (missingAssets.length > 0) {
-        let message = 'Backup Successful, but the following assets were missing and skipped:\n\n'
-        for (const key of missingAssets) {
-            const assetInfo = assetMap.get(key)
-            if (assetInfo) {
-                message += `* **${assetInfo.assetName}** (from *${assetInfo.charName}*)  \n  *File: ${key}*\n`
-            } else {
-                message += `* **Unknown Asset**  \n  *File: ${key}*\n`
-            }
-        }
-        alertMd(message)
-    } else {
-        alertNormal('Success')
-    }
+    alertBackupResult(missingAssets, assetMap, 'Backup Successful, but the following assets were missing and skipped:')
 }
 
 /**
  * Saves a partial local backup with only critical assets.
  * 
- * Differences from SaveLocalBackup:
+ * Differences from the full backup:
  * - Only includes profile images for characters/groups (excludes emotion images, additional assets, VITS files, CC assets)
  * - Additionally includes: persona icons, folder images, bot preset images
  * - Processes only assets in assetMap (selective) instead of all .png files in assets folder
  * - Faster and more efficient for quick backups
  * - Ideal for backing up core visual identity without bulk data
  */
-export async function SavePartialLocalBackup(){
+async function savePartialLocalBackup(){
     // First confirmation: Explain the difference from regular backup
     const firstConfirm = await alertConfirm(language.partialBackupFirstConfirm)
     
@@ -288,120 +371,68 @@ export async function SavePartialLocalBackup(){
         }
     }
     
-    const missingAssets: string[] = []
+    // Like before, only PNG assets are part of a partial backup
+    const pngAssetMap = new Map(Array.from(assetMap).filter(([key]) => key.endsWith('.png')))
+    const missingAssets = await writeReferencedAssets(writer, pngAssetMap, 'Saving partial local backup')
 
-    if(isTauri){
-        // readDir returns entries without 'assets/' prefix, unlike forageStorage.keys()
-        const assets = await readDir('assets', {baseDir: BaseDirectory.AppData})
-        let i = 0;
-        for(let asset of assets){
-            if(!asset.name){
-                continue
-            }
-
-            const keyWithPrefix = asset.name.startsWith('assets/') ? asset.name : `assets/${asset.name}`
-            if(!keyWithPrefix.endsWith('.png')){
-                continue
-            }
-            
-            // Only process if this asset is in our map (profile images only)
-            if(!assetMap.has(keyWithPrefix)){
-                continue
-            }
-            
-            i += 1;
-            let message = `Saving partial local backup... (${i} / ${assetMap.size})`
-            if (missingAssets.length > 0) {
-                const skippedItems = missingAssets.map(key => {
-                    const assetInfo = assetMap.get(key);
-                    return assetInfo ? `'${assetInfo.assetName}' from ${assetInfo.charName}` : `'${key}'`;
-                }).join(', ');
-                message += `\n(Skipping... ${skippedItems})`;
-            }
-            alertWait(message)
-
-            const data = await readFile(keyWithPrefix, {baseDir: BaseDirectory.AppData})
-            if (data) {
-                await writer.writeBackup(keyWithPrefix, data)
-            } else {
-                missingAssets.push(keyWithPrefix)
-            }
-        }
-    }
-    else{
-        const keys = await forageStorage.keys()
-        const assetKeys = Array.from(assetMap.keys())
-
-        for(let i=0;i<assetKeys.length;i++){
-            const key = assetKeys[i]
-            let message = `Saving partial local backup... (${i + 1} / ${assetKeys.length})`
-            if (missingAssets.length > 0) {
-                const skippedItems = missingAssets.map(key => {
-                    const assetInfo = assetMap.get(key);
-                    return assetInfo ? `'${assetInfo.assetName}' from ${assetInfo.charName}` : `'${key}'`;
-                }).join(', ');
-                message += `\n(Skipping... ${skippedItems})`;
-            }
-            alertWait(message)
-
-            if(!key || !key.endsWith('.png')){
-                continue
-            }
-            
-            let data: Uint8Array | undefined;
-            let isCached = false;
-            if(forageStorage.isAccount && key.startsWith('assets/')){
-                const cached = await localforage.getItem(key) as ArrayBuffer;
-                if(cached) {
-                    isCached = true;
-                    data = new Uint8Array(cached);
-                }
-            }
-            
-            if (!data) {
-                data = await forageStorage.getItem(key) as unknown as Uint8Array
-            }
-
-            if (data) {
-                await writer.writeBackup(key, data)
-            } else {
-                missingAssets.push(key)
-            }
-            if(forageStorage.isAccount && !isCached){
-                await sleep(100)
-            }
-        }
-    }
-
-    for(let i=0;i<coldStoragePayloads.payloads.length;i++){
-        const payload = coldStoragePayloads.payloads[i]
-        let message = `Saving partial local Backup Cold data... (${i + 1} / ${coldStoragePayloads.payloads.length})`
-        alertWait(message)
-        await writer.writeBackup(payload.backupName, payload.encoded)
-    }
+    await writeColdStoragePayloads(writer, coldStoragePayloads.payloads, 'Saving partial local Backup Cold data')
 
     const dbWithoutAccount = { ...db, account: undefined }
-    const dbData = await encodeRisuSave(dbWithoutAccount, { compression: true, kv: saveKV })
+    const dbData = await encodeBackupDatabase(writer, dbWithoutAccount, false)
 
     alertWait(`Saving partial local backup... (Saving database)`) 
 
-    await writer.writeBackup('database.risudat', dbData)
+    await writer.writeBackup(localBackupDatabaseName, dbData)
     await writer.close()
 
-    if (missingAssets.length > 0) {
-        let message = 'Partial backup successful, but the following profile images were missing and skipped:\n\n'
-        for (const key of missingAssets) {
-            const assetInfo = assetMap.get(key)
-            if (assetInfo) {
-                message += `* **${assetInfo.assetName}** (from *${assetInfo.charName}*)  \n  *File: ${key}*\n`
-            } else {
-                message += `* **Unknown Asset**  \n  *File: ${key}*\n`
-            }
-        }
-        alertMd(message)
-    } else {
-        alertNormal('Success')
+    alertBackupResult(missingAssets, pngAssetMap, 'Partial backup successful, but the following profile images were missing and skipped:')
+}
+
+/**
+ * Saves a backup of everything except characters (with their chats), the character order and the account:
+ * settings, prompts, presets, personas, modules (with their assets), plugins and plugin storage.
+ *
+ * Loading it keeps the current characters and replaces everything else (see mergeSettingsBackup).
+ * Its database is stored as localBackupSettingsDatabaseName, so older versions refuse to load it
+ * instead of replacing the database with one without characters.
+ */
+async function saveSettingsLocalBackup(){
+    alertWait("Saving settings backup...")
+    const db = getDatabase()
+
+    //collectColdStorageBackupPayloads only flushes plugin storage for the live database,
+    //and the database pointer has to refer to an index containing the latest plugin storage changes
+    await pluginStorage.flush().catch((error) => {
+        console.error('Failed to save plugin storage before backup:', error)
+    })
+    const settingsDb = toSettingsBackupDatabase(db)
+    //without characters, only plugin storage is collected from cold storage
+    const coldStoragePayloads = await collectColdStorageBackupPayloads(settingsDb)
+    const unavailableColdStorageKeys = [...coldStoragePayloads.missingKeys, ...coldStoragePayloads.invalidKeys]
+    if(!await confirmIncompleteColdStorageOperation(settingsDb, unavailableColdStorageKeys, 'backup')){
+        return
     }
+
+    const writer = new LocalWriter()
+    const r = await writer.init()
+    if(!r){
+        alertError('Failed')
+        return
+    }
+
+    const assetMap = collectSettingsBackupAssets(settingsDb)
+    const missingAssets = await writeReferencedAssets(writer, assetMap, 'Saving settings backup')
+
+    await writeColdStoragePayloads(writer, coldStoragePayloads.payloads, 'Saving settings backup Cold data')
+
+    const dbData = await encodeBackupDatabase(writer, settingsDb, true)
+
+    alertWait(`Saving settings backup... (Saving database)`)
+
+    await writer.writeBackup(localBackupSettingsDatabaseName, dbData)
+    await writer.close()
+
+    alertBackupResult(missingAssets, assetMap, 'Settings backup successful, but the following assets were missing and skipped:')
 }
 
 export function LoadLocalBackup(){
@@ -428,6 +459,8 @@ export function LoadLocalBackup(){
             let bytesRead = 0;
             let remainingBuffer = new Uint8Array();
             let pendingDatabase: Uint8Array | null = null;
+            //a settings backup is merged into the current database instead of replacing it
+            let isSettingsBackup = false;
             const restoredColdStorageKeys = new Set<string>();
             //items that don't look like character/chat data may be pluginStorage values,
             //which can only be identified once the database (written last) is decoded
@@ -483,8 +516,9 @@ export function LoadLocalBackup(){
                         }
                     }
 
-                    else if (name === 'database.risudat') {
+                    else if (name === localBackupDatabaseName || name === localBackupSettingsDatabaseName) {
                         pendingDatabase = new Uint8Array(data);
+                        isSettingsBackup = name === localBackupSettingsDatabaseName;
                     }
                     
                     else {
@@ -546,6 +580,8 @@ export function LoadLocalBackup(){
                     alertError('Failed to decrypt database backup, will attempt to load it without decryption.')
                 }
             }
+            //cold storage is checked against the backup itself: a settings backup only brings plugin storage,
+            //and the characters it keeps are not part of the restore
             const { database: dbData, kv: kvData } = await decodeRisuSave(db);
             const restorePendingPluginItem = async (key: string) => {
                 if(!pendingPluginColdStorage.has(key)){
@@ -597,18 +633,26 @@ export function LoadLocalBackup(){
                 return
             }
 
-            setDatabaseLite(dbData);
+            let restoredDb = dbData;
+            let restoredData = db;
+            if(isSettingsBackup){
+                alertWait('Loading local Backup... (Applying settings)');
+                restoredDb = mergeSettingsBackup(dbData, getDatabase());
+                restoredData = await encodeRisuSave(restoredDb, { compression: true, kv: saveKVSourceFromData(kvData) });
+            }
+
+            setDatabaseLite(restoredDb);
             saveKV.load(kvData);
             requiresFullEncoderReload.state = true;
             if (isTauri) {
-                await writeFile('database/database.bin', db, { baseDir: BaseDirectory.AppData });
+                await writeFile('database/database.bin', restoredData, { baseDir: BaseDirectory.AppData });
                 await relaunch();
                 alertStore.set({
                     type: "wait",
                     msg: "Success, Refreshing your app."
                 });
             } else {
-                await forageStorage.setItem('database/database.bin', db);
+                await forageStorage.setItem('database/database.bin', restoredData);
                 location.search = '';
                 alertStore.set({
                     type: "wait",
