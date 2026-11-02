@@ -1,11 +1,11 @@
 import { BaseDirectory, readFile, readDir, writeFile } from "@tauri-apps/plugin-fs";
 import localforage from "localforage";
-import { alertError, alertNormal, alertStore, alertWait, alertMd, alertConfirm } from "../alert";
+import { alertError, alertNormal, alertStore, alertWait, alertMd, alertConfirm, alertBackupRestoreSelect } from "../alert";
 import { LocalWriter, forageStorage, requiresFullEncoderReload } from "../globalApi.svelte";
 import { isTauri } from "src/ts/platform"
 import { decodeRisuSave, encodeRisuSave } from "../storage/risuSave";
-import { saveKV } from "../storage/saveKV";
-import { getDatabase, setDatabaseLite } from "../storage/database.svelte";
+import { saveKV, saveKVSourceFromData } from "../storage/saveKV";
+import { getDatabase, setDatabaseLite, type Database } from "../storage/database.svelte";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { decryptBuffer, encryptBuffer, sleep } from "../util";
 import { hubURL } from "../characterCards";
@@ -13,6 +13,8 @@ import { language } from "src/lang";
 import { collectColdStorageBackupPayloads, confirmIncompleteColdStorageOperation, getColdStorageBackupKey, getColdStorageItem, isColdStorageBackupData, isValidColdStorageItem, listColdDataKeys, listPluginStorageColdKeys, pluginStorage, setColdStorageItem } from "../process/coldstorage.svelte";
 import { getPluginStorageIndexPointer } from "../process/coldstorageData";
 import { DBState } from "../stores.svelte";
+import { isFullBackupRestore } from "./backupRestoreCategories";
+import { mergePartialBackup } from "./backupRestoreMerge";
 
 function getBasename(data:string){
     const baseNameRegex = /\\/g
@@ -423,6 +425,15 @@ export function LoadLocalBackup(){
             const file = input.files[0];
             input.remove();
 
+            const selection = await alertBackupRestoreSelect();
+            if (!selection) {
+                return;
+            }
+            const selected = new Set(selection);
+            const fullRestore = isFullBackupRestore(selected);
+            const restoreCharacters = fullRestore || selected.has('characters');
+            const restorePlugins = fullRestore || selected.has('plugins');
+
             const reader = file.stream().getReader();
             const CHUNK_SIZE = 1024 * 1024; // 1MB chunk size
             let bytesRead = 0;
@@ -498,12 +509,16 @@ export function LoadLocalBackup(){
                                 const jsonData = JSON.parse(text)
 
                                 if (isColdStorageBackupData(jsonData)) {
-                                    if(await setColdStorageItem(coldStorageKey, jsonData)){
-                                        restoredColdStorageKeys.add(coldStorageKey)
-                                    } else {
-                                        console.error(`Failed to restore cold storage item ${coldStorageKey}`)
+                                    //character/chat data: skipped when characters are not restored,
+                                    //so it can't overwrite the chats of the characters being kept
+                                    if (restoreCharacters) {
+                                        if(await setColdStorageItem(coldStorageKey, jsonData)){
+                                            restoredColdStorageKeys.add(coldStorageKey)
+                                        } else {
+                                            console.error(`Failed to restore cold storage item ${coldStorageKey}`)
+                                        }
                                     }
-                                } else {
+                                } else if (restorePlugins) {
                                     pendingPluginColdStorage.set(coldStorageKey, jsonData)
                                 }
                             } catch (e) {
@@ -546,7 +561,10 @@ export function LoadLocalBackup(){
                     alertError('Failed to decrypt database backup, will attempt to load it without decryption.')
                 }
             }
-            const { database: dbData, kv: kvData } = await decodeRisuSave(db);
+            const { database: backupData, kv: kvData } = await decodeRisuSave(db);
+            const dbData: Database = fullRestore
+                ? backupData
+                : mergePartialBackup(getDatabase({ snapshot: true }), backupData, selected);
             const restorePendingPluginItem = async (key: string) => {
                 if(!pendingPluginColdStorage.has(key)){
                     return
@@ -560,22 +578,30 @@ export function LoadLocalBackup(){
                 }
             }
             //the plugin storage index has to be restored first: it lists the large plugin storage items
-            const pluginStorageIndex = getPluginStorageIndexPointer(dbData)
-            if(pluginStorageIndex){
-                await restorePendingPluginItem(pluginStorageIndex)
+            if (restorePlugins) {
+                const pluginStorageIndex = getPluginStorageIndexPointer(backupData)
+                if(pluginStorageIndex){
+                    await restorePendingPluginItem(pluginStorageIndex)
+                }
+                const backupPluginStorageKeys = new Set([
+                    ...listPluginStorageColdKeys(backupData),
+                    ...await pluginStorage.referencedIds(backupData.pluginCustomStorage)
+                ])
+                for(const key of Array.from(pendingPluginColdStorage.keys())){
+                    if(!backupPluginStorageKeys.has(key)){
+                        console.warn(`Skipping invalid cold storage backup item ${key}`)
+                        continue
+                    }
+                    await restorePendingPluginItem(key)
+                }
             }
+            pendingPluginColdStorage.clear()
+            //from here on, check the database that will actually become live
             const legacyPluginStorageKeys = new Set(listPluginStorageColdKeys(dbData))
             const pluginStorageColdKeys = new Set([
                 ...legacyPluginStorageKeys,
                 ...await pluginStorage.referencedIds(dbData.pluginCustomStorage)
             ])
-            for(const key of Array.from(pendingPluginColdStorage.keys())){
-                if(!pluginStorageColdKeys.has(key)){
-                    console.warn(`Skipping invalid cold storage backup item ${key}`)
-                    continue
-                }
-                await restorePendingPluginItem(key)
-            }
             const missingColdStorageKeys:string[] = []
             for(const key of await listColdDataKeys(dbData)){
                 if(restoredColdStorageKeys.has(key)){
@@ -597,18 +623,32 @@ export function LoadLocalBackup(){
                 return
             }
 
+            //full restore keeps the backup's save file as is, partial restore writes the merged database
+            //(kv data counts as settings)
+            const restoreKV = fullRestore || selected.has('settings');
+            let saveData = db;
+            if (!fullRestore) {
+                alertWait('Loading local Backup... (Saving database)');
+                saveData = await encodeRisuSave(dbData, {
+                    compression: true,
+                    kv: restoreKV ? saveKVSourceFromData(kvData) : saveKV
+                });
+            }
+
             setDatabaseLite(dbData);
-            saveKV.load(kvData);
+            if (restoreKV) {
+                saveKV.load(kvData);
+            }
             requiresFullEncoderReload.state = true;
             if (isTauri) {
-                await writeFile('database/database.bin', db, { baseDir: BaseDirectory.AppData });
+                await writeFile('database/database.bin', saveData, { baseDir: BaseDirectory.AppData });
                 await relaunch();
                 alertStore.set({
                     type: "wait",
                     msg: "Success, Refreshing your app."
                 });
             } else {
-                await forageStorage.setItem('database/database.bin', db);
+                await forageStorage.setItem('database/database.bin', saveData);
                 location.search = '';
                 alertStore.set({
                     type: "wait",

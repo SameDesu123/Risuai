@@ -2078,8 +2078,7 @@ export const defaultSdDataFunc = () =>{
     return safeStructuredClone(defaultSdData)
 }
 
-export function saveCurrentPreset(){
-    let db = DBState.db
+export function saveCurrentPreset(db:Database = DBState.db){
     let pres = db.botPresets
 
     if(db.botPresetsId === -1){

@@ -28,6 +28,8 @@
     import { translateStackTrace } from "../../ts/sourcemap";
     import { getDetailedOSLabel, getFallbackOSLabel, getRisuEnvironmentLabel } from "src/ts/platform";
     import versionData from "../../../version.json";
+    import CheckInput from "../UI/GUI/CheckInput.svelte";
+    import { backupRestoreCategories, type BackupRestoreCategory } from "src/ts/drive/backupRestoreCategories";
 
     let showDetails = $state(false);
     let translatedStackTrace = $state('');
@@ -73,6 +75,12 @@
     let expandedLogs: Set<number> = $state(new Set())
     let allExpanded = $state(false)
     let copiedKey: string | null = $state(null)
+    const allBackupRestoreSelected = () => Object.fromEntries(
+        backupRestoreCategories.map((category) => [category, true])
+    ) as Record<BackupRestoreCategory, boolean>
+    let backupRestoreSelection = $state(allBackupRestoreSelected())
+    const backupRestoreAllChecked = $derived(backupRestoreCategories.every((category) => backupRestoreSelection[category]))
+    const backupRestoreNoneChecked = $derived(backupRestoreCategories.every((category) => !backupRestoreSelection[category]))
 
     // Register JSON language for syntax highlighting
     if (!hljs.getLanguage('json')) {
@@ -136,6 +144,9 @@
             cardExportType2 = ''
             cardLicense = ''
         }
+        if($alertStore.type !== 'backupRestoreSelect'){
+            backupRestoreSelection = allBackupRestoreSelected()
+        }
         if($alertStore.type !== 'requestlogs'){
             expandedLogs = new Set()
             allExpanded = false
@@ -186,7 +197,7 @@
     }
 }}></svelte:window>
 
-{#if $alertStore.type !== 'none' &&  $alertStore.type !== 'toast' &&  $alertStore.type !== 'cardexport' && $alertStore.type !== 'branches' && $alertStore.type !== 'selectModule' && $alertStore.type !== 'pukmakkurit' && $alertStore.type !== 'requestlogs'}
+{#if $alertStore.type !== 'none' &&  $alertStore.type !== 'toast' &&  $alertStore.type !== 'cardexport' && $alertStore.type !== 'branches' && $alertStore.type !== 'selectModule' && $alertStore.type !== 'pukmakkurit' && $alertStore.type !== 'requestlogs' && $alertStore.type !== 'backupRestoreSelect'}
     <div class="absolute w-full h-full z-50 bg-black/50 flex justify-center items-center" class:vis={ $alertStore.type === 'wait2'}>
         <div class="bg-darkbg p-4 break-any rounded-md flex flex-col max-w-3xl  max-h-full overflow-y-auto">
             {#if $alertStore.type === 'error'}
@@ -803,6 +814,60 @@
         </div>
     </div>
 
+{:else if $alertStore.type === 'backupRestoreSelect'}
+    <div class="fixed top-0 left-0 h-full w-full bg-black/50 flex flex-col z-50 items-center justify-center">
+        <div class="bg-darkbg rounded-md p-4 max-w-full max-h-full overflow-y-auto flex flex-col w-xl">
+            <h1 class="font-bold text-2xl w-full flex items-start">
+                <span class="grow">{language.backupRestoreSelectTitle}</span>
+                <button class="text-textcolor2 hover:text-green-500" aria-label={language.cancel} onclick={() => {
+                    alertStore.set({
+                        type: 'none',
+                        msg: 'cancel'
+                    })
+                }}>
+                    <XIcon />
+                </button>
+            </h1>
+            <span class="text-textcolor2 text-sm mt-2">{language.backupRestoreSelectDesc}</span>
+            <div class="mt-4 pb-2 border-b border-darkborderc">
+                <CheckInput
+                    name={language.backupRestoreSelectAll}
+                    check={backupRestoreAllChecked}
+                    onChange={(check) => {
+                        for(const category of backupRestoreCategories){
+                            backupRestoreSelection[category] = check
+                        }
+                    }}
+                />
+            </div>
+            {#each backupRestoreCategories as category (category)}
+                <div class="flex flex-col mt-3">
+                    <CheckInput name={language.backupRestoreCategory[category]} bind:check={backupRestoreSelection[category]} />
+                    <span class="text-textcolor2 text-xs ml-7">{language.backupRestoreCategoryDesc[category]}</span>
+                </div>
+            {/each}
+            {#if !backupRestoreAllChecked}
+                <span class="text-red-500 text-sm mt-4">{language.backupRestoreSelectWarn}</span>
+            {/if}
+            <div class="flex gap-2 w-full mt-4">
+                <Button className="grow" disabled={backupRestoreNoneChecked} onclick={() => {
+                    if(backupRestoreNoneChecked){
+                        return
+                    }
+                    alertStore.set({
+                        type: 'none',
+                        msg: JSON.stringify(backupRestoreCategories.filter((category) => backupRestoreSelection[category]))
+                    })
+                }}>{language.backupRestoreStart}</Button>
+                <Button styled="outlined" className="grow" onclick={() => {
+                    alertStore.set({
+                        type: 'none',
+                        msg: 'cancel'
+                    })
+                }}>{language.cancel}</Button>
+            </div>
+        </div>
+    </div>
 {:else if $alertStore.type === 'toast'}
     <div class="toast-anime absolute right-0 bottom-0 bg-darkbg p-4 break-any rounded-md flex flex-col max-w-3xl  max-h-11/12 overflow-y-auto z-50 text-textcolor"
         onanimationend={() => {

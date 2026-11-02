@@ -4,12 +4,14 @@ import { language } from "../lang"
 import { isTauri, isNodeServer } from "src/ts/platform"
 import { getDatabase, type MessageGenerationInfo } from "./storage/database.svelte"
 import { alertStore as alertStoreImported } from "./stores.svelte"
+import { backupRestoreCategories, type BackupRestoreCategory } from "./drive/backupRestoreCategories"
 
 export interface alertData{
     type: 'error'|'normal'|'none'|'ask'|'wait'|'selectChar'
             |'input'|'toast'|'wait2'|'markdown'|'select'|'login'
             |'tos'|'cardexport'|'requestdata'|'addchar'|'hypaV2'|'selectModule'
-            |'chatOptions'|'pukmakkurit'|'branches'|'progress'|'pluginconfirm'|'requestlogs',
+            |'chatOptions'|'pukmakkurit'|'branches'|'progress'|'pluginconfirm'|'requestlogs'
+            |'backupRestoreSelect',
     msg: string,
     submsg?: string
     datalist?: [string, string][],
@@ -202,6 +204,30 @@ export async function alertConfirm(msg:string){
     await waitAlert()
 
     return get(alertStoreImported).msg === 'yes'
+}
+
+/**
+ * Asks which parts of a local backup should be restored.
+ * Returns the selected categories, or null when the user cancels.
+ */
+export async function alertBackupRestoreSelect():Promise<BackupRestoreCategory[]|null>{
+    alertStoreImported.set({
+        'type': 'backupRestoreSelect',
+        'msg': ''
+    })
+
+    await waitAlert()
+
+    try {
+        const parsed = JSON.parse(get(alertStoreImported).msg)
+        if(!Array.isArray(parsed)){
+            return null
+        }
+        const selected = backupRestoreCategories.filter((category) => parsed.includes(category))
+        return selected.length > 0 ? selected : null
+    } catch {
+        return null
+    }
 }
 
 export async function alertPluginConfirm(msg:string){
