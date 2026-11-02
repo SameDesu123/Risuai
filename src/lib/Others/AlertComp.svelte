@@ -28,6 +28,7 @@
     import { translateStackTrace } from "../../ts/sourcemap";
     import { getDetailedOSLabel, getFallbackOSLabel, getRisuEnvironmentLabel } from "src/ts/platform";
     import versionData from "../../../version.json";
+    import LocalBackupSelect from "./LocalBackupSelect.svelte";
 
     let showDetails = $state(false);
     let translatedStackTrace = $state('');
@@ -718,43 +719,20 @@
                     </button>
                 </div>
             {:else if $alertStore.type === 'backupSelect'}
-                {@const backupOptions = [
-                    { mode: 'full', name: language.localBackupFull, desc: language.localBackupFullDesc },
-                    { mode: 'partial', name: language.localBackupPartial, desc: language.localBackupPartialDesc },
-                    { mode: 'settings', name: language.localBackupSettings, desc: language.localBackupSettingsDesc },
-                ]}
-                <div class="w-2xl flex flex-col max-w-full">
-                    <h1 class="text-xl mb-2 font-bold">
-                        {language.saveBackupLocal}
-                    </h1>
-                    <span class="text-textcolor2 text-sm mb-2">{language.localBackupSelectDesc}</span>
-                    {#each backupOptions as option}
-                        <button class="border-darkborderc border py-2 px-4 md:px-8 flex rounded-md hover:ring-2 items-center mt-2 text-left" onclick={() => {
-                            alertStore.set({
-                                type: 'none',
-                                msg: option.mode
-                            })
-                        }}>
-                            <div class="flex flex-col justify-start items-start flex-1 min-w-0">
-                                <span>{option.name}</span>
-                                <span class="text-textcolor2 text-sm">{option.desc}</span>
-                            </div>
-                            <div class="ml-4 shrink-0 flex justify-end">
-                                <ChevronRightIcon />
-                            </div>
-                        </button>
-                    {/each}
-                    <button class="border-darkborderc border py-2 px-4 md:px-8 flex rounded-md hover:ring-2 items-center mt-2" onclick={() => {
+                <LocalBackupSelect
+                    onConfirm={(sections) => {
                         alertStore.set({
                             type: 'none',
-                            msg: 'cancel'
+                            msg: JSON.stringify(sections)
                         })
-                    }}>
-                        <div class="flex flex-col justify-start items-start">
-                            <span>{language.cancel}</span>
-                        </div>
-                    </button>
-                </div>
+                    }}
+                    onCancel={() => {
+                        alertStore.set({
+                            type: 'none',
+                            msg: ''
+                        })
+                    }}
+                />
             {/if}
         </div>
     </div>

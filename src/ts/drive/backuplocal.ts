@@ -1,19 +1,33 @@
 import { BaseDirectory, readFile, readDir, writeFile } from "@tauri-apps/plugin-fs";
 import localforage from "localforage";
-import { alertError, alertNormal, alertStore, alertWait, alertMd, alertConfirm } from "../alert";
+import { alertError, alertNormal, alertStore, alertWait, alertMd } from "../alert";
 import { LocalWriter, forageStorage, requiresFullEncoderReload } from "../globalApi.svelte";
 import { isTauri } from "src/ts/platform"
 import { decodeRisuSave, encodeRisuSave } from "../storage/risuSave";
-import { saveKV, saveKVSourceFromData } from "../storage/saveKV";
-import { getDatabase, setDatabaseLite, type Database } from "../storage/database.svelte";
+import { saveKV, saveKVSourceFromData, type SaveKVSource } from "../storage/saveKV";
+import { getDatabase, saveCurrentPreset, setDatabaseLite, setPreset, type Database } from "../storage/database.svelte";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { decryptBuffer, encryptBuffer, sleep } from "../util";
 import { hubURL } from "../characterCards";
-import { language } from "src/lang";
 import { collectColdStorageBackupPayloads, confirmIncompleteColdStorageOperation, getColdStorageBackupKey, getColdStorageItem, isColdStorageBackupData, isValidColdStorageItem, listColdDataKeys, listPluginStorageColdKeys, pluginStorage, setColdStorageItem } from "../process/coldstorage.svelte";
 import { getPluginStorageIndexPointer } from "../process/coldstorageData";
 import { DBState } from "../stores.svelte";
-import { collectSettingsBackupAssets, localBackupDatabaseName, localBackupSettingsDatabaseName, mergeSettingsBackup, toSettingsBackupDatabase, type BackupAssetLabel, type LocalBackupMode } from "./backuplocalData";
+import {
+    collectLocalBackupAssets,
+    createLocalBackupManifest,
+    includesWholeDatabase,
+    isFullLocalBackup,
+    localBackupDatabaseName,
+    localBackupManifestName,
+    localBackupSections,
+    localBackupSelectiveDatabaseName,
+    mergeLocalBackup,
+    normalizeLocalBackupSections,
+    parseLocalBackupManifest,
+    toLocalBackupDatabase,
+    type BackupAssetLabel,
+    type LocalBackupSection,
+} from "./backuplocalData";
 
 function getBasename(data:string){
     const baseNameRegex = /\\/g
@@ -23,18 +37,18 @@ function getBasename(data:string){
 }
 
 /**
- * Saves a local backup of the given kind. Every kind is loaded back with LoadLocalBackup.
- * @see LocalBackupMode
+ * Saves a local backup of the selected sections (everything by default). Every backup is loaded with LoadLocalBackup.
+ * @see LocalBackupSection
  */
-export async function SaveLocalBackup(mode: LocalBackupMode = 'full'){
-    switch(mode){
-        case 'partial':
-            return await savePartialLocalBackup()
-        case 'settings':
-            return await saveSettingsLocalBackup()
-        default:
-            return await saveFullLocalBackup()
+export async function SaveLocalBackup(sections: Iterable<LocalBackupSection> = localBackupSections){
+    const selected = new Set(normalizeLocalBackupSections(sections))
+    if(selected.size === 0){
+        return
     }
+    if(isFullLocalBackup(selected)){
+        return await saveFullLocalBackup()
+    }
+    return await saveSelectiveLocalBackup(selected)
 }
 
 function describeSkippedAssets(missingAssets: string[], assetMap: Map<string, BackupAssetLabel>){
@@ -107,8 +121,8 @@ async function writeColdStoragePayloads(writer: LocalWriter, payloads: { backupN
  * Encodes the database for a backup. On risuai.xyz an encrypted database is returned
  * (and the encryption metadata is written to the backup) when encrypt is set.
  */
-async function encodeBackupDatabase(writer: LocalWriter, db: Database, encrypt: boolean){
-    let dbData = await encodeRisuSave(db, { compression: true, kv: saveKV })
+async function encodeBackupDatabase(writer: LocalWriter, db: Database, encrypt: boolean, kv: SaveKVSource | null = saveKV){
+    let dbData = await encodeRisuSave(db, { compression: true, kv })
 
     if(encrypt && location.origin.endsWith('risuai.xyz')){
         const time = Date.now()
@@ -275,141 +289,56 @@ async function saveFullLocalBackup(){
     alertBackupResult(missingAssets, assetMap, 'Backup Successful, but the following assets were missing and skipped:')
 }
 
-/**
- * Saves a partial local backup with only critical assets.
- * 
- * Differences from the full backup:
- * - Only includes profile images for characters/groups (excludes emotion images, additional assets, VITS files, CC assets)
- * - Additionally includes: persona icons, folder images, bot preset images
- * - Processes only assets in assetMap (selective) instead of all .png files in assets folder
- * - Faster and more efficient for quick backups
- * - Ideal for backing up core visual identity without bulk data
- */
-async function savePartialLocalBackup(){
-    // First confirmation: Explain the difference from regular backup
-    const firstConfirm = await alertConfirm(language.partialBackupFirstConfirm)
-    
-    if (!firstConfirm) {
-        return
-    }
-    
-    // Second confirmation: Final warning about not saving assets
-    const secondConfirm = await alertConfirm(language.partialBackupSecondConfirm)
-    
-    if (!secondConfirm) {
-        return
-    }
-    
-    alertWait("Saving partial local backup...")
+/** Writes the values of the active prompt preset, which are kept in the top level fields, back into the preset list. */
+function syncActivePreset(){
     const db = getDatabase()
-    const coldStoragePayloads = await collectColdStorageBackupPayloads(db)
-    const unavailableColdStorageKeys = [...coldStoragePayloads.missingKeys, ...coldStoragePayloads.invalidKeys]
-    if(!await confirmIncompleteColdStorageOperation(db, unavailableColdStorageKeys, 'backup')){
+    if(!db.botPresets?.[db.botPresetsId]){
         return
     }
+    try {
+        saveCurrentPreset()
+    } catch (error) {
+        console.error('Failed to save the active preset before backup:', error)
+    }
+}
 
-    const writer = new LocalWriter()
-    const r = await writer.init()
-    if(!r){
-        alertError('Failed')
+/** Loads the values of the active prompt preset of db into its top level fields. */
+function applyActivePreset(db: Database){
+    const preset = db.botPresets?.[db.botPresetsId]
+    if(!preset){
         return
     }
-
-    const assetMap = new Map<string, { charName: string, assetName: string }>()
-    
-    // Only collect main profile images for both characters and groups
-    if (db.characters) {
-        for (const char of db.characters) {
-            if (!char) continue
-            const charName = char.name ?? 'Unknown Character'
-            
-            // Save the main profile image (supports both character and group types)
-            // Note: emotionImages are intentionally excluded from partial backup
-            if (char.image) {
-                assetMap.set(char.image, { charName: charName, assetName: 'Profile Image' })
-            }
-        }
+    try {
+        setPreset(db, preset)
+    } catch (error) {
+        console.error('Failed to apply the active preset of the restored backup:', error)
     }
-    
-    // User icon
-    if (db.userIcon) {
-        assetMap.set(db.userIcon, { charName: 'User Settings', assetName: 'User Icon' })
-    }
-    
-    // Persona icons
-    if (db.personas) {
-        for (const persona of db.personas) {
-            if (persona && persona.icon) {
-                assetMap.set(persona.icon, { charName: 'Persona', assetName: `${persona.name} Icon` })
-            }
-        }
-    }
-    
-    // Custom background
-    if (db.customBackground) {
-        assetMap.set(db.customBackground, { charName: 'User Settings', assetName: 'Custom Background' })
-    }
-    
-    // Folder images in characterOrder
-    if (db.characterOrder) {
-        for (const item of db.characterOrder) {
-            if (typeof item !== 'string' && item.img) {
-                assetMap.set(item.img, { charName: 'Folder', assetName: `${item.name} Folder Image` })
-            }
-            if (typeof item !== 'string' && item.imgFile) {
-                assetMap.set(item.imgFile, { charName: 'Folder', assetName: `${item.name} Folder Image File` })
-            }
-        }
-    }
-    
-    // Bot preset images
-    if (db.botPresets) {
-        for (const preset of db.botPresets) {
-            if (preset && preset.image) {
-                assetMap.set(preset.image, { charName: 'Preset', assetName: `${preset.name} Preset Image` })
-            }
-        }
-    }
-    
-    // Like before, only PNG assets are part of a partial backup
-    const pngAssetMap = new Map(Array.from(assetMap).filter(([key]) => key.endsWith('.png')))
-    const missingAssets = await writeReferencedAssets(writer, pngAssetMap, 'Saving partial local backup')
-
-    await writeColdStoragePayloads(writer, coldStoragePayloads.payloads, 'Saving partial local Backup Cold data')
-
-    const dbWithoutAccount = { ...db, account: undefined }
-    const dbData = await encodeBackupDatabase(writer, dbWithoutAccount, false)
-
-    alertWait(`Saving partial local backup... (Saving database)`) 
-
-    await writer.writeBackup(localBackupDatabaseName, dbData)
-    await writer.close()
-
-    alertBackupResult(missingAssets, pngAssetMap, 'Partial backup successful, but the following profile images were missing and skipped:')
 }
 
 /**
- * Saves a backup of everything except characters (with their chats), the character order and the account:
- * settings, prompts, presets, personas, modules (with their assets), plugins and plugin storage.
+ * Saves a backup of the selected sections only, with the asset files they reference.
  *
- * Loading it keeps the current characters and replaces everything else (see mergeSettingsBackup).
- * Its database is stored as localBackupSettingsDatabaseName, so older versions refuse to load it
- * instead of replacing the database with one without characters.
+ * With the whole database selected, its database replaces the current one on restore like a full backup.
+ * Otherwise it is stored as localBackupSelectiveDatabaseName together with a manifest of the sections,
+ * and restoring it applies only those sections on top of the current data (see mergeLocalBackup).
  */
-async function saveSettingsLocalBackup(){
-    alertWait("Saving settings backup...")
-    const db = getDatabase()
-
+async function saveSelectiveLocalBackup(sections: ReadonlySet<LocalBackupSection>){
+    alertWait("Saving local backup...")
+    if(sections.has('presets')){
+        //without other settings, changes of the active preset would be lost: they are only in the top level fields
+        syncActivePreset()
+    }
     //collectColdStorageBackupPayloads only flushes plugin storage for the live database,
     //and the database pointer has to refer to an index containing the latest plugin storage changes
     await pluginStorage.flush().catch((error) => {
         console.error('Failed to save plugin storage before backup:', error)
     })
-    const settingsDb = toSettingsBackupDatabase(db)
-    //without characters, only plugin storage is collected from cold storage
-    const coldStoragePayloads = await collectColdStorageBackupPayloads(settingsDb)
+    const db = getDatabase()
+    const backupDb = toLocalBackupDatabase(db, sections)
+    //only chats of included characters and the storage of included plugins are collected
+    const coldStoragePayloads = await collectColdStorageBackupPayloads(backupDb)
     const unavailableColdStorageKeys = [...coldStoragePayloads.missingKeys, ...coldStoragePayloads.invalidKeys]
-    if(!await confirmIncompleteColdStorageOperation(settingsDb, unavailableColdStorageKeys, 'backup')){
+    if(!await confirmIncompleteColdStorageOperation(backupDb, unavailableColdStorageKeys, 'backup')){
         return
     }
 
@@ -420,19 +349,26 @@ async function saveSettingsLocalBackup(){
         return
     }
 
-    const assetMap = collectSettingsBackupAssets(settingsDb)
-    const missingAssets = await writeReferencedAssets(writer, assetMap, 'Saving settings backup')
+    //assets are collected from the live database: character images can be backed up without the characters
+    const assetMap = collectLocalBackupAssets(db, sections)
+    const missingAssets = await writeReferencedAssets(writer, assetMap, 'Saving local Backup')
 
-    await writeColdStoragePayloads(writer, coldStoragePayloads.payloads, 'Saving settings backup Cold data')
+    await writeColdStoragePayloads(writer, coldStoragePayloads.payloads, 'Saving local Backup Cold data')
 
-    const dbData = await encodeBackupDatabase(writer, settingsDb, true)
+    const dbData = await encodeBackupDatabase(writer, backupDb, true, sections.has('otherSettings') ? saveKV : null)
 
-    alertWait(`Saving settings backup... (Saving database)`)
+    alertWait(`Saving local Backup... (Saving database)`)
 
-    await writer.writeBackup(localBackupSettingsDatabaseName, dbData)
+    if(includesWholeDatabase(sections)){
+        await writer.writeBackup(localBackupDatabaseName, dbData)
+    }
+    else{
+        await writer.writeBackup(localBackupManifestName, new TextEncoder().encode(createLocalBackupManifest(sections)))
+        await writer.writeBackup(localBackupSelectiveDatabaseName, dbData)
+    }
     await writer.close()
 
-    alertBackupResult(missingAssets, assetMap, 'Settings backup successful, but the following assets were missing and skipped:')
+    alertBackupResult(missingAssets, assetMap, 'Backup Successful, but the following assets were missing and skipped:')
 }
 
 export function LoadLocalBackup(){
@@ -459,8 +395,9 @@ export function LoadLocalBackup(){
             let bytesRead = 0;
             let remainingBuffer = new Uint8Array();
             let pendingDatabase: Uint8Array | null = null;
-            //a settings backup is merged into the current database instead of replacing it
-            let isSettingsBackup = false;
+            //a selective backup is applied on top of the current database instead of replacing it
+            let isSelectiveBackup = false;
+            let selectiveBackupSections: Set<LocalBackupSection> | null = null;
             const restoredColdStorageKeys = new Set<string>();
             //items that don't look like character/chat data may be pluginStorage values,
             //which can only be identified once the database (written last) is decoded
@@ -516,9 +453,13 @@ export function LoadLocalBackup(){
                         }
                     }
 
-                    else if (name === localBackupDatabaseName || name === localBackupSettingsDatabaseName) {
+                    else if (name === localBackupManifestName) {
+                        selectiveBackupSections = parseLocalBackupManifest(new TextDecoder().decode(data));
+                    }
+
+                    else if (name === localBackupDatabaseName || name === localBackupSelectiveDatabaseName) {
                         pendingDatabase = new Uint8Array(data);
-                        isSettingsBackup = name === localBackupSettingsDatabaseName;
+                        isSelectiveBackup = name === localBackupSelectiveDatabaseName;
                     }
                     
                     else {
@@ -563,7 +504,8 @@ export function LoadLocalBackup(){
                 remainingBuffer = remainingBuffer.slice(offset);
             }
 
-            if(!pendingDatabase){
+            //without its manifest, it is unknown which parts of a selective backup can be applied
+            if(!pendingDatabase || (isSelectiveBackup && !selectiveBackupSections)){
                 alertError('Failed, Is file corrupted?')
                 return
             }
@@ -580,8 +522,8 @@ export function LoadLocalBackup(){
                     alertError('Failed to decrypt database backup, will attempt to load it without decryption.')
                 }
             }
-            //cold storage is checked against the backup itself: a settings backup only brings plugin storage,
-            //and the characters it keeps are not part of the restore
+            //cold storage is checked against the backup itself: a selective backup only brings the chats and plugin storage
+            //of its own sections, and the data it keeps is not part of the restore
             const { database: dbData, kv: kvData } = await decodeRisuSave(db);
             const restorePendingPluginItem = async (key: string) => {
                 if(!pendingPluginColdStorage.has(key)){
@@ -635,14 +577,26 @@ export function LoadLocalBackup(){
 
             let restoredDb = dbData;
             let restoredData = db;
-            if(isSettingsBackup){
-                alertWait('Loading local Backup... (Applying settings)');
-                restoredDb = mergeSettingsBackup(dbData, getDatabase());
-                restoredData = await encodeRisuSave(restoredDb, { compression: true, kv: saveKVSourceFromData(kvData) });
+            //KV data belongs to the other settings, like every database field without a section
+            let restoreKV = true;
+            if(isSelectiveBackup && selectiveBackupSections){
+                alertWait('Loading local Backup... (Applying backup)');
+                restoreKV = selectiveBackupSections.has('otherSettings');
+                if(selectiveBackupSections.has('presets') !== selectiveBackupSections.has('otherSettings')){
+                    //the kept preset list has to contain the latest values of the active preset
+                    syncActivePreset();
+                }
+                restoredDb = mergeLocalBackup(dbData, getDatabase(), selectiveBackupSections, applyActivePreset);
+                restoredData = await encodeRisuSave(restoredDb, {
+                    compression: true,
+                    kv: restoreKV ? saveKVSourceFromData(kvData) : saveKV
+                });
             }
 
             setDatabaseLite(restoredDb);
-            saveKV.load(kvData);
+            if(restoreKV){
+                saveKV.load(kvData);
+            }
             requiresFullEncoderReload.state = true;
             if (isTauri) {
                 await writeFile('database/database.bin', restoredData, { baseDir: BaseDirectory.AppData });

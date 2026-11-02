@@ -46,9 +46,9 @@
 
 <Button
     onclick={async () => {
-        const mode = await alertLocalBackupSelect()
-        if(mode){
-            SaveLocalBackup(mode)
+        const sections = await alertLocalBackupSelect()
+        if(sections){
+            SaveLocalBackup(sections)
         }
     }} className="mt-2">
     {language.saveBackupLocal}

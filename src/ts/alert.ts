@@ -4,7 +4,7 @@ import { language } from "../lang"
 import { isTauri, isNodeServer } from "src/ts/platform"
 import { getDatabase, type MessageGenerationInfo } from "./storage/database.svelte"
 import { alertStore as alertStoreImported } from "./stores.svelte"
-import type { LocalBackupMode } from "./drive/backuplocalData"
+import { normalizeLocalBackupSections, type LocalBackupSection } from "./drive/backuplocalData"
 
 export interface alertData{
     type: 'error'|'normal'|'none'|'ask'|'wait'|'selectChar'
@@ -119,21 +119,26 @@ export async function alertChatOptions() {
 }
 
 /**
- * Asks which kind of local backup to save.
- * @returns the chosen backup kind, or null when cancelled
+ * Asks which parts of the data to include in a local backup.
+ * @returns the selected sections, or null when cancelled
  */
-export async function alertLocalBackupSelect():Promise<LocalBackupMode|null>{
+export async function alertLocalBackupSelect():Promise<LocalBackupSection[]|null>{
     alertStoreImported.set({
         'type': 'backupSelect',
         'msg': ''
     })
     await waitAlert()
 
-    const selected = get(alertStoreImported).msg
-    if(selected === 'full' || selected === 'partial' || selected === 'settings'){
-        return selected
+    const msg = get(alertStoreImported).msg
+    if(!msg){
+        return null
     }
-    return null
+    try {
+        const sections = normalizeLocalBackupSections(JSON.parse(msg))
+        return sections.length > 0 ? sections : null
+    } catch {
+        return null
+    }
 }
 
 export async function alertLogin(){
