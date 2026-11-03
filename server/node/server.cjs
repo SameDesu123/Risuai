@@ -1278,6 +1278,9 @@ app.get('/api/read', authenticatedRouteLimiter, async (req, res, next) => {
 });
 
 const BULK_READ_MAX_FILES = 100;
+// Cloudflare (including cloudflared tunnels) rejects transfers over 100 MB, so keep each bulk response well below it
+const BULK_READ_MAX_BYTES = 80 * 1024 * 1024;
+const BULK_READ_FRAME_HEADER_BYTES = 4;
 const BULK_READ_MISSING_LENGTH = 0xFFFFFFFF;
 
 function waitForDrainOrClose(res) {
@@ -1295,6 +1298,9 @@ function waitForDrainOrClose(res) {
 // Body: JSON { paths: string[] } with hex-encoded keys, the same encoding as the file-path header of /api/read.
 // Response: one frame per requested path, in request order: a uint32 big-endian byte length
 // (0xFFFFFFFF when the file does not exist) followed by that many bytes of file content.
+// The response stops once the next frame would push it past BULK_READ_MAX_BYTES; the
+// x-risu-bulk-count header says how many leading paths it holds, and the caller requests the
+// rest again. The first frame is always sent, so a single file larger than the limit still loads.
 app.post('/api/read_bulk', authenticatedRouteLimiter, async (req, res) => {
     if(!await checkAuth(req, res)){
         return;
@@ -1320,8 +1326,31 @@ app.post('/api/read_bulk', authenticatedRouteLimiter, async (req, res) => {
         return;
     }
 
+    // Sizes are measured before anything is sent so the count can go out as a header
+    const fileSizes = await Promise.all(filePaths.map(async (filePath) => {
+        try {
+            return (await fs.stat(path.join(savePath, filePath))).size;
+        } catch (error) {
+            if(error?.code === 'ENOENT'){
+                return 0;
+            }
+            throw error;
+        }
+    }));
+    let includedCount = 0;
+    let responseBytes = 0;
+    while(includedCount < filePaths.length){
+        const frameBytes = BULK_READ_FRAME_HEADER_BYTES + fileSizes[includedCount];
+        if(includedCount > 0 && responseBytes + frameBytes > BULK_READ_MAX_BYTES){
+            break;
+        }
+        responseBytes += frameBytes;
+        includedCount++;
+    }
+
     res.setHeader('Content-Type', 'application/octet-stream');
-    for(const filePath of filePaths){
+    res.setHeader('x-risu-bulk-count', String(includedCount));
+    for(const filePath of filePaths.slice(0, includedCount)){
         if(res.destroyed){
             return;
         }
@@ -1339,7 +1368,7 @@ app.post('/api/read_bulk', authenticatedRouteLimiter, async (req, res) => {
                 return;
             }
         }
-        const lengthHeader = Buffer.alloc(4);
+        const lengthHeader = Buffer.alloc(BULK_READ_FRAME_HEADER_BYTES);
         lengthHeader.writeUInt32BE(content ? content.byteLength : BULK_READ_MISSING_LENGTH);
         res.write(lengthHeader);
         if(content && !res.write(content)){
