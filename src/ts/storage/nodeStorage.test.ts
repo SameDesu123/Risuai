@@ -16,7 +16,7 @@ vi.mock('../util', () => ({
     saveKeypairStore: vi.fn()
 }))
 
-import { NODE_READ_BULK_MAX_ITEMS, NodeStorage, parseReadBulkResponse } from './nodeStorage'
+import { NODE_READ_BULK_MAX_ITEMS, NodeStorage, parseReadBulkStream } from './nodeStorage'
 
 describe('NodeStorage.setItem', () => {
     const fetchMock = vi.fn()
@@ -127,29 +127,78 @@ function concat(chunks:Uint8Array[]) {
     return out
 }
 
-describe('parseReadBulkResponse', () => {
-    it('returns items in order with null for missing and empty items', () => {
-        const data = concat([
-            frame(new TextEncoder().encode('hello')),
-            frame(null),
-            frame(new Uint8Array(0)),
-            frame(new Uint8Array([1, 2, 3]))
-        ])
-        const result = parseReadBulkResponse(data, 4)
-        expect(result.map((item) => item === null ? null : Array.from(item))).toEqual([
-            Array.from(new TextEncoder().encode('hello')),
-            null,
-            null,
-            [1, 2, 3]
-        ])
+/** Builds a stream that emits data split into chunks of the given size */
+function streamOf(data:Uint8Array, chunkSize = data.byteLength || 1) {
+    let offset = 0
+    const pulled = { count: 0, cancelled: false }
+    const stream = new ReadableStream<Uint8Array>({
+        pull(controller) {
+            if(offset >= data.byteLength){
+                controller.close()
+                return
+            }
+            pulled.count += 1
+            controller.enqueue(data.slice(offset, offset + chunkSize))
+            offset += chunkSize
+        },
+        cancel() {
+            pulled.cancelled = true
+        }
+    }, { highWaterMark: 0 })
+    return { stream, pulled }
+}
+
+async function collect(stream:ReadableStream<Uint8Array>|null, keys:string[]) {
+    const out:(number[]|null)[] = []
+    for await (const { data } of parseReadBulkStream(stream, keys)){
+        out.push(data === null ? null : Array.from(data))
+    }
+    return out
+}
+
+describe('parseReadBulkStream', () => {
+    const items = [
+        new TextEncoder().encode('hello'),
+        null,
+        new Uint8Array(0),
+        new Uint8Array([1, 2, 3])
+    ]
+    const keys = ['a', 'b', 'c', 'd']
+    const expected = [Array.from(new TextEncoder().encode('hello')), null, null, [1, 2, 3]]
+
+    it.each([1, 2, 3, 7, 1024])('yields items in order with null for missing and empty items (chunk size %i)', async (chunkSize) => {
+        const { stream } = streamOf(concat(items.map(frame)), chunkSize)
+        await expect(collect(stream, keys)).resolves.toEqual(expected)
     })
 
-    it('rejects truncated and oversized responses', () => {
+    it('yields keys with each item', async () => {
+        const { stream } = streamOf(concat(items.map(frame)))
+        const yieldedKeys:string[] = []
+        for await (const { key } of parseReadBulkStream(stream, keys)){
+            yieldedKeys.push(key)
+        }
+        expect(yieldedKeys).toEqual(keys)
+    })
+
+    it('rejects truncated and invalid responses', async () => {
         const full = frame(new Uint8Array([1, 2, 3]))
-        expect(() => parseReadBulkResponse(full.subarray(0, 6), 1)).toThrow('truncated')
-        expect(() => parseReadBulkResponse(full, 2)).toThrow('truncated')
-        expect(() => parseReadBulkResponse(concat([full, frame(null)]), 1)).toThrow('invalid')
-        expect(() => parseReadBulkResponse(new Uint8Array([2]), 1)).toThrow('invalid')
+        await expect(collect(streamOf(full.subarray(0, 6)).stream, ['a'])).rejects.toThrow('truncated')
+        await expect(collect(streamOf(full).stream, ['a', 'b'])).rejects.toThrow('truncated')
+        await expect(collect(streamOf(concat([full, frame(null)])).stream, ['a'])).rejects.toThrow('invalid')
+        await expect(collect(streamOf(new Uint8Array([2])).stream, ['a'])).rejects.toThrow('invalid')
+        await expect(collect(null, ['a'])).rejects.toThrow('truncated')
+    })
+
+    it('reads lazily and cancels the stream when the consumer stops early', async () => {
+        const big = new Uint8Array(64).fill(9)
+        const { stream, pulled } = streamOf(concat([frame(big), frame(big), frame(big)]), 16)
+        for await (const { data } of parseReadBulkStream(stream, ['a', 'b', 'c'])){
+            expect(data?.byteLength).toBe(64)
+            break
+        }
+        // Only the first frame (69 bytes) should have been pulled before stopping
+        expect(pulled.count).toBeLessThanOrEqual(5)
+        expect(pulled.cancelled).toBe(true)
     })
 })
 
@@ -209,7 +258,7 @@ describe('NodeStorage.getItems', () => {
         }), { status: 400, headers: { 'content-type': 'application/json' } }))
 
         await expect(storage.getItems(['a'])).rejects.toThrow(
-            'Node storage getItems failed.\nHTTP: 400\nServer: Too many file paths. Up to 100 paths can be read at once.'
+            'Node storage read_bulk failed.\nHTTP: 400\nServer: Too many file paths. Up to 100 paths can be read at once.'
         )
     })
 })

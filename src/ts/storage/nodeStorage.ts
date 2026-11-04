@@ -88,41 +88,106 @@ function getSetItemContext(key:string, byteLength:number) {
 /** Must match READ_BULK_MAX_ITEMS in server/node/server.cjs */
 export const NODE_READ_BULK_MAX_ITEMS = 100
 
+/** Reads exact byte counts from a ReadableStream, across chunk boundaries */
+class StreamByteReader {
+    private chunk:Uint8Array = new Uint8Array(0)
+    private offset = 0
+    private done = false
+
+    constructor(private reader:ReadableStreamDefaultReader<Uint8Array>){}
+
+    private async fill():Promise<boolean> {
+        while(this.offset >= this.chunk.byteLength){
+            if(this.done){
+                return false
+            }
+            const result = await this.reader.read()
+            if(result.done){
+                this.done = true
+                return false
+            }
+            this.chunk = result.value
+            this.offset = 0
+        }
+        return true
+    }
+
+    /**
+     * Returns a new array with exactly n bytes, or null if the stream ended before
+     * the first byte. Throws if the stream ends partway through.
+     */
+    async readExact(n:number):Promise<Uint8Array|null> {
+        const out = new Uint8Array(n)
+        let written = 0
+        while(written < n){
+            if(!await this.fill()){
+                if(written === 0){
+                    return null
+                }
+                throw new Error('Node storage read_bulk received a truncated response')
+            }
+            const take = Math.min(n - written, this.chunk.byteLength - this.offset)
+            out.set(this.chunk.subarray(this.offset, this.offset + take), written)
+            this.offset += take
+            written += take
+        }
+        return out
+    }
+}
+
 /**
- * Parses a /api/read_bulk response: one frame per requested key,
- * [1 byte flag: 0 = missing, 1 = found] then, if found, [uint32 BE length][bytes].
+ * Parses a /api/read_bulk response stream, yielding one item per key as soon as it arrives.
+ * Each frame is [1 byte flag: 0 = missing, 1 = found] then, if found, [uint32 BE length][bytes].
  */
-export function parseReadBulkResponse(data:Uint8Array, count:number):(Buffer|null)[] {
-    const view = new DataView(data.buffer, data.byteOffset, data.byteLength)
-    const results:(Buffer|null)[] = []
-    let offset = 0
-    for(let i = 0; i < count; i++){
-        if(offset + 1 > data.byteLength){
-            throw new Error('Node storage getItems received a truncated response')
+export async function* parseReadBulkStream(
+    stream:ReadableStream<Uint8Array>|null,
+    keys:string[]
+):AsyncGenerator<{ key:string, data:Buffer|null }> {
+    if(!stream){
+        if(keys.length > 0){
+            throw new Error('Node storage read_bulk received a truncated response')
         }
-        const flag = data[offset]
-        offset += 1
-        if(flag === 0){
-            results.push(null)
-            continue
-        }
-        if(flag !== 1 || offset + 4 > data.byteLength){
-            throw new Error('Node storage getItems received an invalid response')
-        }
-        const length = view.getUint32(offset)
-        offset += 4
-        if(offset + length > data.byteLength){
-            throw new Error('Node storage getItems received a truncated response')
-        }
-        const item = Buffer.from(data.subarray(offset, offset + length))
-        offset += length
-        // Match getItem, which treats an empty file as missing
-        results.push(item.length === 0 ? null : item)
+        return
     }
-    if(offset !== data.byteLength){
-        throw new Error('Node storage getItems received an invalid response')
+    const reader = stream.getReader()
+    const bytes = new StreamByteReader(reader)
+    let finished = false
+    try {
+        for(const key of keys){
+            const flag = await bytes.readExact(1)
+            if(!flag){
+                throw new Error('Node storage read_bulk received a truncated response')
+            }
+            if(flag[0] === 0){
+                yield { key, data: null }
+                continue
+            }
+            if(flag[0] !== 1){
+                throw new Error('Node storage read_bulk received an invalid response')
+            }
+            const lengthBytes = await bytes.readExact(4)
+            if(!lengthBytes){
+                throw new Error('Node storage read_bulk received a truncated response')
+            }
+            const length = new DataView(lengthBytes.buffer).getUint32(0)
+            const item = length === 0 ? new Uint8Array(0) : await bytes.readExact(length)
+            if(!item){
+                throw new Error('Node storage read_bulk received a truncated response')
+            }
+            // Match getItem, which treats an empty file as missing
+            yield { key, data: item.byteLength === 0 ? null : Buffer.from(item.buffer, item.byteOffset, item.byteLength) }
+        }
+        if(await bytes.readExact(1)){
+            throw new Error('Node storage read_bulk received an invalid response')
+        }
+        finished = true
+    } finally {
+        if(!finished){
+            // Stops the download when the consumer stops early or parsing fails
+            await reader.cancel().catch(() => {})
+        }
+        reader.releaseLock()
     }
-    return results
 }
 
 export class NodeStorage{
@@ -248,12 +313,12 @@ export class NodeStorage{
         return data
     }
     /**
-     * Reads several items with /api/read_bulk, NODE_READ_BULK_MAX_ITEMS keys per request.
-     * The result has one entry per key, in the same order; missing items are null.
+     * Streams items from /api/read_bulk, NODE_READ_BULK_MAX_ITEMS keys per request, in key order.
+     * Each item is yielded as soon as it arrives, so only one item needs to be held in memory.
+     * Missing or empty items are yielded with data null.
      */
-    async getItems(keys:string[]):Promise<(Buffer|null)[]> {
+    async *iterItems(keys:string[]):AsyncGenerator<{ key:string, data:Buffer|null }> {
         await this.checkAuth()
-        const results:(Buffer|null)[] = []
         for(let i = 0; i < keys.length; i += NODE_READ_BULK_MAX_ITEMS){
             const chunk = keys.slice(i, i + NODE_READ_BULK_MAX_ITEMS)
             const da = await fetch('/api/read_bulk', {
@@ -268,9 +333,17 @@ export class NodeStorage{
             })
             if(da.status < 200 || da.status >= 300){
                 const responseDetail = await getStorageResponseErrorDetail(da)
-                throw new Error(`Node storage getItems failed.\nHTTP: ${da.status}` + (responseDetail ? `\nServer: ${responseDetail}` : ''))
+                throw new Error(`Node storage read_bulk failed.\nHTTP: ${da.status}` + (responseDetail ? `\nServer: ${responseDetail}` : ''))
             }
-            results.push(...parseReadBulkResponse(new Uint8Array(await da.arrayBuffer()), chunk.length))
+            yield* parseReadBulkStream(da.body, chunk)
+        }
+    }
+
+    /** Reads several items at once. The result follows the order of keys; missing items are null. */
+    async getItems(keys:string[]):Promise<(Buffer|null)[]> {
+        const results:(Buffer|null)[] = []
+        for await (const { data } of this.iterItems(keys)){
+            results.push(data)
         }
         return results
     }

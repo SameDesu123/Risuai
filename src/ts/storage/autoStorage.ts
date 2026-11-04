@@ -28,6 +28,11 @@ export class AutoStorage{
         return await this.realStorage.getItem(key)
 
     }
+    /** Returns the underlying NodeStorage on the node server, or null for any other backend */
+    async getNodeStorage():Promise<NodeStorage|null> {
+        await this.Init()
+        return this.realStorage instanceof NodeStorage ? this.realStorage : null
+    }
     async keys():Promise<string[]>{
         await this.Init()
         return await this.realStorage.keys()

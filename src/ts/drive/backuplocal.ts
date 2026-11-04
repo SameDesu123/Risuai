@@ -13,12 +13,50 @@ import { language } from "src/lang";
 import { collectColdStorageBackupPayloads, confirmIncompleteColdStorageOperation, getColdStorageBackupKey, getColdStorageItem, isColdStorageBackupData, isValidColdStorageItem, listColdDataKeys, listPluginStorageColdKeys, pluginStorage, setColdStorageItem } from "../process/coldstorage.svelte";
 import { getPluginStorageIndexPointer } from "../process/coldstorageData";
 import { DBState } from "../stores.svelte";
+import type { NodeStorage } from "../storage/nodeStorage";
 
 function getBasename(data:string){
     const baseNameRegex = /\\/g
     const splited = data.replace(baseNameRegex, '/').split('/')
     const lasts = splited[splited.length-1]
     return lasts
+}
+
+type AssetInfoMap = Map<string, { charName: string, assetName: string }>
+
+function appendSkippedAssets(message:string, missingAssets:string[], assetMap:AssetInfoMap){
+    if (missingAssets.length === 0) {
+        return message
+    }
+    const skippedItems = missingAssets.map(key => {
+        const assetInfo = assetMap.get(key);
+        return assetInfo ? `'${assetInfo.assetName}' from ${assetInfo.charName}` : `'${key}'`;
+    }).join(', ');
+    return message + `\n(Skipping... ${skippedItems})`;
+}
+
+/**
+ * Writes assets from the node server into the backup using the bulk read API.
+ * Items are streamed, so only one asset is held in memory at a time.
+ */
+async function writeNodeAssetsToBackup(
+    nodeStorage:NodeStorage,
+    keys:string[],
+    writer:LocalWriter,
+    missingAssets:string[],
+    assetMap:AssetInfoMap,
+    progressLabel:string
+){
+    let i = 0
+    for await (const { key, data } of nodeStorage.iterItems(keys)) {
+        i += 1
+        alertWait(appendSkippedAssets(`${progressLabel} (${i} / ${keys.length})`, missingAssets, assetMap))
+        if (data) {
+            await writer.writeBackup(key, data)
+        } else {
+            missingAssets.push(key)
+        }
+    }
 }
 
 export async function SaveLocalBackup(){
@@ -37,7 +75,7 @@ export async function SaveLocalBackup(){
         return
     }
 
-    const assetMap = new Map<string, { charName: string, assetName: string }>()
+    const assetMap: AssetInfoMap = new Map()
     if (db.characters) {
         for (const char of db.characters) {
             if (!char) continue
@@ -78,21 +116,15 @@ export async function SaveLocalBackup(){
         assetMap.set(db.customBackground, { charName: 'User Settings', assetName: 'Custom Background' })
     }
     const missingAssets: string[] = []
+    const nodeStorage = isTauri ? null : await forageStorage.getNodeStorage()
 
     if(isTauri){
         const assets = await readDir('assets', {baseDir: BaseDirectory.AppData})
         let i = 0;
         for(let asset of assets){
             i += 1;
-            let message = `Saving local Backup... (${i} / ${assets.length})`
-            if (missingAssets.length > 0) {
-                const skippedItems = missingAssets.map(key => {
-                    const assetInfo = assetMap.get(key);
-                    return assetInfo ? `'${assetInfo.assetName}' from ${assetInfo.charName}` : `'${key}'`;
-                }).join(', ');
-                message += `\n(Skipping... ${skippedItems})`;
-            }
-            alertWait(message)
+            const message = `Saving local Backup... (${i} / ${assets.length})`
+            alertWait(appendSkippedAssets(message, missingAssets, assetMap))
 
             const key = asset.name
             if(!key || !key.endsWith('.png')){
@@ -106,20 +138,17 @@ export async function SaveLocalBackup(){
             }
         }
     }
+    else if(nodeStorage){
+        const keys = (await nodeStorage.keys()).filter((key) => key && key.endsWith('.png'))
+        await writeNodeAssetsToBackup(nodeStorage, keys, writer, missingAssets, assetMap, 'Saving local Backup...')
+    }
     else{
         const keys = await forageStorage.keys()
 
         for(let i=0;i<keys.length;i++){
             const key = keys[i]
-            let message = `Saving local Backup... (${i + 1} / ${keys.length})`
-            if (missingAssets.length > 0) {
-                const skippedItems = missingAssets.map(key => {
-                    const assetInfo = assetMap.get(key);
-                    return assetInfo ? `'${assetInfo.assetName}' from ${assetInfo.charName}` : `'${key}'`;
-                }).join(', ');
-                message += `\n(Skipping... ${skippedItems})`;
-            }
-            alertWait(message)
+            const message = `Saving local Backup... (${i + 1} / ${keys.length})`
+            alertWait(appendSkippedAssets(message, missingAssets, assetMap))
 
             if(!key || !key.endsWith('.png')){
                 continue
@@ -232,7 +261,7 @@ export async function SavePartialLocalBackup(){
         return
     }
 
-    const assetMap = new Map<string, { charName: string, assetName: string }>()
+    const assetMap: AssetInfoMap = new Map()
     
     // Only collect main profile images for both characters and groups
     if (db.characters) {
@@ -289,6 +318,7 @@ export async function SavePartialLocalBackup(){
     }
     
     const missingAssets: string[] = []
+    const nodeStorage = isTauri ? null : await forageStorage.getNodeStorage()
 
     if(isTauri){
         // readDir returns entries without 'assets/' prefix, unlike forageStorage.keys()
@@ -310,15 +340,8 @@ export async function SavePartialLocalBackup(){
             }
             
             i += 1;
-            let message = `Saving partial local backup... (${i} / ${assetMap.size})`
-            if (missingAssets.length > 0) {
-                const skippedItems = missingAssets.map(key => {
-                    const assetInfo = assetMap.get(key);
-                    return assetInfo ? `'${assetInfo.assetName}' from ${assetInfo.charName}` : `'${key}'`;
-                }).join(', ');
-                message += `\n(Skipping... ${skippedItems})`;
-            }
-            alertWait(message)
+            const message = `Saving partial local backup... (${i} / ${assetMap.size})`
+            alertWait(appendSkippedAssets(message, missingAssets, assetMap))
 
             const data = await readFile(keyWithPrefix, {baseDir: BaseDirectory.AppData})
             if (data) {
@@ -328,21 +351,17 @@ export async function SavePartialLocalBackup(){
             }
         }
     }
+    else if(nodeStorage){
+        const keys = Array.from(assetMap.keys()).filter((key) => key && key.endsWith('.png'))
+        await writeNodeAssetsToBackup(nodeStorage, keys, writer, missingAssets, assetMap, 'Saving partial local backup...')
+    }
     else{
-        const keys = await forageStorage.keys()
         const assetKeys = Array.from(assetMap.keys())
 
         for(let i=0;i<assetKeys.length;i++){
             const key = assetKeys[i]
-            let message = `Saving partial local backup... (${i + 1} / ${assetKeys.length})`
-            if (missingAssets.length > 0) {
-                const skippedItems = missingAssets.map(key => {
-                    const assetInfo = assetMap.get(key);
-                    return assetInfo ? `'${assetInfo.assetName}' from ${assetInfo.charName}` : `'${key}'`;
-                }).join(', ');
-                message += `\n(Skipping... ${skippedItems})`;
-            }
-            alertWait(message)
+            const message = `Saving partial local backup... (${i + 1} / ${assetKeys.length})`
+            alertWait(appendSkippedAssets(message, missingAssets, assetMap))
 
             if(!key || !key.endsWith('.png')){
                 continue
