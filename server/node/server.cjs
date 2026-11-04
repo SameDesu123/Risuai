@@ -1277,6 +1277,100 @@ app.get('/api/read', authenticatedRouteLimiter, async (req, res, next) => {
     }
 });
 
+const READ_BULK_MAX_ITEMS = 100;
+
+// Reads up to READ_BULK_MAX_ITEMS files in one request.
+// Request body (JSON): { "paths": ["<hex file path>", ...] }
+// Response (application/octet-stream): one frame per requested path, in request order.
+//   [1 byte flag: 0 = missing, 1 = found]
+//   if found: [4 byte big-endian uint32 length][file bytes]
+app.post('/api/read_bulk', authenticatedRouteLimiter, async (req, res, next) => {
+    if(!await checkAuth(req, res)){
+        return;
+    }
+    const paths = req.body?.paths;
+    if(!Array.isArray(paths)){
+        res.status(400).send({
+            error:'File paths required'
+        });
+        return;
+    }
+    if(paths.length > READ_BULK_MAX_ITEMS){
+        res.status(400).send({
+            error:`Too many file paths. Up to ${READ_BULK_MAX_ITEMS} paths can be read at once.`
+        });
+        return;
+    }
+
+    const normalizedSavePath = path.resolve(savePath);
+    const storageFilePaths = [];
+    for(const filePath of paths){
+        if(typeof filePath !== 'string' || !filePath.trim() || !isHex(filePath)){
+            res.status(400).send({
+                error:'Invaild Path'
+            });
+            return;
+        }
+        const storageFilePath = path.resolve(normalizedSavePath, filePath.trim());
+        if (!storageFilePath.startsWith(`${normalizedSavePath}${path.sep}`)) {
+            res.status(400).send({
+                error:'Invaild Path'
+            });
+            return;
+        }
+        storageFilePaths.push(storageFilePath);
+    }
+
+    const writeChunk = async (chunk) => {
+        if(!res.write(chunk)){
+            await new Promise((resolve) => {
+                const done = () => {
+                    res.off('drain', done);
+                    res.off('close', done);
+                    resolve();
+                };
+                res.on('drain', done);
+                res.on('close', done);
+            });
+        }
+    };
+
+    res.setHeader('Content-Type','application/octet-stream');
+    try {
+        for(const storageFilePath of storageFilePaths){
+            if(res.destroyed){
+                return;
+            }
+            let content = null;
+            try {
+                content = await fs.readFile(storageFilePath);
+            } catch (error) {
+                if(error?.code !== 'ENOENT'){
+                    throw error;
+                }
+            }
+            if(content === null){
+                await writeChunk(Buffer.from([0]));
+                continue;
+            }
+            const frameHeader = Buffer.alloc(5);
+            frameHeader.writeUInt8(1, 0);
+            frameHeader.writeUInt32BE(content.byteLength, 1);
+            await writeChunk(frameHeader);
+            await writeChunk(content);
+        }
+        res.end();
+    } catch (error) {
+        if(res.headersSent){
+            // A partial response cannot be turned into an error response; abort it
+            console.error('[Storage] Failed to read items in bulk:', error);
+            res.destroy(error);
+            return;
+        }
+        next(error);
+    }
+});
+
 app.get('/api/remove', authenticatedRouteLimiter, async (req, res, next) => {
     if(!await checkAuth(req, res)){
         return;

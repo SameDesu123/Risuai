@@ -85,6 +85,46 @@ function getSetItemContext(key:string, byteLength:number) {
 }
 
 
+/** Must match READ_BULK_MAX_ITEMS in server/node/server.cjs */
+export const NODE_READ_BULK_MAX_ITEMS = 100
+
+/**
+ * Parses a /api/read_bulk response: one frame per requested key,
+ * [1 byte flag: 0 = missing, 1 = found] then, if found, [uint32 BE length][bytes].
+ */
+export function parseReadBulkResponse(data:Uint8Array, count:number):(Buffer|null)[] {
+    const view = new DataView(data.buffer, data.byteOffset, data.byteLength)
+    const results:(Buffer|null)[] = []
+    let offset = 0
+    for(let i = 0; i < count; i++){
+        if(offset + 1 > data.byteLength){
+            throw new Error('Node storage getItems received a truncated response')
+        }
+        const flag = data[offset]
+        offset += 1
+        if(flag === 0){
+            results.push(null)
+            continue
+        }
+        if(flag !== 1 || offset + 4 > data.byteLength){
+            throw new Error('Node storage getItems received an invalid response')
+        }
+        const length = view.getUint32(offset)
+        offset += 4
+        if(offset + length > data.byteLength){
+            throw new Error('Node storage getItems received a truncated response')
+        }
+        const item = Buffer.from(data.subarray(offset, offset + length))
+        offset += length
+        // Match getItem, which treats an empty file as missing
+        results.push(item.length === 0 ? null : item)
+    }
+    if(offset !== data.byteLength){
+        throw new Error('Node storage getItems received an invalid response')
+    }
+    return results
+}
+
 export class NodeStorage{
 
     authChecked = false
@@ -206,6 +246,33 @@ export class NodeStorage{
             return null
         }
         return data
+    }
+    /**
+     * Reads several items with /api/read_bulk, NODE_READ_BULK_MAX_ITEMS keys per request.
+     * The result has one entry per key, in the same order; missing items are null.
+     */
+    async getItems(keys:string[]):Promise<(Buffer|null)[]> {
+        await this.checkAuth()
+        const results:(Buffer|null)[] = []
+        for(let i = 0; i < keys.length; i += NODE_READ_BULK_MAX_ITEMS){
+            const chunk = keys.slice(i, i + NODE_READ_BULK_MAX_ITEMS)
+            const da = await fetch('/api/read_bulk', {
+                method: "POST",
+                body: JSON.stringify({
+                    paths: chunk.map((key) => Buffer.from(key, 'utf-8').toString('hex'))
+                }),
+                headers: {
+                    'content-type': 'application/json',
+                    'risu-auth': await this.createAuth()
+                }
+            })
+            if(da.status < 200 || da.status >= 300){
+                const responseDetail = await getStorageResponseErrorDetail(da)
+                throw new Error(`Node storage getItems failed.\nHTTP: ${da.status}` + (responseDetail ? `\nServer: ${responseDetail}` : ''))
+            }
+            results.push(...parseReadBulkResponse(new Uint8Array(await da.arrayBuffer()), chunk.length))
+        }
+        return results
     }
     async keys():Promise<string[]>{
         await this.checkAuth()
