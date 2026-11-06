@@ -140,6 +140,7 @@ export const languageEnglish = {
             "Balanced lowers the load by trying post-processing only at short intervals, about every 0.125 seconds.\n\n" +
             "Strong is similar to Balanced, but skips post-processing while streaming and runs it only once after the stream finishes.\n\n" +
             "This is an experimental feature, and some features may behave unexpectedly because of it.",
+        smoothStreaming: "Reveals streamed responses gradually, a few characters per frame, instead of jumping by whole chunks as they arrive from the server. When a large chunk arrives the speed rises automatically to catch up, and once the response is finished the remaining text is shown quickly.\n\nRequires Response Streaming, and Streaming Display Optimization set to Off. Every frame runs post-processing, so with heavy regex scripts the text may appear in larger steps.",
         imageCompression: "If enabled, it will compress images when exporting character. if animated images doesn't works, try disabling this option.",
         useExperimental: "If enabled, it will show some experimental features.",
         forceProxyAsOpenAI: "If enabled, it will force to use OpenAI format when using reverse proxy.",
@@ -887,6 +888,10 @@ export const languageEnglish = {
     streamingDisplayOptimizationOff: "Off",
     streamingDisplayOptimizationBalanced: "Balanced",
     streamingDisplayOptimizationStrong: "Strong",
+    smoothStreaming: "Smooth Streaming",
+    settingConflictTitle: "This setting is disabled because of conflicting settings:",
+    smoothStreamingConflictStreamingOff: "Response Streaming is turned off (Bot Settings).",
+    smoothStreamingConflictDisplayOptimization: "Streaming Display Optimization is not set to Off (Advanced Settings, visible when experimental features are enabled).",
     altGreet: "Alternative First Messages",
     scripts: "Scripts",
     settings: "Settings",

@@ -60,6 +60,15 @@ export interface SegmentOption {
 }
 
 /**
+ * A reason why a setting cannot take effect, usually another setting that conflicts with it
+ */
+export interface SettingConflict {
+    /** i18n key for the reason text — takes precedence over fallbackLabel */
+    labelKey?: string;
+    fallbackLabel?: string;
+}
+
+/**
  * Type-specific options for setting items
  */
 export interface SettingOptions {
@@ -140,6 +149,13 @@ export interface SettingItem {
      * @param ctx - Contains db, modelInfo, and subModelInfo
      */
     condition?: (ctx: SettingContext) => boolean;
+
+    /**
+     * Conflict check. When it returns one or more conflicts, the control is
+     * disabled and a red alert icon is shown; clicking the icon lists the reasons.
+     * Currently supported by 'check' items.
+     */
+    conflicts?: (ctx: SettingContext) => SettingConflict[];
     
     /** Type-specific options */
     options?: SettingOptions;

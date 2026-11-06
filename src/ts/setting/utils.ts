@@ -59,6 +59,16 @@ export function setSettingValue(item: SettingItem, newValue: any, ctx: SettingCo
 }
 
 /**
+ * Resolve the item's conflicts into translated reason strings (empty when none)
+ */
+export function getConflictMessages(item: SettingItem, ctx: SettingContext): string[] {
+    if (!item.conflicts) return [];
+    return item.conflicts(ctx).map((c) =>
+        (c.labelKey && (language as any)[c.labelKey]) || c.fallbackLabel || c.labelKey || ''
+    );
+}
+
+/**
  * Check if item should be visible based on condition
  */
 export function checkCondition(item: SettingItem, ctx: SettingContext): boolean {

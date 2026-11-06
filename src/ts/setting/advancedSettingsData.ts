@@ -1,6 +1,12 @@
 
 import type { SettingItem } from './types';
 import { isNodeServer, isTauri } from '../platform';
+import { getSmoothStreamingConflicts, type SmoothStreamingConflict } from '../process/smoothStream';
+
+const smoothStreamingConflictLabelKeys: Record<SmoothStreamingConflict, string> = {
+    responseStreamingOff: 'smoothStreamingConflictStreamingOff',
+    streamingDisplayOptimizationOn: 'smoothStreamingConflictDisplayOptimization',
+};
 
 export const advancedSettingsItems: SettingItem[] = [
     { type: 'header', id: 'adv.header', labelKey: 'advancedSettings', options: { level: 'h2' }, classes: '!mb-0' },
@@ -158,6 +164,11 @@ export const advancedSettingsItems: SettingItem[] = [
                 { value: 'strong', labelKey: 'streamingDisplayOptimizationStrong' }
             ]
         }
+    },
+    {
+        id: 'adv.smoothStreaming', type: 'check', labelKey: 'smoothStreaming', bindKey: 'smoothStreaming', helpKey: 'smoothStreaming',
+        classes: 'mt-4',
+        conflicts: (ctx) => getSmoothStreamingConflicts(ctx.db).map((c) => ({ labelKey: smoothStreamingConflictLabelKeys[c] }))
     },
     { id: 'adv.newOai', type: 'check', labelKey: 'newOAIHandle', bindKey: 'newOAIHandle', classes: 'mt-4' },
     { id: 'adv.noWaitTrans', type: 'check', labelKey: 'noWaitForTranslate', bindKey: 'noWaitForTranslate', classes: 'mt-4' },

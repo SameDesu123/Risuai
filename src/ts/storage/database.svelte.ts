@@ -1261,6 +1261,7 @@ export interface Database{
     chatLoadInitialPages?: number
     chatLoadAdditionalPages?: number
     streamingDisplayOptimizationMode?: StreamingDisplayOptimizationMode
+    smoothStreaming?: boolean
     pluginDevelopMode?: boolean
     echoMessage?:string
     echoDelay?:number

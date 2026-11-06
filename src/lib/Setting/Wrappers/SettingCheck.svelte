@@ -1,9 +1,10 @@
 <script lang="ts">
     import type { SettingItem, SettingContext } from 'src/ts/setting/types';
-    import { UNINITIALIZED, getLabel, getSettingValue, setSettingValue } from 'src/ts/setting/utils';
+    import { UNINITIALIZED, getConflictMessages, getLabel, getSettingValue, setSettingValue } from 'src/ts/setting/utils';
     import { untrack } from 'svelte';
     import Check from 'src/lib/UI/GUI/CheckInput.svelte';
     import Help from 'src/lib/Others/Help.svelte';
+    import ConflictBadge from 'src/lib/Setting/ConflictBadge.svelte';
 
     interface Props {
         item: SettingItem;
@@ -11,6 +12,8 @@
     }
 
     let { item, ctx }: Props = $props();
+
+    let conflictMessages = $derived(getConflictMessages(item, ctx));
 
     let localValue: any = $state(untrack(() => getSettingValue(item, ctx)));
 
@@ -32,8 +35,9 @@
 </script>
 
 <div class="flex items-center {item.classes ?? 'mt-2'}">
-    <Check bind:check={localValue} name={getLabel(item)} >
+    <Check bind:check={localValue} name={getLabel(item)} disabled={conflictMessages.length > 0}>
         {#if item.showExperimental}<Help key="experimental"/>{/if}
         {#if item.helpKey}<Help key={item.helpKey as any} unrecommended={item.helpUnrecommended ?? false}/>{/if}
+        {#if conflictMessages.length > 0}<ConflictBadge name={getLabel(item)} reasons={conflictMessages}/>{/if}
     </Check>
 </div>

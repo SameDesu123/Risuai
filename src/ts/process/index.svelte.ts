@@ -1,4 +1,5 @@
 import { get, writable } from "svelte/store";
+import { isSmoothStreamingActive, smoothStream } from "./smoothStream";
 import { type character, type MessageGenerationInfo, type Chat, type MessagePresetInfo, changeToPreset, setCurrentChat, type Message, type StreamingDisplayOptimizationMode } from "../storage/database.svelte";
 import { DBState } from '../stores.svelte';
 import { CharEmotion, selectedCharID } from "../stores.svelte";
@@ -1589,7 +1590,7 @@ export async function sendChat(chatProcessIndex = -1,arg:{
         return false
     }
     else if(req.type === 'streaming'){
-        const reader = req.result.getReader()
+        const reader = (isSmoothStreamingActive(DBState.db) ? smoothStream(req.result) : req.result).getReader()
         let msgIndex = DBState.db.characters[selectedChar].chats[selectedChat].message.length
         let prefix = ''
         if(arg.continue){
