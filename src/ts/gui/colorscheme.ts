@@ -281,6 +281,7 @@ export function updateColorScheme(){
         document.documentElement.style.setProperty("--risu-theme-textcolor2", colorScheme.textcolor2);
         document.documentElement.style.setProperty("--risu-theme-darkborderc", colorScheme.darkBorderc);
         document.documentElement.style.setProperty("--risu-theme-darkbutton", colorScheme.darkbutton);
+        document.documentElement.dataset.colorSchemeType = colorScheme.type;
         ColorSchemeTypeStore.set(colorScheme.type)
     } catch (error) {}
 }

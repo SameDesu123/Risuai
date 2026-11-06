@@ -151,6 +151,7 @@ Available custom theme colors include:
 - `bgcolor`, `darkbg`, `darkbutton`, `selected`
 - `borderc`, `darkborderc`
 - `draculared`
+- `warning` (switches between `--risu-theme-warning-on-dark` and `-on-light` by color scheme type)
 
 You can safely apply Tailwind's opacity modifiers directly to these custom theme colors (e.g., `text-textcolor/90`, `bg-textcolor/5`, `border-textcolor/10`).
 

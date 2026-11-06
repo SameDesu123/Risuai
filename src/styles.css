@@ -12,6 +12,7 @@
   --color-textcolor2: var(--risu-theme-textcolor2);
   --color-darkborderc: var(--risu-theme-darkborderc);
   --color-darkbutton: var(--risu-theme-darkbutton);
+  --color-warning: var(--risu-theme-warning);
 
   --color-primary-50: var(--risu-theme-primary-50);
   --color-primary-100: var(--risu-theme-primary-100);
@@ -177,6 +178,10 @@ body {
   --risu-theme-textcolor2: #64748b;
   --risu-theme-darkborderc: #4b5563;
   --risu-theme-darkbutton: #374151;
+  /* Warning color per scheme type; both keep >= 4:1 contrast on every preset's bgcolor/darkbg */
+  --risu-theme-warning-on-dark: #f0b100;
+  --risu-theme-warning-on-light: #a65f00;
+  --risu-theme-warning: var(--risu-theme-warning-on-dark);
   --risu-height-size: 100%;
   --risu-font-family: Arial, sans-serif, serif;
 
@@ -234,6 +239,10 @@ body {
   --risu-theme-success-700: #15803d;
   --risu-theme-success-800: #166534;
   --risu-theme-success-900: #14532d;
+}
+
+:root[data-color-scheme-type="light"] {
+  --risu-theme-warning: var(--risu-theme-warning-on-light);
 }
 
 .x-risu-language-json {

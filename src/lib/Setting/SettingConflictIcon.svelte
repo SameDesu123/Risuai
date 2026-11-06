@@ -20,7 +20,7 @@
 {#if conflicts.length > 0}
     <button
         type="button"
-        class="inline-flex items-center text-yellow-500 hover:text-yellow-400 cursor-pointer"
+        class="inline-flex items-center rounded-sm text-warning hover:bg-warning/15 cursor-pointer"
         style="vertical-align: -2px;"
         title={language.settingConflict.title}
         aria-label={language.settingConflict.title}
