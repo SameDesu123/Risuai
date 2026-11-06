@@ -17,7 +17,9 @@
     import OptionInput from "../UI/GUI/OptionInput.svelte";
     import { language } from 'src/lang';
     import { getFetchData } from 'src/ts/globalApi.svelte';
-    import { alertStore, selectedCharID } from "src/ts/stores.svelte";
+    import { selectedCharID } from "src/ts/stores.svelte";
+    // Setting type 'none' on this store answers the dialog on screen.
+    import { alertDialogStore as alertStore } from "src/ts/alertQueue";
     import { tokenize } from "src/ts/tokenizer";
     import TextAreaInput from "../UI/GUI/TextAreaInput.svelte";
     import ModuleChatMenu from "../Setting/Pages/Module/ModuleChatMenu.svelte";
@@ -803,15 +805,6 @@
         </div>
     </div>
 
-{:else if $alertStore.type === 'toast'}
-    <div class="toast-anime absolute right-0 bottom-0 bg-darkbg p-4 break-any rounded-md flex flex-col max-w-3xl  max-h-11/12 overflow-y-auto z-50 text-textcolor"
-        onanimationend={() => {
-            alertStore.set({
-                type: 'none',
-                msg: ''
-            })
-        }}
-    >{$alertStore.msg}</div>
 {:else if $alertStore.type === 'selectModule'}
     <ModuleChatMenu alertMode close={(d) => {
         alertStore.set({
@@ -1070,22 +1063,6 @@
         word-break: normal;
         overflow-wrap: anywhere;
     }
-    @keyframes toastAnime {
-        0% {
-            opacity: 0;
-        }
-        50% {
-            opacity: 1;
-        }
-        100% {
-            opacity: 0;
-        }
-    }
-
-    .toast-anime {
-        animation: toastAnime 1s ease-out;
-    }
-
     .vis{
         opacity: 1 !important;
         --tw-bg-opacity: 1 !important;

@@ -1,9 +1,8 @@
 import { get, writable } from "svelte/store"
-import { sleep } from "./util"
 import { language } from "../lang"
 import { isTauri, isNodeServer } from "src/ts/platform"
 import { getDatabase, type MessageGenerationInfo } from "./storage/database.svelte"
-import { alertStore as alertStoreImported } from "./stores.svelte"
+import { alertStore as alertStoreImported, openDialog, setStatusAlert, pushToast, waitForDialogs } from "./alertQueue"
 
 export interface alertData{
     type: 'error'|'normal'|'none'|'ask'|'wait'|'selectChar'
@@ -65,93 +64,75 @@ export function alertError(msg: string | Error) {
                     (!isTauri && !isNodeServer) ? language.errors.networkFetchWeb : language.errors.networkFetch
     }
 
-    alertStoreImported.set({
+    void openDialog({
         'type': 'error',
         'msg': msg,
         'submsg': submsg,
         'stackTrace': stackTrace
-    })
+    }, { replaceable: true })
 }
 
 export async function waitAlert(){
-    while(true){
-        if (get(alertStoreImported).type === 'none'){
-            break
-        }
-        await sleep(10)
-    }
+    await waitForDialogs()
 }
 
 export function alertNormal(msg:string){
-    alertStoreImported.set({
+    void openDialog({
         'type': 'normal',
         'msg': msg
-    })
+    }, { replaceable: true })
 }
 
 export async function alertNormalWait(msg:string){
-    alertStoreImported.set({
+    await openDialog({
         'type': 'normal',
         'msg': msg
     })
-    await waitAlert()
 }
 
 export async function alertAddCharacter() {
-    alertStoreImported.set({
+    return await openDialog({
         'type': 'addchar',
         'msg': language.addCharacter
     })
-    await waitAlert()
-
-    return get(alertStoreImported).msg
 }
 
 export async function alertChatOptions() {
-    alertStoreImported.set({
+    const msg = await openDialog({
         'type': 'chatOptions',
         'msg': language.chatOptions
     })
-    await waitAlert()
 
-    return parseInt(get(alertStoreImported).msg)
+    return parseInt(msg)
 }
 
 export async function alertLogin(){
-    alertStoreImported.set({
+    return await openDialog({
         'type': 'login',
         'msg': 'login'
     })
-    await waitAlert()
-
-    return get(alertStoreImported).msg
 }
 
 export async function alertSelect(msg:string[], display?:string){
     const message = display !== undefined ? `__DISPLAY__${display}||${msg.join('||')}` : msg.join('||')
-    alertStoreImported.set({
+    return await openDialog({
         'type': 'select',
         'msg': message
     })
-
-    await waitAlert()
-
-    return get(alertStoreImported).msg
 }
 
 export async function alertErrorWait(msg:string){
-    alertStoreImported.set({
+    await openDialog({
         'type': 'wait2',
         'msg': msg
     })
-    await waitAlert()
 }
 
 export function alertMd(msg:string){
-    alertStoreImported.set({
+    void openDialog({
         'type': 'markdown',
         'msg': msg
-    })
+    }, { replaceable: true })
 }
 
 export function doingAlert(){
@@ -159,74 +140,58 @@ export function doingAlert(){
 }
 
 export function alertToast(msg:string){
-    alertStoreImported.set({
-        'type': 'toast',
-        'msg': msg
-    })
+    pushToast(msg)
 }
 
 export function alertWait(msg:string){
-    alertStoreImported.set({
+    setStatusAlert({
         'type': 'wait',
         'msg': msg
     })
 
 }
 
-
+/** Hides the wait/progress overlay. Open dialogs stay until the user answers them. */
 export function alertClear(){
-    alertStoreImported.set({
-        'type': 'none',
-        'msg': ''
-    })
+    setStatusAlert(null)
 }
 
 export async function alertSelectChar(){
-    alertStoreImported.set({
+    return await openDialog({
         'type': 'selectChar',
         'msg': ''
     })
-
-    await waitAlert()
-
-    return get(alertStoreImported).msg
 }
 
 export async function alertConfirm(msg:string){
 
-    alertStoreImported.set({
+    const answer = await openDialog({
         'type': 'ask',
         'msg': msg
     })
 
-    await waitAlert()
-
-    return get(alertStoreImported).msg === 'yes'
+    return answer === 'yes'
 }
 
 export async function alertPluginConfirm(msg:string){
 
-    alertStoreImported.set({
+    const answer = await openDialog({
         'type': 'pluginconfirm',
         'msg': msg
     })
 
-    await waitAlert()
-
-    return get(alertStoreImported).msg === 'yes'
+    return answer === 'yes'
 }
 
 export async function alertCardExport(type:string = ''){
 
-    alertStoreImported.set({
+    const answer = await openDialog({
         'type': 'cardexport',
         'msg': '',
         'submsg': type
     })
 
-    await waitAlert()
-
-    return JSON.parse(get(alertStoreImported).msg) as {
+    return JSON.parse(answer) as {
         type: string,
         type2: string,
     }
@@ -238,14 +203,12 @@ export async function alertTOS(){
         return true
     }
 
-    alertStoreImported.set({
+    const answer = await openDialog({
         'type': 'tos',
         'msg': 'tos'
     })
 
-    await waitAlert()
-
-    if(get(alertStoreImported).msg === 'yes'){
+    if(answer === 'yes'){
         localStorage.setItem('tos4', 'true')
         return true
     }
@@ -260,52 +223,39 @@ export async function alertTOS(){
 
 export async function alertInput(msg:string, datalist?:[string, string][], defaultValue?:string) {
 
-    alertStoreImported.set({
+    return await openDialog({
         'type': 'input',
         'msg': msg,
         'datalist': datalist ?? [],
         'defaultValue': defaultValue ?? ''
     })
-
-    await waitAlert()
-
-    return get(alertStoreImported).msg
 }
 
 export async function alertModuleSelect(){
 
-    alertStoreImported.set({
+    return await openDialog({
         'type': 'selectModule',
         'msg': ''
     })
-
-    while(true){
-        if (get(alertStoreImported).type === 'none'){
-            break
-        }
-        await sleep(20)
-    }
-
-    return get(alertStoreImported).msg
 }
 
 export function alertRequestData(info:AlertGenerationInfoStoreData){
     alertGenerationInfoStore.set(info)
-    alertStoreImported.set({
+    void openDialog({
         'type': 'requestdata',
         'msg': info.genInfo.generationId ?? 'none'
     })
 }
 
 export function showHypaV2Alert(){
-    alertStoreImported.set({
+    void openDialog({
         'type': 'hypaV2',
         'msg': ""
     })
 }
 
 export function alertRequestLogs(){
-    alertStoreImported.set({
+    void openDialog({
         'type': 'requestlogs',
         'msg': ''
     })

@@ -5,6 +5,7 @@ import { alertStore, DBState, loadoutModalStore, MobileGUIStack, MobileSideBar, 
 import { language } from "src/lang"
 import { updateTextThemeAndCSS } from "./gui/colorscheme"
 import { defaultHotkeys } from "./defaulthotkeys"
+import { dismissAlert, resolveDialog } from "./alertQueue"
 import { doingChat, previewBody, sendChat } from "./process/index.svelte"
 import { RISU_SIDEBAR_DRAG_TYPE } from "./dragTypes"
 
@@ -239,6 +240,7 @@ export function initHotkey(){
         }
         if(ev.key === 'Escape'){
             if(doingAlert()){
+                dismissAlert()
                 alertToast('Alert Closed')
             }
             if(get(settingsOpen)){
@@ -248,11 +250,9 @@ export function initHotkey(){
         }
         if(ev.key === 'Enter'){
             const alertType = get(alertStore).type 
-            if(alertType === 'ask' || alertType === 'normal' || alertType === 'error'){
-                alertStore.set({
-                    type: 'none',
-                    msg: 'yes'
-                })
+            // Ignore key repeat so holding Enter cannot answer the dialogs queued behind this one
+            if(!ev.repeat && (alertType === 'ask' || alertType === 'normal' || alertType === 'error')){
+                resolveDialog('yes')
             }
         }
     })
