@@ -1,4 +1,4 @@
-import { BaseDirectory, readFile, readDir, writeFile } from "@tauri-apps/plugin-fs";
+import { BaseDirectory, writeFile } from "@tauri-apps/plugin-fs";
 import localforage from "localforage";
 import { alertError, alertNormal, alertStore, alertWait, alertMd, alertConfirm } from "../alert";
 import { LocalWriter, forageStorage, requiresFullEncoderReload } from "../globalApi.svelte";
@@ -13,6 +13,7 @@ import { language } from "src/lang";
 import { collectColdStorageBackupPayloads, confirmIncompleteColdStorageOperation, getColdStorageBackupKey, getColdStorageItem, isColdStorageBackupData, isValidColdStorageItem, listColdDataKeys, listPluginStorageColdKeys, pluginStorage, setColdStorageItem } from "../process/coldstorage.svelte";
 import { getPluginStorageIndexPointer } from "../process/coldstorageData";
 import { DBState } from "../stores.svelte";
+import { NativeBackupWriter } from "./nativeBackup";
 
 function getBasename(data:string){
     const baseNameRegex = /\\/g
@@ -30,7 +31,7 @@ export async function SaveLocalBackup(){
         return
     }
 
-    const writer = new LocalWriter()
+    const writer = isTauri ? new NativeBackupWriter() : new LocalWriter()
     const r = await writer.init()
     if(!r){
         alertError('Failed')
@@ -79,32 +80,11 @@ export async function SaveLocalBackup(){
     }
     const missingAssets: string[] = []
 
-    if(isTauri){
-        const assets = await readDir('assets', {baseDir: BaseDirectory.AppData})
-        let i = 0;
-        for(let asset of assets){
-            i += 1;
-            let message = `Saving local Backup... (${i} / ${assets.length})`
-            if (missingAssets.length > 0) {
-                const skippedItems = missingAssets.map(key => {
-                    const assetInfo = assetMap.get(key);
-                    return assetInfo ? `'${assetInfo.assetName}' from ${assetInfo.charName}` : `'${key}'`;
-                }).join(', ');
-                message += `\n(Skipping... ${skippedItems})`;
-            }
-            alertWait(message)
-
-            const key = asset.name
-            if(!key || !key.endsWith('.png')){
-                continue
-            }
-            const data = await readFile('assets/' + asset.name, {baseDir: BaseDirectory.AppData})
-            if (data) {
-                await writer.writeBackup(key, data)
-            } else {
-                missingAssets.push(key)
-            }
-        }
+    if(writer instanceof NativeBackupWriter){
+        const { missing } = await writer.writeAssets(null, (done, total) => {
+            alertWait(`Saving local Backup... (${done} / ${total})`)
+        })
+        missingAssets.push(...missing.map((name) => 'assets/' + name))
     }
     else{
         const keys = await forageStorage.keys()
@@ -225,7 +205,7 @@ export async function SavePartialLocalBackup(){
         return
     }
 
-    const writer = new LocalWriter()
+    const writer = isTauri ? new NativeBackupWriter() : new LocalWriter()
     const r = await writer.init()
     if(!r){
         alertError('Failed')
@@ -290,43 +270,14 @@ export async function SavePartialLocalBackup(){
     
     const missingAssets: string[] = []
 
-    if(isTauri){
-        // readDir returns entries without 'assets/' prefix, unlike forageStorage.keys()
-        const assets = await readDir('assets', {baseDir: BaseDirectory.AppData})
-        let i = 0;
-        for(let asset of assets){
-            if(!asset.name){
-                continue
-            }
-
-            const keyWithPrefix = asset.name.startsWith('assets/') ? asset.name : `assets/${asset.name}`
-            if(!keyWithPrefix.endsWith('.png')){
-                continue
-            }
-            
-            // Only process if this asset is in our map (profile images only)
-            if(!assetMap.has(keyWithPrefix)){
-                continue
-            }
-            
-            i += 1;
-            let message = `Saving partial local backup... (${i} / ${assetMap.size})`
-            if (missingAssets.length > 0) {
-                const skippedItems = missingAssets.map(key => {
-                    const assetInfo = assetMap.get(key);
-                    return assetInfo ? `'${assetInfo.assetName}' from ${assetInfo.charName}` : `'${key}'`;
-                }).join(', ');
-                message += `\n(Skipping... ${skippedItems})`;
-            }
-            alertWait(message)
-
-            const data = await readFile(keyWithPrefix, {baseDir: BaseDirectory.AppData})
-            if (data) {
-                await writer.writeBackup(keyWithPrefix, data)
-            } else {
-                missingAssets.push(keyWithPrefix)
-            }
-        }
+    if(writer instanceof NativeBackupWriter){
+        const only = Array.from(assetMap.keys())
+            .filter((key) => key.startsWith('assets/') && key.endsWith('.png'))
+            .map((key) => key.slice('assets/'.length))
+        const { missing } = await writer.writeAssets(only, (done, total) => {
+            alertWait(`Saving partial local backup... (${done} / ${total})`)
+        })
+        missingAssets.push(...missing.map((name) => 'assets/' + name))
     }
     else{
         const keys = await forageStorage.keys()

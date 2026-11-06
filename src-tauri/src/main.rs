@@ -1,6 +1,9 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod backup;
+mod backup_format;
+
 use base64::{engine::general_purpose, Engine as _};
 use oauth2::basic::BasicClient;
 use oauth2::{
@@ -431,7 +434,11 @@ fn main() {
             streamed_fetch,
             cancel_streamed_fetch,
             cancel_all_streamed_fetch,
-            oauth_login
+            oauth_login,
+            backup::backup_open,
+            backup::backup_write_assets,
+            backup::backup_write_entry,
+            backup::backup_close
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application")
