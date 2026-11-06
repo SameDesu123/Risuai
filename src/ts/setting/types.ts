@@ -8,6 +8,7 @@
 import type { Database } from '../storage/database.svelte';
 import type { CustomComponentId, CustomComponentProps } from './customComponents';
 import type { LLMModel } from '../model/types';
+import type { languageEnglish } from '../../lang/en';
 
 /**
  * Context passed to condition functions for visibility checks
@@ -181,6 +182,22 @@ export interface SettingItem {
      * Optional callback fired when the value changes (useful for side-effects like CSS updates)
      */
     onChange?: (val: any, ctx: SettingContext) => void;
+}
+
+/**
+ * Disables setting items while a conflicting setting is active.
+ * Rules live in settingConflictsData.ts. Disabled items show a yellow warning
+ * icon next to their label that opens the reason in a modal.
+ */
+export interface SettingConflictRule {
+    /** Unique rule identifier */
+    id: string;
+    /** SettingItem ids that become disabled while the rule is active */
+    disables: string[];
+    /** Return true while the conflict is active */
+    when: (ctx: SettingContext) => boolean;
+    /** Key in language.settingConflict.messages explaining why the item is disabled */
+    messageKey: keyof typeof languageEnglish.settingConflict.messages;
 }
 
 /**

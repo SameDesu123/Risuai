@@ -3,6 +3,9 @@
     import { UNINITIALIZED, getLabel, getSettingValue, setSettingValue } from 'src/ts/setting/utils';
     import { untrack } from 'svelte';
     import ColorInput from 'src/lib/UI/GUI/ColorInput.svelte';
+    import SettingConflictIcon from '../SettingConflictIcon.svelte';
+    import { getActiveConflicts } from 'src/ts/setting/conflicts';
+    import SettingDisabledScope from '../SettingDisabledScope.svelte';
 
     interface Props {
         item: SettingItem;
@@ -28,9 +31,14 @@
             }
         });
     });
+
+    let conflicts = $derived(getActiveConflicts(item, ctx));
+    let disabled = $derived(conflicts.length > 0);
 </script>
 
 <div class="flex items-center {item.classes ?? 'mt-2'}">
-    <ColorInput bind:value={localValue} nullable={item.options?.nullable ?? false} />
-    <span class="ml-2">{getLabel(item)}</span>
+    <SettingDisabledScope {disabled}>
+        <ColorInput bind:value={localValue} nullable={item.options?.nullable ?? false} />
+    </SettingDisabledScope>
+    <span class="ml-2" class:text-textcolor2={disabled}>{getLabel(item)} <SettingConflictIcon {conflicts} /></span>
 </div>

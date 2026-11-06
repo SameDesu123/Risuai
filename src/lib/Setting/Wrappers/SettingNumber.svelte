@@ -4,6 +4,9 @@
     import { untrack } from 'svelte';
     import NumberInput from 'src/lib/UI/GUI/NumberInput.svelte';
     import Help from 'src/lib/Others/Help.svelte';
+    import SettingConflictIcon from '../SettingConflictIcon.svelte';
+    import { getActiveConflicts } from 'src/ts/setting/conflicts';
+    import SettingDisabledScope from '../SettingDisabledScope.svelte';
 
     interface Props {
         item: SettingItem;
@@ -29,12 +32,17 @@
             }
         });
     });
+
+    let conflicts = $derived(getActiveConflicts(item, ctx));
+    let disabled = $derived(conflicts.length > 0);
 </script>
 
-<span class="text-textcolor {item.classes ?? ''}">
+<span class="{disabled ? 'text-textcolor2' : 'text-textcolor'} {item.classes ?? ''}">
     {getLabel(item)}
     {#if item.helpKey}<Help key={item.helpKey as any}/>{/if}
+    <SettingConflictIcon {conflicts} />
 </span>
+<SettingDisabledScope {disabled}>
 <NumberInput
     marginBottom={true}
     size="sm"
@@ -42,3 +50,4 @@
     max={item.options?.max}
     bind:value={localValue}
 />
+</SettingDisabledScope>

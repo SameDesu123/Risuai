@@ -1762,6 +1762,13 @@ export const languageEnglish = {
     skipSavingAssetsOnWebSync: "Skip Saving Assets on Web Sync",
     applyAdditionalParamsToAll: "Apply Additional Parameters to All Models",
     localToggles: "Local Toggles",
+    settingConflict: {
+        title: "Disabled due to a setting conflict",
+        messages: {
+            autoContinueRemoveIncomplete: "**Remove Incomplete Sentences** is on. It trims every response to the last punctuation mark, so Auto Continue would never trigger on missing punctuation. Turn off Remove Incomplete Sentences to use this option.",
+            claudeBatchingStreaming: "**Streaming** is on. Claude Batching sends requests through the batch API, which does not support streaming. Turn off Streaming in the model settings to use this option.",
+        },
+    },
 } satisfies I18nTranslation;
 
 type I18nTranslationFunction = (...args: any[]) => string;

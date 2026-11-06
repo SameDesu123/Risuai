@@ -4,6 +4,8 @@
     import { untrack } from 'svelte';
     import Check from 'src/lib/UI/GUI/CheckInput.svelte';
     import Help from 'src/lib/Others/Help.svelte';
+    import SettingConflictIcon from '../SettingConflictIcon.svelte';
+    import { getActiveConflicts } from 'src/ts/setting/conflicts';
 
     interface Props {
         item: SettingItem;
@@ -29,11 +31,15 @@
             }
         });
     });
+
+    let conflicts = $derived(getActiveConflicts(item, ctx));
+    let disabled = $derived(conflicts.length > 0);
 </script>
 
 <div class="flex items-center {item.classes ?? 'mt-2'}">
-    <Check bind:check={localValue} name={getLabel(item)} >
+    <Check bind:check={localValue} name={getLabel(item)} {disabled}>
         {#if item.showExperimental}<Help key="experimental"/>{/if}
         {#if item.helpKey}<Help key={item.helpKey as any} unrecommended={item.helpUnrecommended ?? false}/>{/if}
+        <SettingConflictIcon {conflicts} />
     </Check>
 </div>

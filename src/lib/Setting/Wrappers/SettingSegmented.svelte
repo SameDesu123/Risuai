@@ -5,6 +5,9 @@
     import Help from 'src/lib/Others/Help.svelte';
     import { language } from 'src/lang';
     import { DBState } from 'src/ts/stores.svelte';
+    import SettingConflictIcon from '../SettingConflictIcon.svelte';
+    import { getActiveConflicts } from 'src/ts/setting/conflicts';
+    import SettingDisabledScope from '../SettingDisabledScope.svelte';
 
     interface Props {
         item: SettingItem;
@@ -32,14 +35,20 @@
             setSettingValue(item, fallback, ctx);
         }
     });
+
+    let conflicts = $derived(getActiveConflicts(item, ctx));
+    let disabled = $derived(conflicts.length > 0);
 </script>
 
-<span class="text-textcolor {item.classes ?? ''}">
+<span class="{disabled ? 'text-textcolor2' : 'text-textcolor'} {item.classes ?? ''}">
     {getLabel(item)}
     {#if item.showExperimental}<Help key="experimental"/>{/if}
     {#if item.helpKey}<Help key={item.helpKey as any} unrecommended={item.helpUnrecommended ?? false}/>{/if}
+    <SettingConflictIcon {conflicts} />
 </span>
+<SettingDisabledScope {disabled}>
 <SegmentedControl
     bind:value={(DBState.db as any)[item.bindKey]}
     options={processedOptions}
 />
+</SettingDisabledScope>

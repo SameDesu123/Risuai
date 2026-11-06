@@ -4,6 +4,8 @@
     import { untrack } from 'svelte';
     import SliderInput from 'src/lib/UI/GUI/SliderInput.svelte';
     import Help from 'src/lib/Others/Help.svelte';
+    import SettingConflictIcon from '../SettingConflictIcon.svelte';
+    import { getActiveConflicts } from 'src/ts/setting/conflicts';
 
     interface Props {
         item: SettingItem;
@@ -35,11 +37,15 @@
             ? item.options.customText(localValue)
             : item.options?.customText
     );
+
+    let conflicts = $derived(getActiveConflicts(item, ctx));
+    let disabled = $derived(conflicts.length > 0);
 </script>
 
-<span class="text-textcolor {item.classes ?? ''}">
+<span class="{disabled ? 'text-textcolor2' : 'text-textcolor'} {item.classes ?? ''}">
     {getLabel(item)}
     {#if item.helpKey}<Help key={item.helpKey as any}/>{/if}
+    <SettingConflictIcon {conflicts} />
 </span>
 <SliderInput 
     marginBottom={true}
@@ -51,4 +57,5 @@
     disableable={item.options?.disableable}
     {customText}
     bind:value={localValue}
+    {disabled}
 />

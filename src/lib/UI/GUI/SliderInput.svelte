@@ -13,7 +13,7 @@
   {#if disableable}
 
     <div class="relative h-8 border-darkborderc border rounded-full cursor-pointer rounded-r-none border-r-0 flex justify-center items-center pl-2">
-      <CheckInput check={value !== -1000 && value !== undefined} margin={false} onChange={(c) => {
+      <CheckInput check={value !== -1000 && value !== undefined} margin={false} {disabled} onChange={(c) => {
         onchange?.()
         if(c) {
           value = min;
@@ -25,17 +25,22 @@
   {/if}
   <div 
     role="slider"
-    tabindex="0"
+    tabindex={disabled ? -1 : 0}
+    aria-disabled={disabled}
     aria-valuemin={min}
     aria-valuemax={max}
     aria-valuenow={sliderValue}
     aria-valuetext={displayText}
-    class="relative w-full h-8 border-darkborderc border rounded-full cursor-pointer"
+    class="relative w-full h-8 border-darkborderc border rounded-full"
+    class:cursor-pointer={!disabled}
+    class:cursor-not-allowed={disabled}
+    class:opacity-50={disabled}
     class:rounded-l-none={disableable}
     style:background={
       `linear-gradient(to right, var(--risu-theme-darkbutton) 0%, var(--risu-theme-darkbutton) ${sliderPercent}%, var(--risu-theme-darkbg) ${sliderPercent}%, var(--risu-theme-darkbg) 100%)`
     }
     onpointerdown={(event) => {
+      if (disabled) return;
       mouseDown = true;
       changeValue(event);
     }}
@@ -87,6 +92,7 @@
     multiple?: number;
     disableable?: boolean;
     customText?: string|undefined;
+    disabled?: boolean;
     onchange?: Function;
   }
 
@@ -100,6 +106,7 @@
     multiple = 1,
     disableable = false,
     customText = undefined,
+    disabled = false,
     onchange
   }: Props = $props();
 
@@ -118,6 +125,7 @@
     }
 
     function handleKeydown(event: KeyboardEvent) {
+        if (disabled) return;
         let newValue = isDisabledValue ? min : value;
 
         switch (event.key) {
