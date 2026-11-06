@@ -22,8 +22,13 @@ use std::collections::{HashMap, VecDeque};
 use std::time::Duration;
 use std::sync::{Arc, LazyLock, Mutex};
 use futures::future::{AbortHandle, Abortable};
+use tauri::ipc::{Channel, InvokeResponseBody, JavaScriptChannelId};
 use tauri::{Listener, Manager};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Webview};
+
+// Shared by every request so connections and TLS sessions to the same host
+// are reused instead of being set up again for each request
+static HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(reqwest::Client::new);
 
 #[tauri::command]
 async fn native_request(url: String, body: String, header: String, method: String) -> String {
@@ -50,7 +55,7 @@ async fn native_request(url: String, body: String, header: String, method: Strin
         return format!(r#"{{"success":false,"body":"Invalid header JSON"}}"#);
     }
 
-    let client = reqwest::Client::new();
+    let client = &*HTTP_CLIENT;
     let response: Result<reqwest::Response, reqwest::Error>;
 
     if method == "POST" {
@@ -185,16 +190,11 @@ async fn with_idle_timeout<F: std::future::Future>(
     future: F,
 ) -> Result<F::Output, String> {
     match idle_timeout {
-        Some(duration) => tokio::time::timeout(duration, future).await.map_err(|_| {
-            streamed_fetch_failure(format!("No data received for {} seconds", duration.as_secs()))
-        }),
+        Some(duration) => tokio::time::timeout(duration, future)
+            .await
+            .map_err(|_| format!("No data received for {} seconds", duration.as_secs())),
         None => Ok(future.await),
     }
-}
-
-// The frontend JSON.parses this, so the message must be a quoted JSON string
-fn streamed_fetch_failure(body: impl std::fmt::Display) -> String {
-    json!({ "success": false, "body": body.to_string() }).to_string()
 }
 
 // Abort handles of in-flight streamed_fetch calls, keyed by fetch id
@@ -208,20 +208,23 @@ static STREAMED_FETCH_SEEN_IDS: LazyLock<Mutex<VecDeque<String>>> =
     LazyLock::new(|| Mutex::new(VecDeque::new()));
 const STREAMED_FETCH_SEEN_IDS_LIMIT: usize = 1000;
 
+// Response events go to the frontend over `channel`, in order: one "headers" event,
+// the body chunks as raw bytes, then a final "end" or "error" event.
 #[tauri::command]
 async fn streamed_fetch(
     id: String,
     url: String,
     headers: String,
     body: String,
-    app: AppHandle,
     method: String,
     timeout_secs: Option<u64>,
-) -> String {
+    channel: JavaScriptChannelId,
+    webview: Webview,
+) {
     {
         let mut seen = STREAMED_FETCH_SEEN_IDS.lock().unwrap();
         if seen.contains(&id) {
-            return r#"{"success":false,"body":"duplicate streamed_fetch id"}"#.to_string();
+            return;
         }
         if seen.len() >= STREAMED_FETCH_SEEN_IDS_LIMIT {
             seen.pop_front();
@@ -229,25 +232,39 @@ async fn streamed_fetch(
         seen.push_back(id.clone());
     }
 
+    // Only bound after the duplicate check: a resent invoke carries the same channel,
+    // and dropping a Channel tells the frontend it is finished, which would cut off
+    // the stream of the original request
+    let channel: Channel<InvokeResponseBody> = channel.channel_on(webview);
+
     let (abort_handle, abort_registration) = AbortHandle::new_pair();
     STREAMED_FETCH_ABORTS
         .lock()
         .unwrap()
         .insert(id.clone(), abort_handle);
 
-    // Dropping the inner future on abort also closes the upstream connection
+    // Dropping the inner future on abort also cancels the upstream request
     let result = Abortable::new(
-        streamed_fetch_inner(id.clone(), url, headers, body, app, method, timeout_secs),
+        streamed_fetch_inner(url, headers, body, method, timeout_secs, &channel),
         abort_registration,
     )
     .await;
 
     STREAMED_FETCH_ABORTS.lock().unwrap().remove(&id);
 
-    match result {
-        Ok(res) => res,
-        Err(_) => r#"{"success":false,"body":"aborted"}"#.to_string(),
-    }
+    let event = match result {
+        Ok(Ok(())) => json!({ "type": "end" }),
+        Ok(Err(e)) => json!({ "type": "error", "body": e }),
+        Err(_) => json!({ "type": "error", "body": "aborted" }),
+    };
+    // Fails only when the webview is gone, and then nobody is waiting for it
+    let _ = send_stream_event(&channel, event);
+}
+
+fn send_stream_event(channel: &Channel<InvokeResponseBody>, event: Value) -> Result<(), String> {
+    channel
+        .send(InvokeResponseBody::Json(event.to_string()))
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -267,73 +284,42 @@ fn cancel_all_streamed_fetch() {
 }
 
 async fn streamed_fetch_inner(
-    id: String,
     url: String,
     headers: String,
     body: String,
-    app: AppHandle,
     method: String,
     timeout_secs: Option<u64>,
-) -> String {
+    channel: &Channel<InvokeResponseBody>,
+) -> Result<(), String> {
     //parse headers
-    let headers_json: Value = match serde_json::from_str(&headers) {
-        Ok(h) => h,
-        Err(e) => return streamed_fetch_failure(e),
-    };
+    let headers_json: Value = serde_json::from_str(&headers).map_err(|e| e.to_string())?;
 
     let mut headers = HeaderMap::new();
     if let Some(obj) = headers_json.as_object() {
         for (key, value) in obj {
-            let header_name = match HeaderName::from_bytes(key.as_bytes()) {
-                Ok(name) => name,
-                Err(e) => return streamed_fetch_failure(e),
-            };
-            let header_value = match HeaderValue::from_str(value.as_str().unwrap_or("")) {
-                Ok(value) => value,
-                Err(e) => return streamed_fetch_failure(e),
-            };
+            let header_name = HeaderName::from_bytes(key.as_bytes()).map_err(|e| e.to_string())?;
+            let header_value =
+                HeaderValue::from_str(value.as_str().unwrap_or("")).map_err(|e| e.to_string())?;
             headers.insert(header_name, header_value);
         }
     } else {
-        return format!(r#"{{"success":false,"body":"Invalid header JSON"}}"#);
+        return Err("Invalid header JSON".to_string());
     }
 
-    let client = reqwest::Client::new();
-    let builder: reqwest::RequestBuilder;
-    if method == "POST" {
-
-        let body_decoded = general_purpose::STANDARD.decode(body.as_bytes()).unwrap();
-
-        builder = client
-        .post(&url)
-        .headers(headers)
-        .body(body_decoded)
-    }
-    else if method == "GET" {
-        builder = client
-        .get(&url)
-        .headers(headers);
-    }
-    else if method == "PUT" {
-
-        let body_decoded = general_purpose::STANDARD.decode(body.as_bytes()).unwrap();
-
-        builder = client
-        .put(&url)
-        .headers(headers)
-        .body(body_decoded)
-    }
-    else if method == "DELETE" {
-
-        let body_decoded = general_purpose::STANDARD.decode(body.as_bytes()).unwrap();
-
-        builder = client
-        .delete(&url)
-        .headers(headers)
-        .body(body_decoded)
-    }
-    else {
-        return streamed_fetch_failure("Invalid method");
+    let client = &*HTTP_CLIENT;
+    let builder = match method.as_str() {
+        "GET" => client.get(&url),
+        "POST" => client.post(&url),
+        "PUT" => client.put(&url),
+        "DELETE" => client.delete(&url),
+        _ => return Err("Invalid method".to_string()),
+    };
+    let mut builder = builder.headers(headers);
+    if method != "GET" {
+        let body_decoded = general_purpose::STANDARD
+            .decode(body.as_bytes())
+            .map_err(|e| e.to_string())?;
+        builder = builder.body(body_decoded);
     }
 
     // Local Network Timeout is a total limit, as on the Node server. Otherwise only
@@ -343,64 +329,30 @@ async fn streamed_fetch_inner(
         None => (builder, Some(Duration::from_secs(STREAMED_FETCH_IDLE_TIMEOUT_SECS))),
     };
 
-    let response = match with_idle_timeout(idle_timeout, builder.send()).await {
-        Ok(response) => response,
-        Err(e) => return e,
-    };
+    let mut resp = with_idle_timeout(idle_timeout, builder.send())
+        .await?
+        .map_err(|e| e.to_string())?;
 
-    match response {
-        Ok(mut resp) => {
-            let headers = resp.headers();
-            let header_json = header_map_to_json(headers);
-            app.emit(
-                "streamed_fetch",
-                &format!(
-                    r#"{{"type": "headers", "body": {}, "id": "{}", "status": {}}}"#,
-                    header_json,
-                    id,
-                    resp.status().as_u16()
-                ),
-            )
-            .unwrap();
-            loop {
-                let byt = match with_idle_timeout(idle_timeout, resp.chunk()).await {
-                    Ok(byt) => byt,
-                    Err(e) => return e,
-                };
-                match byt {
-                    Ok(chunk) => {
-                        if chunk.is_none() {
-                            break;
-                        }
-                        let chunk = chunk.unwrap();
-                        let encoded = general_purpose::STANDARD.encode(chunk);
-                        let emited = app.emit(
-                            "streamed_fetch",
-                            &format!(
-                                r#"{{"type": "chunk", "body": "{}", "id": "{}"}}"#,
-                                encoded, id
-                            ),
-                        );
+    send_stream_event(
+        channel,
+        json!({
+            "type": "headers",
+            "headers": header_map_to_json(resp.headers()),
+            "status": resp.status().as_u16(),
+        }),
+    )?;
 
-                        match emited {
-                            Ok(_) => {}
-                            Err(e) => {
-                                return streamed_fetch_failure(e)
-                            }
-                        }
-                    }
-                    Err(e) => return streamed_fetch_failure(e),
-                }
-            }
-            app.emit(
-                "streamed_fetch",
-                &format!(r#"{{"type": "end", "id": "{}"}}"#, id),
-            )
-            .unwrap();
-            return "{\"success\":true}".to_string();
-        }
-        Err(e) => return streamed_fetch_failure(e),
+    // Chunks go out as raw bytes, so they skip the base64 and JSON round trip
+    while let Some(chunk) = with_idle_timeout(idle_timeout, resp.chunk())
+        .await?
+        .map_err(|e| e.to_string())?
+    {
+        channel
+            .send(InvokeResponseBody::Raw(chunk.to_vec()))
+            .map_err(|e| e.to_string())?;
     }
+
+    Ok(())
 }
 
 
@@ -440,9 +392,10 @@ fn main() {
 fn header_map_to_json(header_map: &HeaderMap) -> serde_json::Value {
     let mut map = HashMap::new();
     for (key, value) in header_map {
+        // to_str() rejects values that are not visible ASCII, which servers do send
         map.insert(
             key.as_str().to_string(),
-            value.to_str().unwrap().to_string(),
+            String::from_utf8_lossy(value.as_bytes()).into_owned(),
         );
     }
     json!(map)

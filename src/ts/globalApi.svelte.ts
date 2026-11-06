@@ -8,7 +8,7 @@ import {
     remove
 } from "@tauri-apps/plugin-fs"
 import { changeFullscreen, checkNullish, sleep } from "./util"
-import { convertFileSrc, invoke } from "@tauri-apps/api/core"
+import { Channel, convertFileSrc, invoke } from "@tauri-apps/api/core"
 import { v4 as uuidv4, v4 } from 'uuid';
 import { appDataDir, join } from "@tauri-apps/api/path";
 import { get } from "svelte/store";
@@ -32,7 +32,6 @@ import { updateAnimationSpeed } from "./gui/animation";
 import { updateColorScheme, updateTextThemeAndCSS } from "./gui/colorscheme";
 import { autoServerBackup, saveDbKei } from "./kei/backup";
 import { save } from "@tauri-apps/plugin-dialog";
-import { listen } from '@tauri-apps/api/event'
 import { language } from "src/lang";
 import { startObserveDom } from "./observer.svelte";
 import { updateGuisize } from "./gui/guisize";
@@ -46,6 +45,8 @@ import { isTauri, isNodeServer } from "./platform";
 import { isLocalNetworkUrl } from "./network/localNetwork";
 import { decodeProxyJobWsChunk, formatProxyStreamErrorMessage, parseProxyJobWsEvent } from "./network/proxyJobWs";
 import { getNodeServerProxyAuth } from "./storage/nodeStorage";
+import { createChunkQueueStream } from "./network/chunkQueueStream";
+import { pipeStreamWithTextLog } from "./network/streamFetchLog";
 
 export const forageStorage = new AutoStorage()
 
@@ -1343,98 +1344,40 @@ let fetchIndex = 0
 const streamedFetchSessionId = Math.random().toString(36).slice(2, 10)
 
 /**
- * Stores native fetch data.
- * @type {{ [key: string]: StreamedFetchChunk[] }}
+ * Messages the streamed_fetch command sends over its channel: one headers event,
+ * the body chunks as raw bytes, then an end or error event.
  */
-let nativeFetchData: { [key: string]: StreamedFetchChunk[] } = {}
+type StreamedFetchEvent =
+    | { type: 'headers', headers: { [key: string]: string }, status: number }
+    | { type: 'end' }
+    | { type: 'error', body: string }
+
+type StreamedFetchMessage = StreamedFetchEvent | ArrayBuffer | ArrayBufferView | number[]
 
 /**
- * Interface representing a streamed fetch chunk data.
- * @interface
+ * Raw channel payloads arrive as an ArrayBuffer, or as a plain number array when
+ * Tauri falls back to postMessage IPC.
  */
-interface StreamedFetchChunkData {
-    type: 'chunk',
-    body: string,
-    id: string
+function streamedFetchBytes(message: StreamedFetchMessage): Uint8Array | null {
+    if (message instanceof ArrayBuffer) {
+        return new Uint8Array(message)
+    }
+    if (ArrayBuffer.isView(message)) {
+        return new Uint8Array(message.buffer, message.byteOffset, message.byteLength)
+    }
+    if (Array.isArray(message)) {
+        return Uint8Array.from(message)
+    }
+    return null
 }
 
 /**
- * Interface representing a streamed fetch header data.
- * @interface
+ * Cancels requests left running by a previous page load. Must finish before new
+ * requests start, or it would cancel them too.
  */
-interface StreamedFetchHeaderData {
-    type: 'headers',
-    body: { [key: string]: string },
-    id: string,
-    status: number
-}
-
-/**
- * Interface representing a streamed fetch end data.
- * @interface
- */
-interface StreamedFetchEndData {
-    type: 'end',
-    id: string
-}
-
-/**
- * Type representing a streamed fetch chunk.
- * @typedef {StreamedFetchChunkData | StreamedFetchHeaderData | StreamedFetchEndData} StreamedFetchChunk
- */
-type StreamedFetchChunk = StreamedFetchChunkData | StreamedFetchHeaderData | StreamedFetchEndData
-
-/**
- * Interface representing a streamed fetch plugin.
- * @interface
- */
-interface StreamedFetchPlugin {
-    /**
-     * Performs a streamed fetch operation.
-     * @param {Object} options - The options for the fetch operation.
-     * @param {string} options.id - The ID of the fetch operation.
-     * @param {string} options.url - The URL to fetch.
-     * @param {string} options.body - The body of the fetch request.
-     * @param {{ [key: string]: string }} options.headers - The headers of the fetch request.
-     * @returns {Promise<{ error: string, success: boolean }>} - The result of the fetch operation.
-     */
-    streamedFetch(options: { id: string, url: string, body: string, headers: { [key: string]: string } }): Promise<{ "error": string, "success": boolean }>;
-
-    /**
-     * Adds a listener for the specified event.
-     * @param {string} eventName - The name of the event.
-     * @param {(data: StreamedFetchChunk) => void} listenerFunc - The function to call when the event is triggered.
-     */
-    addListener(eventName: 'streamed_fetch', listenerFunc: (data: StreamedFetchChunk) => void): void;
-}
-
-/**
- * Indicates whether streamed fetch listening is active.
- * @type {boolean}
- */
-let streamedFetchListening = false
-
-/**
- * The streamed fetch plugin instance.
- * @type {StreamedFetchPlugin | undefined}
- */
-let capStreamedFetch: StreamedFetchPlugin | undefined
-
-if (isTauri) {
-    listen('streamed_fetch', (event) => {
-        try {
-            const parsed = JSON.parse(event.payload as string)
-            const id = parsed.id
-            nativeFetchData[id]?.push(parsed)
-        } catch (error) {
-            console.error(error)
-        }
-    }).then(async (v) => {
-        // Must finish before new requests start, or it would cancel them too
-        await invoke('cancel_all_streamed_fetch').catch(() => {})
-        streamedFetchListening = true
-    })
-}
+const streamedFetchReady: Promise<unknown> = isTauri
+    ? invoke('cancel_all_streamed_fetch').catch(() => {})
+    : Promise.resolve()
 
 /**
  * A class to manage a buffer that can be appended to and deappended from.
@@ -1520,15 +1463,9 @@ export class AppendableBuffer {
  * @returns {ReadableStream<Uint8Array>} - The new readable stream.
  */
 const pipeFetchLog = (fetchLogIndex: number, readableStream: ReadableStream<Uint8Array>) => {
-    
-    const splited = readableStream.tee();
-    
-    (async () => {
-        const text = await (new Response(splited[0])).text()
+    return pipeStreamWithTextLog(readableStream, (text) => {
         fetchLog[fetchLogIndex].response = text
-    })()
-    
-    return splited[1]
+    })
 }
 
 async function fetchViaProxyJobWs(url: string, arg: {
@@ -1819,23 +1756,38 @@ export async function fetchNative(url: string, arg: {
         })
         }
         else if (isTauri) {
-        fetchIndex++
         if (requestSignal && requestSignal.aborted) {
             throw new Error('aborted')
         }
+        fetchIndex++
         if (fetchIndex >= 100000) {
             fetchIndex = 0
         }
-        let fetchId = fetchIndex.toString().padStart(5, '0')
-        if (isTauri) {
-            fetchId = `${streamedFetchSessionId}-${fetchId}`
-        }
-        nativeFetchData[fetchId] = []
-        let resolved = false
+        const fetchId = `${streamedFetchSessionId}-${fetchIndex.toString().padStart(5, '0')}`
 
+        await streamedFetchReady
+        if (requestSignal && requestSignal.aborted) {
+            throw new Error('aborted')
+        }
+
+        let finished = false
         let error = ''
-        while (!streamedFetchListening) {
-            await sleep(100)
+        let resHeaders: { [key: string]: string } | null = null
+        let status = 400
+        let resolveHeaders = () => {}
+        const headersReceived = new Promise<void>((resolve) => {
+            resolveHeaders = resolve
+        })
+
+        const finish = () => {
+            if (finished) {
+                return false
+            }
+            finished = true
+            arg.signal?.removeEventListener('abort', cancelStreamedFetch)
+            responseBody.close()
+            resolveHeaders()
+            return true
         }
 
         // The Rust request does not see AbortSignal, so stop it explicitly.
@@ -1843,114 +1795,75 @@ export async function fetchNative(url: string, arg: {
         // from it once the Response is returned.
         // Cancelling does not throw: the chat screen alerts anything fetchNative throws,
         // and the chat request code checks its own signal after this returns.
-        let cancelled = false
         const cancelStreamedFetch = () => {
-            if (!isTauri || resolved) {
+            if (finish()) {
+                invoke('cancel_streamed_fetch', { id: fetchId }).catch(() => {})
+            }
+        }
+
+        const responseBody = createChunkQueueStream(() => cancelStreamedFetch())
+
+        const channel = new Channel<StreamedFetchMessage>()
+        channel.onmessage = (message) => {
+            if (finished) {
                 return
             }
-            cancelled = true
-            resolved = true
-            invoke('cancel_streamed_fetch', { id: fetchId }).catch(() => {})
-        }
-
-        if (isTauri) {
-            if (requestSignal && requestSignal.aborted) {
-                throw new Error('aborted')
+            const bytes = streamedFetchBytes(message)
+            if (bytes) {
+                responseBody.push(bytes)
+                return
             }
-            arg.signal?.addEventListener('abort', cancelStreamedFetch, { once: true })
-            invoke('streamed_fetch', {
-                id: fetchId,
-                url: url,
-                headers: JSON.stringify(headers),
-                body: realBody ? Buffer.from(realBody).toString('base64') : '',
-                method: arg.method,
-                timeout_secs: arg.requestTimeoutMs ? Math.max(1, Math.ceil(arg.requestTimeoutMs / 1000)) : undefined
-            }).then((res) => {
-                if (cancelled) {
-                    return
-                }
-                try {
-                    const parsedRes = JSON.parse(res as string)
-                    if (!parsedRes.success) {
-                        error = parsedRes.body
-                        resolved = true
-                    }
-                } catch (e) {
-                    // Error properties (message/name/stack) are non-enumerable, so
-                    // JSON.stringify(e) returns "{}" and discards the real cause.
-                    error = e instanceof Error
-                        ? (e.message || e.name || 'streamed_fetch parse failed')
-                        : String(e)
-                    resolved = true
-                }
-            })
-        }
-        else if (capStreamedFetch) {
-            capStreamedFetch.streamedFetch({
-                id: fetchId,
-                url: url,
-                headers: headers,
-                body: realBody ? Buffer.from(realBody).toString('base64') : '',
-            }).then((res) => {
-                if (!res.success) {
-                    error = res.error
-                    resolved = true
-                }
-            })
-        }
-
-        let resHeaders: { [key: string]: string } = null
-        let status = 400
-
-        const tauriReadableStream = new ReadableStream<Uint8Array>({
-            async start(controller) {
-                try {
-                    while (!resolved || nativeFetchData[fetchId].length > 0) {
-                        if (nativeFetchData[fetchId].length > 0) {
-                            const data = nativeFetchData[fetchId].shift()
-                            if (data.type === 'chunk') {
-                                const chunk = Buffer.from(data.body, 'base64')
-                                controller.enqueue(chunk as unknown as Uint8Array)
-                            }
-                            if (data.type === 'headers') {
-                                resHeaders = data.body
-                                status = data.status
-                            }
-                            if (data.type === 'end') {
-                                resolved = true
-                            }
-                        }
-                        await sleep(10)
-                    }
-                    controller.close()
-                } finally {
-                    arg.signal?.removeEventListener('abort', cancelStreamedFetch)
-                }
-            },
-            cancel() {
-                cancelStreamedFetch()
+            const event = message as StreamedFetchEvent
+            if (event.type === 'headers') {
+                resHeaders = event.headers
+                status = event.status
+                resolveHeaders()
             }
+            else if (event.type === 'end') {
+                finish()
+            }
+            else if (event.type === 'error') {
+                error = event.body || 'streamed_fetch failed'
+                finish()
+            }
+        }
+
+        arg.signal?.addEventListener('abort', cancelStreamedFetch, { once: true })
+        invoke('streamed_fetch', {
+            id: fetchId,
+            url: url,
+            headers: JSON.stringify(headers),
+            body: realBody ? Buffer.from(realBody).toString('base64') : '',
+            method: arg.method,
+            timeout_secs: arg.requestTimeoutMs ? Math.max(1, Math.ceil(arg.requestTimeoutMs / 1000)) : undefined,
+            channel: channel,
+        }).catch((e) => {
+            // The outcome comes over the channel, so this only rejects when the
+            // command itself could not run
+            if (finished) {
+                return
+            }
+            // Error properties (message/name/stack) are non-enumerable, so
+            // JSON.stringify(e) returns "{}" and discards the real cause.
+            error = e instanceof Error
+                ? (e.message || e.name || 'streamed_fetch failed')
+                : String(e)
+            cancelStreamedFetch()
         })
 
-        let readableStream = tauriReadableStream
-        if (shouldLogFetch && fetchLogIndex !== null) {
-            readableStream = pipeFetchLog(fetchLogIndex, tauriReadableStream)
-        }
-
-        while (resHeaders === null && !resolved) {
-            await sleep(10)
-        }
-
-        if (resHeaders === null) {
-            resHeaders = {}
-        }
+        await headersReceived
 
         if (error !== '') {
             throw new Error(error)
         }
 
+        let readableStream = responseBody.stream
+        if (shouldLogFetch && fetchLogIndex !== null) {
+            readableStream = pipeFetchLog(fetchLogIndex, readableStream)
+        }
+
         return new Response(readableStream, {
-            headers: new Headers(resHeaders),
+            headers: new Headers(resHeaders ?? {}),
             status: status
         })
 
