@@ -26,5 +26,5 @@
         alertMd(body)
     }}
 >
-    <CircleAlertIcon size="1.125em" strokeWidth={2.25} />
+    <CircleAlertIcon size={16} strokeWidth={2.25} />
 </button>
