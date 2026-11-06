@@ -17,7 +17,7 @@
 <button
     type="button"
     class="relative inline-flex items-center cursor-pointer text-draculared hover:text-green-500"
-    style="vertical-align: -2px;"
+    style="vertical-align: -0.2em;"
     title={`${language.settingConflictTitle}\n${reasons.join('\n')}`}
     aria-label={`${name} ${language.settingConflictTitle}`}
     onclick={(e) => {
@@ -26,5 +26,5 @@
         alertMd(body)
     }}
 >
-    <CircleAlertIcon size={14} />
+    <CircleAlertIcon size="1.125em" strokeWidth={2.25} />
 </button>

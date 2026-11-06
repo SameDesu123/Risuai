@@ -34,7 +34,7 @@
     aria-labelledby="{name} {check ? 'abled' : 'disabled'}"
 >
     {#if reverse}
-        <span>{name} {@render children?.()}</span>
+        <span><span class={disabled ? 'line-through opacity-60' : ''}>{name}</span> {@render children?.()}</span>
     {/if}
     <input 
         class="hidden" 
@@ -61,6 +61,6 @@
         {/if}
     </span>
     {#if !hiddenName && !reverse}
-        <span>{name} {@render children?.()}</span>
+        <span><span class={disabled ? 'line-through opacity-60' : ''}>{name}</span> {@render children?.()}</span>
     {/if}
 </label>
