@@ -1573,4 +1573,11 @@ export const languageKorean = {
     nanoGPTManualInput: "수동 입력",
     nanoGPTManualModelSelect: "수동 모델 선택",
     localToggles: "로컬 토글",
+    "settingConflict": {
+        "title": "설정 충돌로 비활성화됨",
+        "messages": {
+            "autoContinueRemoveIncomplete": "**불완전 문단 제거**가 켜져 있습니다. 모든 응답을 마지막 문장 부호까지 잘라내므로, 자동 컨티뉴가 문장 부호 누락으로 발동하지 않습니다. 이 옵션을 사용하려면 불완전 문단 제거를 꺼 주세요.",
+            "claudeBatchingStreaming": "**스트리밍**이 켜져 있습니다. Claude 배칭은 스트리밍을 지원하지 않는 배치 API로 요청을 보냅니다. 이 옵션을 사용하려면 모델 설정에서 스트리밍을 꺼 주세요.",
+        },
+    },
 } satisfies DeepPartial<typeof import('./en').languageEnglish>

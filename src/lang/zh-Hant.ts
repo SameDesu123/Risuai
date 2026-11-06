@@ -1726,4 +1726,11 @@ export const languageChineseTraditional = {
     "skipSavingAssetsOnWebSync": "Web Sync 時略過儲存資源",
     "applyAdditionalParamsToAll": "將額外參數套用至所有模型",
     "localToggles": "本對話獨立設定",
+    "settingConflict": {
+        "title": "因設定衝突而停用",
+        "messages": {
+            "autoContinueRemoveIncomplete": "已開啟**移除未完成句子**。它會將每則回應截斷至最後一個標點符號，因此自動繼續不會因缺少標點而觸發。若要使用此選項，請關閉「移除未完成句子」。",
+            "claudeBatchingStreaming": "已開啟**串流**。Claude Batching 會透過不支援串流的批次 API 傳送請求。若要使用此選項，請在模型設定中關閉串流。",
+        },
+    },
 } satisfies DeepPartial<typeof import('./en').languageEnglish>

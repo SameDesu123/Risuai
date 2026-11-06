@@ -1494,4 +1494,11 @@ export const languageGerman = {
     nanoGPTSelectFromList: "Aus der Liste auswählen",
     nanoGPTManualInput: "Manuelle Eingabe",
     nanoGPTManualModelSelect: "Manuelle Modellauswahl",
+    "settingConflict": {
+        "title": "Wegen eines Einstellungskonflikts deaktiviert",
+        "messages": {
+            "autoContinueRemoveIncomplete": "**Unvollständige Sätze entfernen** ist aktiviert. Jede Antwort wird bis zum letzten Satzzeichen gekürzt, daher würde die automatische Fortsetzung bei fehlenden Satzzeichen nie ausgelöst. Deaktiviere „Unvollständige Sätze entfernen“, um diese Option zu nutzen.",
+            "claudeBatchingStreaming": "**Streaming** ist aktiviert. Claude Batching sendet Anfragen über die Batch-API, die kein Streaming unterstützt. Deaktiviere Streaming in den Modelleinstellungen, um diese Option zu nutzen.",
+        },
+    },
 } satisfies DeepPartial<typeof import('./en').languageEnglish>;

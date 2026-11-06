@@ -1494,4 +1494,11 @@ export const languageVietnamese = {
     nanoGPTSelectFromList: "Chọn từ danh sách",
     nanoGPTManualInput: "Nhập thủ công",
     nanoGPTManualModelSelect: "Chọn mô hình thủ công",
+    "settingConflict": {
+        "title": "Bị vô hiệu hóa do xung đột cài đặt",
+        "messages": {
+            "autoContinueRemoveIncomplete": "**Xóa câu không hoàn chỉnh** đang bật. Tùy chọn này cắt mọi phản hồi đến dấu câu cuối cùng, nên Tự động tiếp tục sẽ không bao giờ được kích hoạt do thiếu dấu câu. Hãy tắt Xóa câu không hoàn chỉnh để dùng tùy chọn này.",
+            "claudeBatchingStreaming": "**Truyền phát** đang bật. Xử lý hàng loạt Claude gửi yêu cầu qua Batch API, vốn không hỗ trợ truyền phát. Hãy tắt Truyền phát trong cài đặt mô hình để dùng tùy chọn này.",
+        },
+    },
 } satisfies DeepPartial<typeof import('./en').languageEnglish>;

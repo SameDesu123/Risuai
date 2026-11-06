@@ -1494,4 +1494,11 @@ export const languageChinese = {
     nanoGPTSelectFromList: "从列表中选择",
     nanoGPTManualInput: "手动输入",
     nanoGPTManualModelSelect: "手动模式选择",
+    "settingConflict": {
+        "title": "因设置冲突而禁用",
+        "messages": {
+            "autoContinueRemoveIncomplete": "已开启**移除不完整句子**。它会将每条回复截断到最后一个标点符号，因此自动继续不会因缺少标点而触发。如需使用此选项，请关闭“移除不完整句子”。",
+            "claudeBatchingStreaming": "已开启**即时串流传输**。Claude 批处理通过不支持串流传输的批处理 API 发送请求。如需使用此选项，请在模型设置中关闭即时串流传输。",
+        },
+    },
 } satisfies DeepPartial<typeof import('./en').languageEnglish>;
