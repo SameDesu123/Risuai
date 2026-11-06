@@ -28,13 +28,13 @@
 </script>
 
 <label 
-    class={"flex items-center gap-2" + (disabled ? " cursor-not-allowed" : " cursor-pointer") + (className ? " " + className : "") + (grayText || disabled ? " text-textcolor2" : " text-textcolor")}
+    class={"flex items-center gap-2" + (disabled ? " cursor-not-allowed" : " cursor-pointer") + (className ? " " + className : "") + (grayText ? " text-textcolor2" : " text-textcolor")}
     class:mr-2={margin}
     aria-describedby="{name} {check ? 'abled' : 'disabled'}"
     aria-labelledby="{name} {check ? 'abled' : 'disabled'}"
 >
     {#if reverse}
-        <span>{name} {@render children?.()}</span>
+        <span><span class:opacity-50={disabled}>{name}</span> {@render children?.()}</span>
     {/if}
     <input 
         class="hidden" 
@@ -51,6 +51,7 @@
     <span 
         class="w-5 h-5 min-w-5 min-h-5 rounded-md border-2 border-darkborderc flex justify-center items-center {check ? 'bg-darkborderc' : 'bg-darkbutton'} transition-colors duration-200"
         class:opacity-50={disabled}
+        class:border-dashed={disabled}
         aria-hidden="true"
         aria-describedby="{name} {check ? 'abled' : 'disabled'}"
         aria-labelledby="{name} {check ? 'abled' : 'disabled'}"
@@ -62,6 +63,6 @@
         {/if}
     </span>
     {#if !hiddenName && !reverse}
-        <span>{name} {@render children?.()}</span>
+        <span><span class:opacity-50={disabled}>{name}</span> {@render children?.()}</span>
     {/if}
 </label>

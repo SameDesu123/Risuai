@@ -37,8 +37,8 @@
     let disabled = $derived(conflicts.length > 0);
 </script>
 
-<span class="{disabled ? 'text-textcolor2' : 'text-textcolor'} {item.classes ?? ''}">
-    {getLabel(item)}
+<span class="text-textcolor {item.classes ?? ''}">
+    <span class:opacity-50={disabled}>{getLabel(item)}</span>
     {#if item.helpKey}<Help key={item.helpKey as any}/>{/if}
     <SettingConflictIcon {conflicts} />
 </span>

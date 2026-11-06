@@ -40,5 +40,5 @@
     <SettingDisabledScope {disabled}>
         <ColorInput bind:value={localValue} nullable={item.options?.nullable ?? false} />
     </SettingDisabledScope>
-    <span class="ml-2" class:text-textcolor2={disabled}>{getLabel(item)} <SettingConflictIcon {conflicts} /></span>
+    <span class="ml-2"><span class:opacity-50={disabled}>{getLabel(item)}</span> <SettingConflictIcon {conflicts} /></span>
 </div>
