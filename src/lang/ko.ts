@@ -1517,6 +1517,8 @@ export const languageKorean = {
         "selectLog": "살펴볼 로그를 선택하세요.",
         "stream": "스트림",
         "tokens": "토큰",
+        "time": "시각",
+        "size": "크기 (요청 / 응답)",
         "chars": "자",
         "shortcuts": "↑/↓ 또는 J/K: 이동 · 1–4: 탭 · /: 검색 · Esc: 닫기",
         "secretsMasked": "화면·복사·다운로드 시 API 키는 가려집니다.",

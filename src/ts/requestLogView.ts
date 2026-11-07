@@ -20,6 +20,8 @@ export interface RequestLogEntry {
     status?: number
 }
 
+export type RequestLogTab = 'messages' | 'body' | 'header' | 'response'
+
 export interface LogMessage {
     role: string
     text: string

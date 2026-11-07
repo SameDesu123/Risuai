@@ -1610,6 +1610,8 @@ export const languageEnglish = {
         selectLog: "Select a log to inspect.",
         stream: "Stream",
         tokens: "Tokens",
+        time: "Time",
+        size: "Size (req / res)",
         chars: "chars",
         shortcuts: "↑/↓ or J/K: navigate · 1–4: tabs · /: search · Esc: close",
         secretsMasked: "API keys are masked in view, copy and download.",
