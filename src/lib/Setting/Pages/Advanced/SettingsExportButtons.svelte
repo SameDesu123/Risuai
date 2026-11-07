@@ -2,8 +2,8 @@
     import { language } from "src/lang";
     import Button from "src/lib/UI/GUI/Button.svelte";
     import { DBState } from 'src/ts/stores.svelte';
-    import { alertMd, alertNormal } from "src/ts/alert";
-    import { downloadFile, getRequestLog } from "src/ts/globalApi.svelte";
+    import { alertMd, alertNormal, alertRequestLogs } from "src/ts/alert";
+    import { downloadFile } from "src/ts/globalApi.svelte";
     import { getDatabase } from "src/ts/storage/database.svelte";
     import { isNodeServer, isTauri } from "src/ts/platform";
 
@@ -12,7 +12,7 @@
 <Button
     className="mt-4"
     onclick={async () => {
-        alertMd(getRequestLog())
+        alertRequestLogs()
     }}
 >
     {language.ShowLog}
