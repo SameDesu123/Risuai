@@ -574,3 +574,33 @@ annotation {
     background-image: none;
   }
 }
+
+/* Tree connector for nested setting items (see containerClasses in setting data).
+   Line is centered on the parent checkbox (w-5 → 10px) and elbows into each child label. */
+.setting-tree-child {
+  position: relative;
+}
+.setting-tree-child::before,
+.setting-tree-child::after {
+  content: '';
+  position: absolute;
+  left: 9px;
+  pointer-events: none;
+  border-color: var(--risu-theme-darkborderc);
+}
+.setting-tree-child::before {
+  top: 0;
+  bottom: 0;
+  border-left-width: 2px;
+}
+.setting-tree-child::after {
+  top: 0;
+  height: 1.25rem;
+  width: 0.75rem;
+  border-left-width: 2px;
+  border-bottom-width: 2px;
+  border-bottom-left-radius: 0.375rem;
+}
+.setting-tree-child.setting-tree-last::before {
+  display: none;
+}

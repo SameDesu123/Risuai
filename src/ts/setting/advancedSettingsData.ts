@@ -125,8 +125,7 @@ export const advancedSettingsItems: SettingItem[] = [
         id: 'adv.imgCompFormat', type: 'segmented', labelKey: 'imageCompressionFormat', bindKey: 'imageCompressionFormat',
         helpKey: 'imageCompressionFormat',
         condition: (ctx) => ctx.db.imageCompression,
-        classes: 'mt-2',
-        containerClasses: 'pl-7',
+        containerClasses: 'pl-7 pt-2 setting-tree-child',
         options: {
             segmentOptions: [
                 { value: 'webp', label: 'WebP' },
@@ -138,7 +137,7 @@ export const advancedSettingsItems: SettingItem[] = [
         id: 'adv.imgCompQuality', type: 'slider', labelKey: 'imageCompressionQuality', bindKey: 'imageCompressionQuality',
         helpKey: 'imageCompressionQuality',
         condition: (ctx) => ctx.db.imageCompression,
-        containerClasses: 'pl-7',
+        containerClasses: 'pl-7 pt-2 setting-tree-child setting-tree-last',
         options: { min: 10, max: 100, customText: (v: number) => `${v}%` }
     },
     { id: 'adv.useExp', type: 'check', labelKey: 'useExperimental', bindKey: 'useExperimental', helpKey: 'useExperimental', classes: 'mt-4' },
