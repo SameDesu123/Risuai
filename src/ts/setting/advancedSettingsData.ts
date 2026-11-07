@@ -121,6 +121,26 @@ export const advancedSettingsItems: SettingItem[] = [
     { id: 'adv.sayNothing', type: 'check', labelKey: 'sayNothing', bindKey: 'useSayNothing', helpKey: 'sayNothing', classes: 'mt-4' },
     { id: 'adv.showUnrec', type: 'check', labelKey: 'showUnrecommended', bindKey: 'showUnrecommended', helpKey: 'showUnrecommended', classes: 'mt-4' },
     { id: 'adv.imgComp', type: 'check', labelKey: 'imageCompression', bindKey: 'imageCompression', helpKey: 'imageCompression', classes: 'mt-4' },
+    {
+        id: 'adv.imgCompFormat', type: 'segmented', labelKey: 'imageCompressionFormat', bindKey: 'imageCompressionFormat',
+        helpKey: 'imageCompressionFormat',
+        condition: (ctx) => ctx.db.imageCompression,
+        classes: 'mt-2',
+        containerClasses: 'pl-7',
+        options: {
+            segmentOptions: [
+                { value: 'webp', label: 'WebP' },
+                { value: 'jpeg', label: 'JPEG' }
+            ]
+        }
+    },
+    {
+        id: 'adv.imgCompQuality', type: 'slider', labelKey: 'imageCompressionQuality', bindKey: 'imageCompressionQuality',
+        helpKey: 'imageCompressionQuality',
+        condition: (ctx) => ctx.db.imageCompression,
+        containerClasses: 'pl-7',
+        options: { min: 10, max: 100, customText: (v: number) => `${v}%` }
+    },
     { id: 'adv.useExp', type: 'check', labelKey: 'useExperimental', bindKey: 'useExperimental', helpKey: 'useExperimental', classes: 'mt-4' },
     { id: 'adv.forceProxy', type: 'check', labelKey: 'forceProxyAsOpenAI', bindKey: 'forceProxyAsOpenAI', helpKey: 'forceProxyAsOpenAI', classes: 'mt-4' },
     { id: 'adv.legacyMedia', type: 'check', labelKey: 'legacyMediaFindings', bindKey: 'legacyMediaFindings', helpKey: 'legacyMediaFindings', classes: 'mt-4' },

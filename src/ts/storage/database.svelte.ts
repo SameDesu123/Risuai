@@ -356,6 +356,8 @@ export function setDatabase(data:Database){
     data.OAIPrediction ??= ''
     data.autoSuggestClean ??= true
     data.imageCompression ??= true
+    data.imageCompressionFormat ??= 'webp'
+    data.imageCompressionQuality ??= 75
     data.enableBlockPartialEdit ??= false
     data.enableDragPartialEdit ??= false
     if(!data.formatingOrder.includes('personaPrompt')){
@@ -926,6 +928,8 @@ export interface Database{
     novellistAPI:string,
     useAutoTranslateInput:boolean
     imageCompression:boolean
+    imageCompressionFormat:'webp'|'jpeg'
+    imageCompressionQuality:number
     account?:{
         token:string
         id:string,

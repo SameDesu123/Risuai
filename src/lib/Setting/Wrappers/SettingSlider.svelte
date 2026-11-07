@@ -37,18 +37,20 @@
     );
 </script>
 
-<span class="text-textcolor {item.classes ?? ''}">
-    {getLabel(item)}
-    {#if item.helpKey}<Help key={item.helpKey as any}/>{/if}
-</span>
-<SliderInput 
-    marginBottom={true}
-    min={item.options?.min} 
-    max={item.options?.max}
-    step={item.options?.step}
-    fixed={item.options?.fixed}
-    multiple={item.options?.multiple}
-    disableable={item.options?.disableable}
-    {customText}
-    bind:value={localValue}
-/>
+<div class={item.containerClasses ? `flex flex-col ${item.containerClasses}` : 'contents'}>
+    <span class="text-textcolor {item.classes ?? ''}">
+        {getLabel(item)}
+        {#if item.helpKey}<Help key={item.helpKey as any}/>{/if}
+    </span>
+    <SliderInput 
+        marginBottom={true}
+        min={item.options?.min} 
+        max={item.options?.max}
+        step={item.options?.step}
+        fixed={item.options?.fixed}
+        multiple={item.options?.multiple}
+        disableable={item.options?.disableable}
+        {customText}
+        bind:value={localValue}
+    />
+</div>

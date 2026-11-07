@@ -31,14 +31,16 @@
     });
 </script>
 
-<span class="text-textcolor {item.classes ?? ''}">
-    {getLabel(item)}
-    {#if item.helpKey}<Help key={item.helpKey as any}/>{/if}
-</span>
-<NumberInput
-    marginBottom={true}
-    size="sm"
-    min={item.options?.min}
-    max={item.options?.max}
-    bind:value={localValue}
-/>
+<div class={item.containerClasses ? `flex flex-col ${item.containerClasses}` : 'contents'}>
+    <span class="text-textcolor {item.classes ?? ''}">
+        {getLabel(item)}
+        {#if item.helpKey}<Help key={item.helpKey as any}/>{/if}
+    </span>
+    <NumberInput
+        marginBottom={true}
+        size="sm"
+        min={item.options?.min}
+        max={item.options?.max}
+        bind:value={localValue}
+    />
+</div>

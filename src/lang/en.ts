@@ -141,6 +141,8 @@ export const languageEnglish = {
             "Strong is similar to Balanced, but skips post-processing while streaming and runs it only once after the stream finishes.\n\n" +
             "This is an experimental feature, and some features may behave unexpectedly because of it.",
         imageCompression: "If enabled, it will compress images when exporting character. if animated images doesn't works, try disabling this option.",
+        imageCompressionFormat: "Format used for compressed images. Falls back to JPEG if your browser can't encode WebP.",
+        imageCompressionQuality: "Higher keeps more detail but makes files larger.",
         useExperimental: "If enabled, it will show some experimental features.",
         forceProxyAsOpenAI: "If enabled, it will force to use OpenAI format when using reverse proxy.",
         forcePlainFetch: "If enabled, it will use browser fetch api instead of native http request. this can cause CORS errors.",
@@ -954,6 +956,8 @@ export const languageEnglish = {
     downloads: "Downloads",
     trending: "Trending",
     imageCompression: "Image Compression",
+    imageCompressionFormat: "Format",
+    imageCompressionQuality: "Quality",
     notLoggedIn: "Not Logged in to Risu Account",
     googleDriveInfo: "Connect to Google Drive to sync your data.",
     googleDriveConnection: "Google Drive Connection",
