@@ -1,6 +1,6 @@
 /**
  * Helpers that turn raw fetch log entries into something easy to inspect
- * in the request log viewer (model name, prompt messages, token usage,
+ * in the request log viewer (model name, token usage,
  * error message, masked secrets, cURL export...).
  *
  * Everything here is pure and defensive: logs can contain any shape of
@@ -20,13 +20,6 @@ export interface RequestLogEntry {
     status?: number
 }
 
-export type RequestLogTab = 'messages' | 'body' | 'header' | 'response'
-
-export interface LogMessage {
-    role: string
-    text: string
-}
-
 export interface LogUsage {
     input?: number
     output?: number
@@ -40,10 +33,8 @@ export interface LogSummary {
     stream: boolean
     bodySize: number
     responseSize: number
-    messages: LogMessage[] | null
     usage: LogUsage | null
     errorMessage: string | null
-    outputText: string | null
 }
 
 const SECRET_HEADER_RE = /authorization|api[-_]?key|token|secret|cookie|password/i
@@ -138,112 +129,6 @@ export function splitUrl(url: string): { host: string, path: string } {
     }
 }
 
-function partToText(part: any): string {
-    if (part === null || part === undefined) {
-        return ''
-    }
-    if (typeof part === 'string') {
-        return part
-    }
-    if (typeof part !== 'object') {
-        return String(part)
-    }
-    if (typeof part.text === 'string') {
-        return part.text
-    }
-    if (part.type === 'image_url' || part.type === 'image' || part.type === 'input_image') {
-        return '[image]'
-    }
-    if (part.type === 'input_audio' || part.type === 'audio') {
-        return '[audio]'
-    }
-    if (part.inlineData || part.inline_data) {
-        const d = part.inlineData ?? part.inline_data
-        return `[inline data: ${d?.mimeType ?? d?.mime_type ?? 'unknown'}]`
-    }
-    if (part.fileData || part.file_data) {
-        return '[file]'
-    }
-    if (part.type === 'tool_use' || part.functionCall) {
-        const name = part.name ?? part.functionCall?.name ?? ''
-        const args = part.input ?? part.functionCall?.args ?? {}
-        return `[tool call: ${name}] ${JSON.stringify(args)}`
-    }
-    if (part.type === 'tool_result' || part.functionResponse) {
-        const inner = part.content ?? part.functionResponse?.response
-        return `[tool result] ${typeof inner === 'string' ? inner : contentToText(inner)}`
-    }
-    if (part.type === 'thinking' && typeof part.thinking === 'string') {
-        return `[thinking] ${part.thinking}`
-    }
-    return JSON.stringify(part)
-}
-
-function contentToText(content: any): string {
-    if (Array.isArray(content)) {
-        return content.map(partToText).filter((t) => t !== '').join('\n')
-    }
-    if (content && typeof content === 'object' && Array.isArray(content.parts)) {
-        return contentToText(content.parts)
-    }
-    return partToText(content)
-}
-
-/**
- * Extracts the prompt as a flat list of messages from the common
- * request formats (OpenAI chat, OpenAI responses, Anthropic, Google).
- */
-export function extractMessages(body: any): LogMessage[] | null {
-    if (!body || typeof body !== 'object' || Array.isArray(body)) {
-        return null
-    }
-    const result: LogMessage[] = []
-
-    // Anthropic / Google / OpenAI responses system prompts
-    if (body.system !== undefined) {
-        const text = contentToText(body.system)
-        if (text) result.push({ role: 'system', text })
-    }
-    const sys = body.systemInstruction ?? body.system_instruction
-    if (sys) {
-        const text = contentToText(sys)
-        if (text) result.push({ role: 'system', text })
-    }
-    if (typeof body.instructions === 'string' && body.instructions) {
-        result.push({ role: 'system', text: body.instructions })
-    }
-
-    const list = Array.isArray(body.messages) ? body.messages
-        : Array.isArray(body.contents) ? body.contents
-        : Array.isArray(body.input) ? body.input
-        : null
-
-    if (list) {
-        for (const msg of list) {
-            if (!msg || typeof msg !== 'object') {
-                result.push({ role: 'unknown', text: partToText(msg) })
-                continue
-            }
-            const role = msg.role ?? msg.type ?? 'unknown'
-            const content = msg.content ?? msg.parts ?? msg.output ?? msg.arguments ?? ''
-            let text = contentToText(content)
-            if (Array.isArray(msg.tool_calls) && msg.tool_calls.length > 0) {
-                const calls = msg.tool_calls.map((c: any) =>
-                    `[tool call: ${c?.function?.name ?? ''}] ${c?.function?.arguments ?? ''}`
-                ).join('\n')
-                text = text ? `${text}\n${calls}` : calls
-            }
-            result.push({ role: String(role), text })
-        }
-    } else if (typeof body.input === 'string') {
-        result.push({ role: 'user', text: body.input })
-    } else if (typeof body.prompt === 'string') {
-        result.push({ role: 'prompt', text: body.prompt })
-    }
-
-    return result.length > 0 ? result : null
-}
-
 export function extractModel(body: any, url: string): string | null {
     if (body && typeof body === 'object' && typeof body.model === 'string') {
         return body.model
@@ -277,39 +162,6 @@ export function extractUsage(response: any): LogUsage | null {
         return null
     }
     return { input, output, total }
-}
-
-export function extractOutputText(response: any): string | null {
-    if (!response || typeof response !== 'object') {
-        return null
-    }
-    // OpenAI chat
-    const choice = response.choices?.[0]
-    if (choice) {
-        const c = choice.message?.content ?? choice.text
-        if (typeof c === 'string') return c
-        if (Array.isArray(c)) return contentToText(c)
-    }
-    // Anthropic
-    if (Array.isArray(response.content) && response.type === 'message') {
-        return contentToText(response.content.filter((p: any) => p?.type !== 'thinking'))
-    }
-    // Google
-    const cand = response.candidates?.[0]?.content?.parts
-    if (Array.isArray(cand)) {
-        return contentToText(cand.filter((p: any) => !p?.thought))
-    }
-    // OpenAI responses
-    if (typeof response.output_text === 'string') {
-        return response.output_text
-    }
-    if (Array.isArray(response.output)) {
-        const msgs = response.output.filter((o: any) => o?.type === 'message')
-        if (msgs.length > 0) {
-            return msgs.map((m: any) => contentToText(m.content)).join('\n')
-        }
-    }
-    return null
 }
 
 export function extractErrorMessage(response: any, raw: string): string {
@@ -358,10 +210,8 @@ export function summarizeLog(log: RequestLogEntry): LogSummary {
         stream: body?.stream === true || /stream/i.test(log.url) || log.responseType === 'stream',
         bodySize: byteSize(log.body),
         responseSize: byteSize(log.response),
-        messages: extractMessages(body),
         usage: extractUsage(response),
         errorMessage: log.success ? null : extractErrorMessage(response, log.response),
-        outputText: log.success ? extractOutputText(response) : null,
     }
     summaryCache.set(log, summary)
     return summary

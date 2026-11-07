@@ -5,7 +5,7 @@
     import { downloadFile, getFetchLogs } from 'src/ts/globalApi.svelte';
     import {
         formatBytes, maskHeaders, maskUrl, statusTone, summarizeLog,
-        type RequestLogEntry, type LogStatusTone, type RequestLogTab,
+        type RequestLogEntry, type LogStatusTone,
     } from 'src/ts/requestLogView';
     import Button from '../UI/GUI/Button.svelte';
     import TextInput from '../UI/GUI/TextInput.svelte';
@@ -15,7 +15,7 @@
     let selected: RequestLogEntry | null = $state(null)
     let filter: 'all' | 'error' = $state('all')
     let query = $state('')
-    let tab: RequestLogTab = $state('messages')
+    let showHeaders = $state(false)
     let mobileDetail = $state(false)
     let listEl: HTMLElement | undefined = $state()
     let dialogEl: HTMLElement | undefined = $state()
@@ -106,11 +106,7 @@
             dialogEl?.querySelector<HTMLInputElement>('#request-log-search')?.focus()
             e.preventDefault()
         }
-        else if (['1', '2', '3', '4'].includes(e.key)) {
-            const tabs: RequestLogTab[] = ['messages', 'body', 'header', 'response']
-            const t = tabs[Number(e.key) - 1]
-            if (t !== 'messages' || (selected && summarizeLog(selected).messages)) tab = t
-        }
+        else if (e.key === 'h') { showHeaders = !showHeaders }
     }
 
     const toneText: Record<LogStatusTone, string> = {
@@ -209,7 +205,7 @@
                 <!-- Detail -->
                 <div class="flex-1 min-w-0 {mobileDetail ? 'block' : 'hidden md:block'}">
                     {#if selected}
-                        <RequestLogDetail log={selected} bind:tab fill onBack={() => mobileDetail = false} />
+                        <RequestLogDetail log={selected} bind:showHeaders onBack={() => mobileDetail = false} />
                     {:else}
                         <div class="h-full flex items-center justify-center text-textcolor2 text-sm">{language.requestLogs.selectLog}</div>
                     {/if}

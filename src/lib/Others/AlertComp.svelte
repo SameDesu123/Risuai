@@ -22,7 +22,6 @@
     import { ColorSchemeTypeStore } from "src/ts/gui/colorscheme";
     import Help from "./Help.svelte";
     import RequestLogsModal from "./RequestLogsModal.svelte";
-    import RequestLogDetail from "./RequestLogDetail.svelte";
     import { getChatBranches } from "src/ts/gui/branches";
     import { getCurrentCharacter } from "src/ts/storage/database.svelte";
     import { translateStackTrace } from "../../ts/sourcemap";
@@ -144,6 +143,14 @@
             stackTraceTranslationFailed = true;
         } finally {
             isTranslating = false;
+        }
+    }
+
+    const beautifyJSON = (data:string) =>{
+        try {
+            return JSON.stringify(JSON.parse(data), null, 2)
+        } catch (error) {
+            return data
         }
     }
 </script>
@@ -471,15 +478,19 @@
                 </div>
                 {/if}
                 {#if generationInfoMenuIndex === 2}
-                    {@const data = getFetchData($alertStore.msg)}
-                    {#if !data}
-                        <span class="text-textcolor2 text-lg mt-2">{language.errors.requestLogRemoved}</span>
-                        <span class="text-textcolor2 text-sm">{language.errors.requestLogRemovedDesc}</span>
-                    {:else}
-                        <div class="mt-4 -mx-4 w-[48rem] max-w-[calc(100%+2rem)]">
-                            <RequestLogDetail log={data} />
-                        </div>
-                    {/if}
+                    {#await getFetchData($alertStore.msg) then data} 
+                        {#if !data}
+                            <span class="text-gray-300 text-lg mt-2">{language.errors.requestLogRemoved}</span>
+                            <span class="text-gray-500">{language.errors.requestLogRemovedDesc}</span>
+                        {:else}
+                            <h1 class="text-2xl font-bold my-4">URL</h1>
+                            <code class="text-gray-300 border border-darkborderc p-2 rounded-md whitespace-pre-wrap">{data.url}</code>
+                            <h1 class="text-2xl font-bold my-4">Request Body</h1>
+                            <code class="text-gray-300 border border-darkborderc p-2 rounded-md whitespace-pre-wrap">{beautifyJSON(data.body)}</code>
+                            <h1 class="text-2xl font-bold my-4">Response</h1>
+                            <code class="text-gray-300 border border-darkborderc p-2 rounded-md whitespace-pre-wrap">{beautifyJSON(data.response)}</code>
+                        {/if}
+                    {/await}
                 {/if}
                 {#if generationInfoMenuIndex === 3}
                     {#if Object.keys(DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message[$alertGenerationInfoStore.idx].promptInfo || {}).length === 0}

@@ -1,9 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
     buildCurl,
-    extractMessages,
     extractModel,
-    extractOutputText,
     extractUsage,
     maskHeaders,
     maskUrl,
@@ -25,44 +23,6 @@ function makeLog(partial: Partial<RequestLogEntry>): RequestLogEntry {
 }
 
 describe('requestLogView', () => {
-    it('extracts OpenAI chat messages including tool calls', () => {
-        const msgs = extractMessages({
-            model: 'gpt-x',
-            messages: [
-                { role: 'system', content: 'be nice' },
-                { role: 'user', content: [{ type: 'text', text: 'hi' }, { type: 'image_url', image_url: { url: 'data:' } }] },
-                { role: 'assistant', content: null, tool_calls: [{ function: { name: 'search', arguments: '{"q":1}' } }] },
-            ],
-        })
-        expect(msgs).toEqual([
-            { role: 'system', text: 'be nice' },
-            { role: 'user', text: 'hi\n[image]' },
-            { role: 'assistant', text: '[tool call: search] {"q":1}' },
-        ])
-    })
-
-    it('extracts Anthropic system and Google contents', () => {
-        expect(extractMessages({
-            system: [{ type: 'text', text: 'sys' }],
-            messages: [{ role: 'user', content: 'hello' }],
-        })).toEqual([
-            { role: 'system', text: 'sys' },
-            { role: 'user', text: 'hello' },
-        ])
-        expect(extractMessages({
-            systemInstruction: { parts: [{ text: 'gsys' }] },
-            contents: [{ role: 'model', parts: [{ text: 'a' }, { inlineData: { mimeType: 'image/png', data: 'x' } }] }],
-        })).toEqual([
-            { role: 'system', text: 'gsys' },
-            { role: 'model', text: 'a\n[inline data: image/png]' },
-        ])
-    })
-
-    it('returns null for non prompt bodies', () => {
-        expect(extractMessages({ foo: 1 })).toBeNull()
-        expect(extractMessages(undefined)).toBeNull()
-    })
-
     it('finds model from body or Google style URL', () => {
         expect(extractModel({ model: 'claude-x' }, '')).toBe('claude-x')
         expect(extractModel(undefined, 'https://g.example.com/v1beta/models/gemini-pro:streamGenerateContent?key=abc')).toBe('gemini-pro')
@@ -74,12 +34,6 @@ describe('requestLogView', () => {
         expect(extractUsage({ usage: { input_tokens: 3, output_tokens: 4 } })).toEqual({ input: 3, output: 4, total: 7 })
         expect(extractUsage({ usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 2, totalTokenCount: 3 } })).toEqual({ input: 1, output: 2, total: 3 })
         expect(extractUsage({})).toBeNull()
-    })
-
-    it('reads output text across providers', () => {
-        expect(extractOutputText({ choices: [{ message: { content: 'hey' } }] })).toBe('hey')
-        expect(extractOutputText({ type: 'message', content: [{ type: 'thinking', thinking: 'hm' }, { type: 'text', text: 'yo' }] })).toBe('yo')
-        expect(extractOutputText({ candidates: [{ content: { parts: [{ text: 't', thought: true }, { text: 'g' }] } }] })).toBe('g')
     })
 
     it('masks secrets in headers and URLs', () => {

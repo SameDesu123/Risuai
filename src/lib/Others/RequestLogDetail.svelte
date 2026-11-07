@@ -10,19 +10,17 @@
     import Button from '../UI/GUI/Button.svelte';
     import {
         buildCurl, formatBytes, maskHeaders, maskUrl, prettyJSON, statusTone, summarizeLog,
-        type RequestLogEntry, type LogStatusTone, type RequestLogTab,
+        type RequestLogEntry, type LogStatusTone,
     } from 'src/ts/requestLogView';
 
     interface Props {
         log: RequestLogEntry
-        tab?: RequestLogTab
-        /** Fill the parent's height and scroll internally (modal); otherwise cap the content height. */
-        fill?: boolean
+        showHeaders?: boolean
         /** Shows a back button on small screens when provided. */
         onBack?: () => void
     }
 
-    let { log, tab = $bindable('messages'), fill = false, onBack }: Props = $props()
+    let { log, showHeaders = $bindable(false), onBack }: Props = $props()
 
     if (!hljs.getLanguage('json')) {
         hljs.registerLanguage('json', json)
@@ -30,7 +28,6 @@
 
     const HIGHLIGHT_LIMIT = 150_000
 
-    let responseView: 'text' | 'raw' = $state('text')
     let wrap = $state(true)
     let revealSecrets = $state(false)
     let copiedKey: string | null = $state(null)
@@ -39,27 +36,12 @@
     const tone = $derived(statusTone(log))
     const shownUrl = $derived(revealSecrets ? log.url : maskUrl(log.url))
     const shownHeader = $derived(revealSecrets ? log.header : maskHeaders(log.header))
-    const showText = $derived(responseView === 'text' && summary.outputText !== null)
+    const headerText = $derived(prettyJSON(shownHeader))
 
-    // Fall back to the request tab when the body has no recognizable prompt
-    $effect(() => {
-        if (tab === 'messages' && !summary.messages) {
-            tab = 'body'
-        }
-    })
-
-    const tabText = $derived.by(() => {
-        switch (tab) {
-            case 'messages':
-                return (summary.messages ?? []).map((m) => `[${m.role}]\n${m.text}`).join('\n\n')
-            case 'body':
-                return prettyJSON(log.body)
-            case 'header':
-                return prettyJSON(shownHeader)
-            case 'response':
-                return showText ? summary.outputText! : prettyJSON(log.response)
-        }
-    })
+    const panes = $derived([
+        { key: 'body', label: language.requestLogs.request, size: summary.bodySize, text: prettyJSON(log.body) },
+        { key: 'response', label: language.requestLogs.response, size: summary.responseSize, text: prettyJSON(log.response) },
+    ])
 
     function highlight(code: string): string {
         const escaped = () => code.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -107,23 +89,6 @@
         warning: 'text-amber-500',
         error: 'text-red-500',
     }
-
-    function roleText(role: string) {
-        switch (role) {
-            case 'system': case 'developer': return 'text-purple-500'
-            case 'user': return 'text-blue-500'
-            case 'assistant': case 'model': return 'text-green-500'
-            case 'tool': case 'function': case 'function_call': case 'function_call_output': return 'text-amber-500'
-            default: return 'text-textcolor2'
-        }
-    }
-
-    const tabs = $derived([
-        { id: 'messages' as const, label: language.requestLogs.messages, count: summary.messages?.length },
-        { id: 'body' as const, label: language.requestLogs.request },
-        { id: 'header' as const, label: language.requestLogs.headers },
-        { id: 'response' as const, label: language.requestLogs.response },
-    ])
 </script>
 
 {#snippet iconButton(onclick: () => void, title: string, active: boolean, children: import('svelte').Snippet)}
@@ -136,7 +101,21 @@
     </button>
 {/snippet}
 
-<div class="flex flex-col min-w-0 {fill ? 'h-full' : ''}">
+{#snippet copyButton(text: string, key: string)}
+    <button
+        class="p-1 rounded-md transition-colors hover:bg-selected {copiedKey === key ? 'text-green-500' : 'text-textcolor2 hover:text-textcolor'}"
+        onclick={() => copy(text, key)}
+        title={language.requestLogs.copy}
+    >
+        {#if copiedKey === key}<CheckIcon size={14} />{:else}<CopyIcon size={14} />{/if}
+    </button>
+{/snippet}
+
+{#snippet code(text: string)}
+    <pre class="request-log-code {wrap ? 'wrap' : ''} {$ColorSchemeTypeStore === 'light' ? 'light' : ''}">{@html highlight(text)}</pre>
+{/snippet}
+
+<div class="flex flex-col min-w-0 h-full">
     <!-- Summary -->
     <div class="px-4 pt-3 pb-3 flex flex-col gap-2">
         <div class="flex items-center gap-2 min-w-0">
@@ -158,10 +137,6 @@
                 <span><span class="text-textcolor2">{language.model}</span> <span class="text-amber-500">{summary.model}</span></span>
             {/if}
             <span><span class="text-textcolor2">{language.requestLogs.time}</span> <span class="text-textcolor">{log.date}</span></span>
-            <span>
-                <span class="text-textcolor2">{language.requestLogs.size}</span>
-                <span class="text-textcolor">{formatBytes(summary.bodySize)} / {formatBytes(summary.responseSize)}</span>
-            </span>
             {#if summary.stream}
                 <span class="text-textcolor2">{language.requestLogs.stream}</span>
             {/if}
@@ -180,21 +155,10 @@
         {/if}
 
         <div class="flex flex-wrap items-center gap-2 pt-1">
-            {#each tabs as t}
-                {#if t.id !== 'messages' || summary.messages}
-                    <Button size="sm" selected={tab === t.id} onclick={() => tab = t.id}>
-                        {t.label}{#if t.count}<span class="ml-1 text-textcolor2">{t.count}</span>{/if}
-                    </Button>
-                {/if}
-            {/each}
+            <Button size="sm" selected={showHeaders} onclick={() => showHeaders = !showHeaders}>{language.requestLogs.headers}</Button>
 
             <div class="flex-1"></div>
 
-            {#if tab === 'response' && summary.outputText !== null}
-                <Button size="sm" styled="outlined" onclick={() => responseView = responseView === 'text' ? 'raw' : 'text'}>
-                    {responseView === 'text' ? language.requestLogs.raw : language.requestLogs.outputText}
-                </Button>
-            {/if}
             {#snippet wrapIcon()}<WrapTextIcon size={16} />{/snippet}
             {@render iconButton(() => wrap = !wrap, language.requestLogs.wrap, wrap, wrapIcon)}
             {#snippet eyeIcon()}
@@ -205,10 +169,6 @@
                 revealSecrets ? language.requestLogs.hideSecrets : `${language.requestLogs.showSecrets} — ${language.requestLogs.secretsMasked}`,
                 revealSecrets, eyeIcon
             )}
-            {#snippet copyIcon()}
-                {#if copiedKey === 'tab'}<CheckIcon size={16} class="text-green-500" />{:else}<CopyIcon size={16} />{/if}
-            {/snippet}
-            {@render iconButton(() => copy(tabText, 'tab'), language.requestLogs.copy, false, copyIcon)}
             {#snippet curlIcon()}
                 {#if copiedKey === 'curl'}<CheckIcon size={16} class="text-green-500" />{:else}<TerminalIcon size={16} />{/if}
             {/snippet}
@@ -218,33 +178,32 @@
         </div>
     </div>
 
-    <!-- Content -->
-    <div class="border-t border-darkborderc overflow-auto p-4 {fill ? 'flex-1 min-h-0' : 'max-h-[60vh]'}">
-        {#if tab === 'messages' && summary.messages}
-            <div class="flex flex-col">
-                {#each summary.messages as m, mi}
-                    <div class="group py-3 first:pt-0 last:pb-0 {mi > 0 ? 'border-t border-darkborderc/60' : ''}">
-                        <div class="flex items-center gap-2 text-sm mb-1">
-                            <span class="font-bold capitalize {roleText(m.role)}">{m.role}</span>
-                            <span class="text-textcolor2 text-xs">#{mi + 1} · {m.text.length.toLocaleString()} {language.requestLogs.chars}</span>
-                            <span class="flex-1"></span>
-                            <button
-                                class="p-1 rounded-md transition-opacity hover:bg-selected md:opacity-0 md:group-hover:opacity-100 focus:opacity-100 {copiedKey === `msg-${mi}` ? 'text-green-500 md:opacity-100' : 'text-textcolor2 hover:text-textcolor'}"
-                                onclick={() => copy(m.text, `msg-${mi}`)}
-                                title={language.requestLogs.copy}
-                            >
-                                {#if copiedKey === `msg-${mi}`}<CheckIcon size={14} />{:else}<CopyIcon size={14} />{/if}
-                            </button>
-                        </div>
-                        <div class="text-sm leading-relaxed text-textcolor {wrap ? 'whitespace-pre-wrap wrap-break-word' : 'whitespace-pre overflow-x-auto'}">{m.text}</div>
-                    </div>
-                {/each}
+    {#if showHeaders}
+        <div class="border-t border-darkborderc px-4 py-3 max-h-48 overflow-auto shrink-0">
+            <div class="flex items-center gap-2 mb-2 text-sm">
+                <span class="font-semibold text-textcolor">{language.requestLogs.headers}</span>
+                <span class="flex-1"></span>
+                {@render copyButton(headerText, 'header')}
             </div>
-        {:else if tab === 'response' && showText}
-            <div class="text-sm leading-relaxed text-textcolor {wrap ? 'whitespace-pre-wrap wrap-break-word' : 'whitespace-pre overflow-x-auto'}">{summary.outputText}</div>
-        {:else}
-            <pre class="request-log-code {wrap ? 'wrap' : ''} {$ColorSchemeTypeStore === 'light' ? 'light' : ''}">{@html highlight(tabText)}</pre>
-        {/if}
+            {@render code(headerText)}
+        </div>
+    {/if}
+
+    <!-- Request / Response JSON, side by side on wide screens -->
+    <div class="border-t border-darkborderc flex-1 min-h-0 flex flex-col md:grid md:grid-cols-2 overflow-auto md:overflow-hidden">
+        {#each panes as pane, i (pane.key)}
+            <section class="flex flex-col min-w-0 shrink-0 md:min-h-0 {i > 0 ? 'border-t md:border-t-0 md:border-l border-darkborderc' : ''}">
+                <div class="flex items-center gap-2 px-4 pt-3 pb-2 text-sm shrink-0">
+                    <span class="font-semibold text-textcolor">{pane.label}</span>
+                    <span class="text-textcolor2">{formatBytes(pane.size)}</span>
+                    <span class="flex-1"></span>
+                    {@render copyButton(pane.text, pane.key)}
+                </div>
+                <div class="px-4 pb-4 md:flex-1 md:min-h-0 md:overflow-auto">
+                    {@render code(pane.text)}
+                </div>
+            </section>
+        {/each}
     </div>
 </div>
 
@@ -274,7 +233,7 @@
     }
     .request-log-code.wrap {
         white-space: pre-wrap;
-        word-break: break-all;
+        overflow-wrap: anywhere;
     }
     .request-log-code :global(.hljs-attr) { color: var(--log-key); }
     .request-log-code :global(.hljs-string) { color: var(--log-string); }
