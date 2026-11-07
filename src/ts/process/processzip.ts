@@ -4,6 +4,7 @@ import { asBuffer, Semaphore, sleep } from "../util";
 import { alertStore } from "../alert";
 import { hasher } from "../parser/parser.svelte";
 import { hubURL } from "../characterCards";
+import { getImageType } from "../media/imageType";
 
 // File size and chunk size constants
 const MAX_ASSET_SIZE_BYTES = 50 * 1024 * 1024; // 50MB
@@ -66,6 +67,11 @@ export class CharXWriter{
     }
 
     async writeJpeg(img: Uint8Array){
+        // Already a JPEG: append as-is to avoid a lossy re-encode.
+        if(getImageType(img) === 'JPEG'){
+            this.apb.append(img)
+            return
+        }
         const canvas = document.createElement('canvas')
         const ctx = canvas.getContext('2d')
         if(!ctx){
@@ -80,7 +86,7 @@ export class CharXWriter{
         canvas.height = imgElement.height
         ctx.drawImage(imgElement, 0, 0)
         const blob = await (new Promise((res:BlobCallback, rej) => {
-            canvas.toBlob(res, 'image/jpeg')
+            canvas.toBlob(res, 'image/jpeg', 1)
         }))
         const buf = await blob.arrayBuffer()
         this.apb.append(new Uint8Array(buf))
