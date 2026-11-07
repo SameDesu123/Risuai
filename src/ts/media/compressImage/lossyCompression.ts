@@ -1,3 +1,7 @@
+// Canvas encoders take quality in the 0..1 range; out-of-range values are
+// silently ignored and the browser default is used instead.
+const LOSSY_QUALITY = 0.75
+
 export async function doLossyCompression(imageData: Uint8Array): Promise<Buffer> {
     return new Promise((resolve) => {
         const base64Image = 'data:image/png;base64,' + Buffer.from(imageData).toString('base64')
@@ -28,11 +32,11 @@ export async function doLossyCompression(imageData: Uint8Array): Promise<Buffer>
             context.drawImage(image, 0, 0, width, height)
 
             // Try to convert to WebP
-            let base64 = canvas.toDataURL('image/webp', 75)
+            let base64 = canvas.toDataURL('image/webp', LOSSY_QUALITY)
 
             // If WebP is not supported, convert to JPEG
             if (base64.indexOf('data:image/webp') != 0) {
-                base64 = canvas.toDataURL('image/jpeg', 75)
+                base64 = canvas.toDataURL('image/jpeg', LOSSY_QUALITY)
             }
 
             const array = Buffer.from(base64.split(',')[1], 'base64')
