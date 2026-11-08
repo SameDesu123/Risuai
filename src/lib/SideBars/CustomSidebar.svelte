@@ -29,7 +29,7 @@
 </script>
 
 
-<div class="rounded-sm flex flex-col w-full gap-2">
+<div class="rounded-sm flex flex-col w-full gap-2 [&_.rs-setting-check]:px-2">
 
     {#each DBState.db.customSidebarItems as item}
         {#if item.type === 'model'}
