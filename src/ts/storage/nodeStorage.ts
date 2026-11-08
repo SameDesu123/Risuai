@@ -84,6 +84,12 @@ function getSetItemContext(key:string, byteLength:number) {
     return `Key: ${key}\nSize: ${formatStorageValueSize(byteLength)}`
 }
 
+export type NodeDatabaseSaveResult =
+    | { status: 'saved', revision: string }
+    /** the server no longer has the save the request was based on */
+    | { status: 'stale' }
+    | { status: 'unsupported' }
+
 
 export class NodeStorage{
 
@@ -188,6 +194,59 @@ export class NodeStorage{
             throw new Error(`Node storage setItem failed.\n${context}\nServer: ${formatUnknownError(data.error)}`)
         }
     }
+
+    /**
+     * Sends a save request built by RisuSaveEncoder.encodeServerSave. The server assembles
+     * database/database.bin from it, writes the backup and prunes old backups.
+     */
+    async saveDatabase(payload:Uint8Array):Promise<NodeDatabaseSaveResult> {
+        await this.checkAuth()
+        const context = getSetItemContext('database/database.bin (server save)', payload.byteLength)
+        let response:Response
+        try {
+            response = await fetch('/api/db/save', {
+                method: "POST",
+                body: payload as any,
+                headers: {
+                    'content-type': 'application/octet-stream',
+                    'risu-auth': await this.createAuth()
+                }
+            })
+        } catch (error) {
+            throw new Error(`Node storage database save request failed.\n${context}\nCause: ${formatUnknownError(error)}`)
+        }
+
+        if(response.status === 404){
+            //a server from before /api/db/save
+            return { status: 'unsupported' }
+        }
+        if(response.status === 409){
+            const detail = await response.clone().json().catch(() => null)
+            if(detail?.code === 'DB_SAVE_STALE'){
+                return { status: 'stale' }
+            }
+        }
+        if(!response.ok){
+            const responseDetail = await getStorageResponseErrorDetail(response)
+            const httpStatus = `${response.status}${response.statusText ? ` ${response.statusText}` : ''}`
+            throw new Error(
+                `Node storage database save failed.\n${context}\nHTTP: ${httpStatus}` +
+                (responseDetail ? `\nServer: ${responseDetail}` : '')
+            )
+        }
+
+        let data:any
+        try {
+            data = await response.json()
+        } catch (error) {
+            throw new Error(`Node storage database save received an invalid response.\n${context}\nCause: ${formatUnknownError(error)}`)
+        }
+        if(data.error || typeof data.revision !== 'string'){
+            throw new Error(`Node storage database save failed.\n${context}\nServer: ${formatUnknownError(data.error ?? 'No revision in the response')}`)
+        }
+        return { status: 'saved', revision: data.revision }
+    }
+
     async getItem(key:string):Promise<Buffer> {
         await this.checkAuth()
         const da = await fetch('/api/read', {

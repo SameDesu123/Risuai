@@ -105,3 +105,67 @@ describe('NodeStorage.setItem', () => {
         )
     })
 })
+
+describe('NodeStorage.saveDatabase', () => {
+    const fetchMock = vi.fn()
+    let storage:NodeStorage
+
+    beforeEach(() => {
+        fetchMock.mockReset()
+        vi.stubGlobal('fetch', fetchMock)
+        storage = new NodeStorage()
+        vi.spyOn(storage as any, 'checkAuth').mockResolvedValue(undefined)
+        vi.spyOn(storage, 'createAuth').mockResolvedValue('test-auth')
+    })
+
+    afterEach(() => {
+        vi.unstubAllGlobals()
+        vi.restoreAllMocks()
+    })
+
+    function jsonResponse(body:unknown, status:number) {
+        return new Response(JSON.stringify(body), {
+            status,
+            headers: {
+                'content-type': 'application/json'
+            }
+        })
+    }
+
+    it('posts the payload and returns the new revision', async () => {
+        fetchMock.mockResolvedValue(jsonResponse({ success: true, revision: 'rev-1' }, 200))
+
+        await expect(storage.saveDatabase(new Uint8Array([1, 2, 3]))).resolves.toEqual({ status: 'saved', revision: 'rev-1' })
+        expect(fetchMock).toHaveBeenCalledWith('/api/db/save', expect.objectContaining({
+            method: 'POST',
+            headers: {
+                'content-type': 'application/octet-stream',
+                'risu-auth': 'test-auth'
+            }
+        }))
+    })
+
+    it('reports a server without /api/db/save as unsupported', async () => {
+        fetchMock.mockResolvedValue(new Response('Cannot POST /api/db/save', { status: 404 }))
+
+        await expect(storage.saveDatabase(new Uint8Array(3))).resolves.toEqual({ status: 'unsupported' })
+    })
+
+    it('reports an out-of-date base revision as stale', async () => {
+        fetchMock.mockResolvedValue(jsonResponse({ error: 'changed', code: 'DB_SAVE_STALE' }, 409))
+
+        await expect(storage.saveDatabase(new Uint8Array(3))).resolves.toEqual({ status: 'stale' })
+    })
+
+    it('throws with server details for other failures', async () => {
+        fetchMock.mockResolvedValue(jsonResponse({ error: 'Failed to save the database', code: 'ENOSPC' }, 507))
+
+        await expect(storage.saveDatabase(new Uint8Array(3))).rejects.toThrow(
+            'Node storage database save failed.\n' +
+            'Key: database/database.bin (server save)\n' +
+            'Size: 3 bytes\n' +
+            'HTTP: 507\n' +
+            'Server: Failed to save the database | ENOSPC'
+        )
+    })
+})

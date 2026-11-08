@@ -28,7 +28,7 @@ app.use(express.json({ limit: requestBodyLimit }));
 app.use(express.raw({ type: 'application/octet-stream', limit: requestBodyLimit }));
 app.use(express.text({ limit: requestBodyLimit }));
 app.use((error, req, res, next) => {
-    if (error?.type === 'entity.too.large' && req.path === '/api/write' && req.is('application/octet-stream')) {
+    if (error?.type === 'entity.too.large' && (req.path === '/api/write' || req.path === '/api/db/save') && req.is('application/octet-stream')) {
         console.error('[Storage] Rejected oversized request:', {
             size: error.length,
             limit: error.limit,
@@ -47,6 +47,7 @@ const https = require('https');
 const sslPath = path.join(process.cwd(), 'server/node/ssl/certificate');
 const hubURL = 'https://sv.risuai.xyz'; 
 const openid = require('openid-client');
+const { DatabaseSaveError, DatabaseSaveStore, isDatabaseFile } = require('./dbSave.cjs');
 
 let password = ''
 let knownPublicKeysHashes = []
@@ -55,6 +56,7 @@ const savePath = path.join(process.cwd(), "save")
 if(!existsSync(savePath)){
     mkdirSync(savePath)
 }
+const databaseSaveStore = new DatabaseSaveStore(savePath)
 
 const passwordPath = path.join(process.cwd(), 'save', '__password')
 if(existsSync(passwordPath)){
@@ -1299,6 +1301,9 @@ app.get('/api/remove', authenticatedRouteLimiter, async (req, res, next) => {
 
         try {
             await fs.rm(path.join(savePath, filePath));
+            if(isDatabaseFile(filePath)){
+                databaseSaveStore.invalidate();
+            }
             res.send({
                 success: true,
             });
@@ -1357,6 +1362,9 @@ app.post('/api/write', authenticatedRouteLimiter, async (req, res) => {
 
     try {
         await fs.writeFile(storageFilePath, fileContent);
+        if(isDatabaseFile(normalizedFilePath)){
+            databaseSaveStore.invalidate();
+        }
         res.send({
             success: true
         });
@@ -1378,6 +1386,47 @@ app.post('/api/write', authenticatedRouteLimiter, async (req, res) => {
             error: 'Failed to write storage item',
             code: errorCode,
             message: clientErrorMessage,
+        });
+    }
+});
+
+// The browser sends the changed save blocks; the server assembles database.bin and its backup (see dbSave.cjs)
+app.post('/api/db/save', authenticatedRouteLimiter, async (req, res) => {
+    if(!await checkAuth(req, res)){
+        return;
+    }
+    if(!Buffer.isBuffer(req.body)){
+        res.status(400).send({
+            error: 'Database save requires an application/octet-stream body',
+            code: 'DB_SAVE_INVALID',
+        });
+        return;
+    }
+    try {
+        const result = await databaseSaveStore.save(req.body);
+        res.send({
+            success: true,
+            ...result,
+        });
+    } catch (error) {
+        if(error instanceof DatabaseSaveError){
+            res.status(error.status).send({
+                error: error.message,
+                code: error.code,
+            });
+            return;
+        }
+        const errorCode = typeof error?.code === 'string' ? error.code : 'WRITE_FAILED';
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        console.error('[Storage] Failed to save the database:', {
+            size: req.body.byteLength,
+            code: errorCode,
+            message: errorMessage,
+        });
+        res.status(errorCode === 'ENOSPC' || errorCode === 'EDQUOT' ? 507 : 500).send({
+            error: 'Failed to save the database',
+            code: errorCode,
+            message: errorMessage.split(savePath).join(`.${path.sep}save`),
         });
     }
 });

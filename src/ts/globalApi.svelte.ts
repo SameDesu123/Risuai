@@ -26,6 +26,8 @@ import { characterURLImport, hubURL } from "./characterCards";
 import { defaultJailbreak, defaultMainPrompt, oldJailbreak, oldMainPrompt } from "./storage/defaultPrompts";
 import { loadRisuAccountData } from "./drive/accounter";
 import { decodeRisuSave, RisuSaveEncoder, type toSaveType } from "./storage/risuSave";
+import { saveDatabaseOnNodeServer, type NodeServerSaveOutcome } from "./storage/nodeServerSave";
+import type { NodeStorage } from "./storage/nodeStorage";
 import { saveKV } from "./storage/saveKV";
 import { AutoStorage } from "./storage/autoStorage";
 import { updateAnimationSpeed } from "./gui/animation";
@@ -290,6 +292,8 @@ export let saving = $state({
 export let requiresFullEncoderReload = $state({
     state: false
 })
+/** false once the Node server turned out to have no /api/db/save */
+let nodeServerAssemblesDb = true
 export async function saveDb() {
     let changed = false
     syncDrive()
@@ -452,29 +456,43 @@ export async function saveDb() {
             kvDirty = saveKV.takeDirty()
             toSave.kv = kvDirty
             await encoder.set(db, toSave)
-            const encoded = encoder.encode()
-            if (!encoded) {
+            //Node server: the server assembles the file and keeps the backups, so only changed blocks are uploaded
+            let nodeSave: NodeServerSaveOutcome = 'unsupported'
+            if (isNodeServer && !forageStorage.isAccount && nodeServerAssemblesDb) {
+                nodeSave = await saveDatabaseOnNodeServer(encoder, forageStorage.realStorage as NodeStorage)
+                //an older server: upload the whole file from now on
+                nodeServerAssemblesDb = nodeSave !== 'unsupported'
+            }
+            if (nodeSave === 'empty') {
                 saveKV.markDirty(kvDirty)
                 await sleep(1000)
                 continue
             }
-            const dbData = new Uint8Array(encoded)
-            if (isTauri) {
-                await writeFile('database/database.bin', dbData, { baseDir: BaseDirectory.AppData });
-                await writeFile(`database/dbbackup-${(Date.now() / 100).toFixed()}.bin`, dbData, { baseDir: BaseDirectory.AppData });
-            }
-            else {
+            if (nodeSave === 'unsupported') {
+                const encoded = encoder.encode()
+                if (!encoded) {
+                    saveKV.markDirty(kvDirty)
+                    await sleep(1000)
+                    continue
+                }
+                const dbData = new Uint8Array(encoded)
+                if (isTauri) {
+                    await writeFile('database/database.bin', dbData, { baseDir: BaseDirectory.AppData });
+                    await writeFile(`database/dbbackup-${(Date.now() / 100).toFixed()}.bin`, dbData, { baseDir: BaseDirectory.AppData });
+                }
+                else {
 
-                await forageStorage.setItem('database/database.bin', dbData)
+                    await forageStorage.setItem('database/database.bin', dbData)
+                    if (!forageStorage.isAccount) {
+                        await forageStorage.setItem(`database/dbbackup-${(Date.now() / 100).toFixed()}.bin`, dbData)
+                    }
+                    if (forageStorage.isAccount) {
+                        await sleep(3000)
+                    }
+                }
                 if (!forageStorage.isAccount) {
-                    await forageStorage.setItem(`database/dbbackup-${(Date.now() / 100).toFixed()}.bin`, dbData)
+                    await getDbBackups()
                 }
-                if (forageStorage.isAccount) {
-                    await sleep(3000)
-                }
-            }
-            if (!forageStorage.isAccount) {
-                await getDbBackups()
             }
             savetrys = 0
             await saveDbKei()

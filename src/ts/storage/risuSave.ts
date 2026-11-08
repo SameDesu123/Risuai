@@ -111,6 +111,41 @@ type EncodeBlockOption = {
 const risuSaveCacheForage = localforage.createInstance({
     name: 'risuSaveCache'
 });
+
+export type ServerSaveManifest = {
+    v: 1
+    /** revision of the save the server acknowledged last, null to send every block */
+    base: string | null
+    /** every block name, in file order */
+    order: string[]
+}
+
+export type ServerSaveRequest = {
+    payload: Uint8Array
+    sentBlocks: number
+    totalBlocks: number
+    /** call once the server stored the save under this revision */
+    commit: (revision: string) => void
+}
+
+/** [manifest length u32 LE][manifest JSON][encoded blocks], read by parseSaveRequest in server/node/dbSave.cjs */
+export function buildServerSavePayload(manifest: ServerSaveManifest, blocks: Uint8Array[]): Uint8Array {
+    const manifestBuf = new TextEncoder().encode(JSON.stringify(manifest))
+    let length = 4 + manifestBuf.length
+    for(const block of blocks){
+        length += block.length
+    }
+    const payload = new Uint8Array(length)
+    new DataView(payload.buffer).setUint32(0, manifestBuf.length, true)
+    payload.set(manifestBuf, 4)
+    let offset = 4 + manifestBuf.length
+    for(const block of blocks){
+        payload.set(block, offset)
+        offset += block.length
+    }
+    return payload
+}
+
 export class RisuSaveEncoder {
 
     private blocks: { [key: string]: Uint8Array } = {};
@@ -120,6 +155,8 @@ export class RisuSaveEncoder {
     private allowRemote: boolean;
     /** false: do not write blocks to the local block cache (exports must not touch the live save's cache) */
     private cacheBlocks: boolean;
+    /** The last save the Node server acknowledged, with the block arrays it received */
+    private serverSaved: { revision: string, blocks: Map<string, Uint8Array> } | null = null;
 
     constructor(options: { remote?: boolean, cache?: boolean } = {}){
         this.allowRemote = options.remote ?? true;
@@ -333,6 +370,39 @@ export class RisuSaveEncoder {
         }
         console.log(Object.keys(this.blocks).length, 'blocks encoded');
         return arrayBuf;
+    }
+
+    /**
+     * Builds a request for the Node server's /api/db/save (server/node/dbSave.cjs).
+     * The server keeps the blocks of the last save, so only blocks re-encoded since then are sent;
+     * the first request, or one after resetServerSave(), sends every block.
+     * Returns null when the encoder has no config block yet, like encode().
+     */
+    encodeServerSave(): ServerSaveRequest | null {
+        if(!this.blocks['config']){
+            return null
+        }
+        const order = Object.keys(this.blocks)
+        const saved = this.serverSaved
+        //every encode creates a new array, so a block is unchanged when it is the one the server acknowledged
+        const changed = order.filter((name) => saved?.blocks.get(name) !== this.blocks[name])
+        const snapshot = new Map(order.map((name) => [name, this.blocks[name]] as const))
+        return {
+            payload: buildServerSavePayload(
+                { v: 1, base: saved?.revision ?? null, order },
+                changed.map((name) => this.blocks[name])
+            ),
+            sentBlocks: changed.length,
+            totalBlocks: order.length,
+            commit: (revision: string) => {
+                this.serverSaved = { revision, blocks: snapshot }
+            }
+        }
+    }
+
+    /** The server no longer has the last acknowledged save: the next request sends every block */
+    resetServerSave(){
+        this.serverSaved = null
     }
 
     private async encodeKVBlock(ns: string){
