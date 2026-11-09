@@ -1,0 +1,46 @@
+---
+title: RisuAI 비공식 위키
+description: RisuAI 사용자들이 함께 만드는 비공식 문서입니다. 설치 방법부터 CBS 문법과 함수 레퍼런스까지 다룹니다.
+template: splash
+editUrl: false
+lastUpdated: false
+hero:
+  tagline: 설치부터 CBS까지, 사용자들이 함께 정리하는 RisuAI 문서입니다.
+  actions:
+    - text: 설치하기
+      link: getting-started/install/
+      icon: right-arrow
+    - text: CBS 레퍼런스
+      link: cbs/reference/
+      icon: open-book
+      variant: minimal
+---
+
+import { Aside, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+<Aside type="caution" title="비공식 위키입니다">
+이 사이트는 RisuAI 개발자가 운영하지 않습니다. RisuAI 자체의 버그나 기능 요청은 [RisuAI 저장소](https://github.com/kwaroran/RisuAI/issues)에 올려 주세요. 이 위키의 틀린 내용은 각 페이지 아래의 **페이지 편집** 링크로 직접 고칠 수 있습니다.
+</Aside>
+
+<CardGrid>
+	<LinkCard
+		title="설치하기"
+		description="웹, 데스크톱 앱, Docker, 직접 빌드 가운데 나에게 맞는 방법을 고르고, 데이터를 백업하는 방법을 알아봅니다."
+		href="getting-started/install/"
+	/>
+	<LinkCard
+		title="CBS 기초"
+		description="{{char}} 같은 중괄호 문법이 어떻게 계산되는지, 조건문·반복문·변수를 예제로 익힙니다."
+		href="cbs/basics/"
+	/>
+	<LinkCard
+		title="CBS 레퍼런스"
+		description="모든 CBS 함수를 분류별로 정리했습니다. RisuAI 소스 코드에서 자동으로 만듭니다."
+		href="cbs/reference/"
+	/>
+	<LinkCard
+		title="위키 기여하기"
+		description="문서를 고치거나 새로 쓰는 방법, 레퍼런스 번역을 돕는 방법을 안내합니다."
+		href="contributing/"
+	/>
+</CardGrid>

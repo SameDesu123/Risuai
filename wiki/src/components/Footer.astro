@@ -1,0 +1,18 @@
+---
+// 기본 푸터 아래에 비공식 위키라는 안내를 덧붙인다.
+import Default from '@astrojs/starlight/components/Footer.astro';
+---
+
+<Default />
+<p class="wiki-disclaimer">{Astro.locals.t('wiki.disclaimer')}</p>
+
+<style>
+	.wiki-disclaimer {
+		margin-top: 2rem;
+		padding-top: 1rem;
+		border-top: 1px solid var(--sl-color-hairline);
+		font-size: var(--sl-text-xs);
+		color: var(--sl-color-gray-3);
+		text-align: center;
+	}
+</style>

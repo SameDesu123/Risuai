@@ -1,0 +1,40 @@
+---
+title: RisuAI Unofficial Wiki
+description: An unofficial, community-written documentation site for RisuAI, from installation to the CBS reference.
+template: splash
+editUrl: false
+lastUpdated: false
+hero:
+  tagline: Community-maintained documentation for RisuAI, from installation to CBS.
+  actions:
+    - text: CBS reference
+      link: cbs/reference/
+      icon: right-arrow
+    - text: Korean edition
+      link: ../
+      icon: open-book
+      variant: minimal
+---
+
+import { Aside, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+<Aside type="caution" title="This is an unofficial wiki">
+This site is not run by the RisuAI developers. Please report bugs and feature requests for RisuAI itself on the [RisuAI repository](https://github.com/kwaroran/RisuAI/issues).
+</Aside>
+
+<Aside type="note" title="English coverage">
+The wiki is written in Korean first. The CBS reference is fully available in English because it is generated straight from the RisuAI source code. Other pages fall back to Korean until someone translates them.
+</Aside>
+
+<CardGrid>
+	<LinkCard
+		title="CBS reference"
+		description="Every CBS function, grouped by category and generated from the RisuAI source code."
+		href="cbs/reference/"
+	/>
+	<LinkCard
+		title="Contributing"
+		description="How to fix a page, write a new one, or help with translations."
+		href="contributing/"
+	/>
+</CardGrid>

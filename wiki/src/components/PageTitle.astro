@@ -1,0 +1,18 @@
+---
+// 기본 제목 아래에 'RisuAI 몇 버전 기준으로 확인했는지'를 덧붙인다.
+// 문서 frontmatter의 verifiedVersion 값을 쓴다.
+import Default from '@astrojs/starlight/components/PageTitle.astro';
+
+const version = Astro.locals.starlightRoute.entry.data.verifiedVersion;
+---
+
+<Default />
+{version && <p class="wiki-verified">{Astro.locals.t('wiki.verifiedVersion', { version })}</p>}
+
+<style>
+	.wiki-verified {
+		margin-top: 0.5rem;
+		font-size: var(--sl-text-sm);
+		color: var(--sl-color-gray-3);
+	}
+</style>

@@ -1,0 +1,35 @@
+/* 강조색: 짙은 청록. 공식 RisuAI 브랜딩과 헷갈리지 않도록 일부러 다른 색을 쓴다. */
+:root {
+	--sl-color-accent-low: #0b2e2c;
+	--sl-color-accent: #14998c;
+	--sl-color-accent-high: #a8ede4;
+}
+
+:root[data-theme='light'] {
+	--sl-color-accent-low: #c9f2ec;
+	--sl-color-accent: #0f7a70;
+	--sl-color-accent-high: #0a3d38;
+}
+
+/* CBS 레퍼런스: 함수 제목은 코드 글꼴로, 링크 밑줄 없이. */
+.sl-markdown-content h3[id^='cbs-'] a {
+	color: inherit;
+	text-decoration: none;
+}
+
+.sl-markdown-content h3[id^='cbs-'] code {
+	font-size: 1em;
+	padding: 0.1em 0.4em;
+}
+
+/* 함수 사이 간격을 조금 띄워 항목이 구분되게 한다. */
+.sl-markdown-content h3[id^='cbs-'] {
+	margin-top: 2.5rem;
+	padding-top: 1rem;
+	border-top: 1px solid var(--sl-color-hairline);
+}
+
+/* 한눈에 보기 표의 첫 열이 줄바꿈되지 않게. */
+.sl-markdown-content table td:first-child {
+	white-space: nowrap;
+}

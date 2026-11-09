@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.astro/
+.cache/
+
+# pnpm generate가 RisuAI 소스에서 만드는 파일
+src/content/docs/cbs/reference.md
+src/content/docs/en/cbs/reference.md
