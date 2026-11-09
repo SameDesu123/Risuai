@@ -508,7 +508,8 @@ export class RisuSaveDecoder {
                 continue
             }
         }
-        console.log('blocks',this.blocks)
+        //logging the blocks themselves would keep every block's text (the whole save) alive in the console
+        console.log(`RisuSave: ${this.blocks.length} blocks read`)
         let directory: string[] = []
         for(let i = 0; i < this.blocks.length; i++){
             const key = i;
@@ -647,13 +648,16 @@ export class RisuSaveDecoder {
                     throw new Error('Failed to decode root block, cannot proceed with decoding RisuSave data');
                 }
             }
+            //the parsed data is what is kept; drop the text right away instead of holding the whole save twice until the end
+            this.blocks[key].content = '';
         }
         //to fix botpreset bugs
         if(!Array.isArray(db.botPresets) || db.botPresets.length === 0){
             db.botPresets = [presetTemplate]
             db.botPresetsId = 0
         }
-        console.log('Decoded RisuSave data', db);
+        //log a summary only: a logged object stays alive in the console for the rest of the session
+        console.log(`Decoded RisuSave data: ${db.characters?.length ?? 0} characters`);
         return { database: db, kv };
     }
 }
