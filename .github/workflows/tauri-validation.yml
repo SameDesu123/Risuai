@@ -1,0 +1,63 @@
+name: 'tauri-validation'
+
+# Validation-only native builds. This workflow never creates tags, releases,
+# or signed release updates and uploads only macOS disk images as run artifacts.
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  validate-tauri-build:
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        settings:
+          - platform: 'macos-latest'
+            target: 'aarch64-apple-darwin'
+            args: '--target aarch64-apple-darwin'
+          - platform: 'macos-latest'
+            target: 'x86_64-apple-darwin'
+            args: '--target x86_64-apple-darwin'
+
+    runs-on: ${{ matrix.settings.platform }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: install pnpm
+        uses: pnpm/action-setup@v5
+        with:
+          version: 10.34.1
+      - name: setup node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: 'pnpm'
+          cache-dependency-path: 'pnpm-lock.yaml'
+      - name: install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.settings.target }}
+      - uses: Swatinem/rust-cache@v2
+        name: Setup Rust cache
+        with:
+          workspaces: src-tauri -> target
+          key: ${{ matrix.settings.platform }}-${{ matrix.settings.target }}
+      - name: install frontend dependencies
+        run: pnpm install --frozen-lockfile
+      - name: build tauri app (validation)
+        shell: bash
+        env:
+          VITE_RISU_LEGAL_CONFIGURED: 'TRUE'
+        run: >-
+          pnpm tauri build --config '{"bundle":{"createUpdaterArtifacts":false}}'
+          ${{ matrix.settings.args }}
+      - name: upload validation artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: RisuAI-validation-${{ matrix.settings.target }}
+          retention-days: 14
+          if-no-files-found: 'error'
+          path: src-tauri/target/${{ matrix.settings.target }}/release/bundle/dmg/*.dmg
