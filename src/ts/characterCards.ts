@@ -21,6 +21,7 @@ import { onOpenUrl } from '@tauri-apps/plugin-deep-link';
 import { AccountStorage } from "./storage/accountStorage"
 import { filterBlockedRealmCards, isRealmCreatorBlocked } from "./realmBlocking"
 import { normalizeOnboarding } from "./onboarding"
+import { blackboxActivity } from "./blackbox"
 
 
 const EXTERNAL_HUB_URL = 'https://sv.risuai.xyz';
@@ -51,12 +52,18 @@ export async function importCharacter() {
     }
 }
 
-export async function importCharacterProcess<T extends boolean = false>(f:{
+type ImportCharacterProcessArg<T extends boolean> = {
     name: string;
     data: Uint8Array|File|ReadableStream<Uint8Array>
     lightningRealmImport?:boolean
     returnCharacter?:T //note That this option only works with v3 charx
-}):Promise<T extends true ? character | number | null : number | null>{
+}
+
+export async function importCharacterProcess<T extends boolean = false>(f:ImportCharacterProcessArg<T>):Promise<T extends true ? character | number | null : number | null>{
+    return blackboxActivity('char:import', () => importCharacterProcessInner<T>(f))
+}
+
+async function importCharacterProcessInner<T extends boolean = false>(f:ImportCharacterProcessArg<T>):Promise<T extends true ? character | number | null : number | null>{
     if(f.name.endsWith('json')){
         if(f.data instanceof ReadableStream){
             return null

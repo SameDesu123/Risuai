@@ -251,6 +251,11 @@ export const advancedSettingsItems: SettingItem[] = [
         condition: (ctx) => ctx.db.showUnrecommended, helpKey: 'unrecommended', helpUnrecommended: true, classes: 'mt-4'
     },
 
+    {
+        id: 'adv.crashReports', type: 'button', labelKey: 'exportCrashReports',
+        options: { onClick: async () => (await import('../blackboxReport')).exportBlackboxReports() }, keywords: ['crash', 'memory', 'oom', 'diagnostic', 'report'], classes: 'mt-4'
+    },
+
     // Custom Components
     { type: 'custom', id: 'adv.banChar', componentId: 'BanCharacterSetSettings' },
     { type: 'custom', id: 'adv.customModels', componentId: 'CustomModelsSettings' },

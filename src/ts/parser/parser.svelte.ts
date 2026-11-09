@@ -663,6 +663,11 @@ function trimmer(str:string){
 
 const blobUrlCache = new Map<string, string>()
 
+/** Number of inlay blob URLs kept alive for this session (recorded by the blackbox) */
+export function getInlayBlobUrlCacheSize() {
+    return blobUrlCache.size
+}
+
 async function parseInlayAssets(data:string){
     const inlayMatch = data.match(/{{(inlay|inlayed|inlayeddata)::(.+?)}}/g)
     if(inlayMatch){

@@ -8,6 +8,7 @@ import type { OpenAIChat } from "./index.svelte"
 import { processZip } from "./processzip"
 import { keiServerURL } from "../kei/kei"
 import random from "lodash/random"
+import { blackboxActivity } from "../blackbox"
 
 export async function stableDiff(currentChar:character,prompt:string){
     let db = getDatabase()
@@ -61,7 +62,11 @@ export async function stableDiff(currentChar:character,prompt:string){
     return await generateAIImage(genPrompt, currentChar, neg, '')
 }
 
-export async function generateAIImage(genPrompt:string, currentChar:character, neg:string, returnSdData:string, options?:ImageGenerationOptions):Promise<string|false>{
+export async function generateAIImage(...args: Parameters<typeof generateAIImageInner>): Promise<string|false> {
+    return blackboxActivity('image:generate', () => generateAIImageInner(...args))
+}
+
+async function generateAIImageInner(genPrompt:string, currentChar:character, neg:string, returnSdData:string, options?:ImageGenerationOptions):Promise<string|false>{
     const db = getDatabase()
     console.log(db.sdProvider)
     if(db.sdProvider === 'webui'){

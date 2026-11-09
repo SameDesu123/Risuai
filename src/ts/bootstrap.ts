@@ -10,7 +10,7 @@ import {
 import { changeFullscreen, checkNullish, sleep } from "./util"
 import { v4 as uuidv4 } from 'uuid';
 import { get } from "svelte/store";
-import { setDatabase, defaultSdDataFunc, getDatabase } from "./storage/database.svelte";
+import { setDatabase, defaultSdDataFunc, getDatabase, appVer } from "./storage/database.svelte";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { checkRisuUpdate } from "./update";
 import { MobileGUI, botMakerMode, selectedCharID, loadedStore, DBState, LoadingStatusState } from "./stores.svelte";
@@ -47,6 +47,9 @@ import { isTauri } from "./platform";
 import { registerModelDynamic } from "./model/modellist";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { appDataDir, join } from "@tauri-apps/api/path";
+import { blackboxCrumb, registerBlackboxCounter, startBlackbox } from "./blackbox";
+import { promptBlackboxReports } from "./blackboxReport";
+import { getInlayBlobUrlCacheSize } from "./parser/parser.svelte";
 
 const appWindow = isTauri ? getCurrentWebviewWindow() : null
 
@@ -56,6 +59,8 @@ const appWindow = isTauri ? getCurrentWebviewWindow() : null
 export async function loadData() {
     const loaded = get(loadedStore)
     if (!loaded) {
+        // Start recording before the save is decoded: a crash while loading a huge save is a crash too
+        const blackboxReady = startBlackbox(appVer)
         try {
             if (isTauri) {
                 LoadingStatusState.text = "Checking Files..."
@@ -253,16 +258,20 @@ export async function loadData() {
             await makeColdData()
             loadedStore.set(true)
             selectedCharID.set(-1)
+            initBlackboxCounters()
             startObserveDom()
             assignIds()
             registerModelDynamic()
             saveDb()
             moduleUpdate()
             cleanChunks()
-            alertTOS().then((a) => {
+            alertTOS().then(async (a) => {
                 if (a === false) {
                     location.reload()
+                    return
                 }
+                await blackboxReady
+                await promptBlackboxReports()
             })
             
         } catch (error) {
@@ -271,6 +280,23 @@ export async function loadData() {
     }
 }
 
+
+/**
+ * Registers the app-specific numbers the blackbox records with every sample.
+ * Only counts: never names or content.
+ */
+function initBlackboxCounters() {
+    blackboxCrumb('boot:loaded')
+    registerBlackboxCounter('characters', () => DBState.db.characters?.length ?? 0)
+    registerBlackboxCounter('chatMessages', () => {
+        const char = DBState.db.characters?.[get(selectedCharID)]
+        return char?.chats?.[char.chatPage]?.message?.length ?? 0
+    })
+    registerBlackboxCounter('inlayBlobUrls', getInlayBlobUrlCacheSize)
+    selectedCharID.subscribe((id) => {
+        blackboxCrumb(`char:select ${id}`)
+    })
+}
 
 /**
  * Registers the service worker and initializes it.

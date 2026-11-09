@@ -33,6 +33,7 @@ import { hypaMemoryV3 } from "./memory/hypav3";
 import { getModuleAssets, getModuleToggles } from "./modules";
 import { readImage } from "../globalApi.svelte";
 import { pluginV2 } from "../plugins/plugins.svelte";
+import { blackboxActivity } from "../blackbox";
 
 export interface OpenAIChat{
     role: 'system'|'user'|'assistant'|'function'
@@ -96,7 +97,11 @@ export let requestTokenParts:{[key:string]:requestTokenPart[]} = {}
 export let previewFormated:OpenAIChat[] = []
 export let previewBody:string = ''
 
-export async function sendChat(chatProcessIndex = -1,arg:{
+export async function sendChat(...args: Parameters<typeof sendChatInner>): Promise<boolean> {
+    return blackboxActivity('chat:send', () => sendChatInner(...args))
+}
+
+async function sendChatInner(chatProcessIndex = -1,arg:{
     chatAdditonalTokens?:number,
     signal?:AbortSignal,
     continue?:boolean,

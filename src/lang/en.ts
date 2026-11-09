@@ -33,6 +33,7 @@ export const languageEnglish = {
         coldStorageWriteFailed: "Cold storage write failed. Your chat data has been preserved.",
         coldStorageVerifyFailed: "Cold storage verification failed. Your chat data has been preserved.",
         coldStorageRestoreFailed: "Cold storage data could not be loaded. The affected character's data may be permanently lost.",
+        outOfMemory: "This is likely caused by running out of memory. Try reloading, or reduce large chats, images and assets that are open at once.",
         coldStorageIncompleteBackupConfirm: (characterNames: string, unavailableCount: number, unresolvedCount: number) =>
             `Cold storage data for ${characterNames || "unknown characters"} is missing or invalid.${unresolvedCount > 0 ? ` ${unresolvedCount} item(s) could not be linked to a character.` : ""}\n\nIf you continue, this backup will be missing ${unavailableCount} cold storage item(s), and the affected character or chat data may not be recoverable from it.\n\nCreate the incomplete backup anyway?`,
         coldStorageIncompleteRestoreConfirm: (characterNames: string, unavailableCount: number, unresolvedCount: number) =>
@@ -1762,6 +1763,9 @@ export const languageEnglish = {
     skipSavingAssetsOnWebSync: "Skip Saving Assets on Web Sync",
     applyAdditionalParamsToAll: "Apply Additional Parameters to All Models",
     localToggles: "Local Toggles",
+    crashReportDetected: "Risuai did not shut down normally last time (for example, the tab crashed or ran out of memory). Do you want to download a diagnostic report? It contains only memory numbers and action labels, not your chats or characters.",
+    exportCrashReports: "Export Crash Diagnostic Reports",
+    noCrashReports: "There are no crash reports.",
 } satisfies I18nTranslation;
 
 type I18nTranslationFunction = (...args: any[]) => string;

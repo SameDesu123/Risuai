@@ -4,6 +4,7 @@ import { language } from "../lang"
 import { isTauri, isNodeServer } from "src/ts/platform"
 import { getDatabase, type MessageGenerationInfo } from "./storage/database.svelte"
 import { alertStore as alertStoreImported } from "./stores.svelte"
+import { blackboxCrumb } from "./blackbox"
 
 export interface alertData{
     type: 'error'|'normal'|'none'|'ask'|'wait'|'selectChar'
@@ -28,11 +29,28 @@ export const alertStore = {
     }
 }
 
+// Engine messages for allocations that failed because memory ran out (V8, SpiderMonkey, JavaScriptCore).
+// 'Invalid array length' is left out on purpose: it is usually a bug (negative length), not memory.
+const outOfMemoryMessages = [
+    'array buffer allocation failed',
+    'invalid string length',
+    'out of memory',
+]
+
 export function alertError(msg: string | Error) {
     console.error(msg)
     const db = getDatabase()
 
     let stackTrace: string | undefined = undefined; 
+
+    // Only the error name and known engine messages go to the blackbox, never the message itself
+    if (msg instanceof Error) {
+        const lower = msg.message.toLowerCase()
+        const known = [...outOfMemoryMessages, 'maximum call stack size exceeded'].find((m) => lower.includes(m))
+        blackboxCrumb(known ? `err:${msg.name} ${known}` : `err:${msg.name}`.slice(0, 40), true)
+    } else {
+        blackboxCrumb('err:other', true)
+    }
 
     if (typeof(msg) !== 'string') {
         try{
@@ -63,6 +81,9 @@ export function alertError(msg: string | Error) {
     if(msg.includes('Failed to fetch') || msg.includes("NetworkError when attempting to fetch resource.")){
         submsg =    db.usePlainFetch ? language.errors.networkFetchPlain :
                     (!isTauri && !isNodeServer) ? language.errors.networkFetchWeb : language.errors.networkFetch
+    }
+    else if(outOfMemoryMessages.some((m) => msg.toLowerCase().includes(m))){
+        submsg = language.errors.outOfMemory
     }
 
     alertStoreImported.set({

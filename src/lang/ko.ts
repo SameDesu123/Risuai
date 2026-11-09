@@ -32,6 +32,7 @@ export const languageKorean = {
         "coldStorageWriteFailed": "콜드 스토리지 저장에 실패했습니다. 채팅 데이터는 보존되었습니다.",
         "coldStorageVerifyFailed": "콜드 스토리지 검증에 실패했습니다. 채팅 데이터는 보존되었습니다.",
         "coldStorageRestoreFailed": "콜드 스토리지 데이터를 불러올 수 없습니다. 해당 캐릭터의 데이터가 영구적으로 손실되었을 수 있습니다.",
+        "outOfMemory": "메모리 부족으로 인한 오류일 가능성이 높습니다. 새로고침하거나, 한 번에 여는 긴 채팅, 이미지, 에셋을 줄여 보세요.",
         "coldStorageIncompleteBackupConfirm": (characterNames: string, unavailableCount: number, unresolvedCount: number) =>
             `${characterNames || "알 수 없는 캐릭터"}의 콜드 스토리지 데이터가 없거나 손상되었습니다.${unresolvedCount > 0 ? ` 캐릭터를 확인할 수 없는 항목이 ${unresolvedCount}개 있습니다.` : ""}\n\n계속하면 이 백업에서 콜드 스토리지 항목 ${unavailableCount}개가 누락되며, 해당 캐릭터 또는 채팅 데이터를 이 백업으로 복구하지 못할 수 있습니다.\n\n그래도 불완전한 백업을 생성하시겠습니까?`,
         "coldStorageIncompleteRestoreConfirm": (characterNames: string, unavailableCount: number, unresolvedCount: number) =>
@@ -1573,4 +1574,7 @@ export const languageKorean = {
     nanoGPTManualInput: "수동 입력",
     nanoGPTManualModelSelect: "수동 모델 선택",
     localToggles: "로컬 토글",
+    crashReportDetected: "지난번에 Risuai가 정상적으로 종료되지 않았습니다(예: 탭 충돌, 메모리 부족). 진단 보고서를 다운로드하시겠습니까? 보고서에는 메모리 수치와 동작 이름만 담기며, 채팅이나 캐릭터 내용은 포함되지 않습니다.",
+    exportCrashReports: "충돌 진단 보고서 내보내기",
+    noCrashReports: "충돌 보고서가 없습니다.",
 } satisfies DeepPartial<typeof import('./en').languageEnglish>
