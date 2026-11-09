@@ -3,6 +3,7 @@ import { unzip } from 'fflate';
 import { loadAsset, saveAsset } from 'src/ts/globalApi.svelte';
 import { selectSingleFile, asBuffer  } from 'src/ts/util';
 import { v4 } from 'uuid';
+import { watchdogTrack } from 'src/ts/watchdog.svelte';
 let tfCache: Cache = null
 let tfLoaded = false
 let tfMap: { [key: string]: string } = {}
@@ -35,7 +36,11 @@ async function initTransformers() {
     console.log('transformers loaded')
 }
 
-export const runTransformers = async (baseText: string, model: string, config: TextGenerationConfig, device: 'webgpu' | 'wasm' = 'wasm') => {
+// Local models can use a lot of memory, so the watchdog tracks them (see src/ts/watchdog.svelte.ts)
+export const runTransformers = (...args: Parameters<typeof runTransformersModel>) =>
+    watchdogTrack('Local text model', () => runTransformersModel(...args), args[1])
+
+const runTransformersModel = async (baseText: string, model: string, config: TextGenerationConfig, device: 'webgpu' | 'wasm' = 'wasm') => {
     await initTransformers()
     const { pipeline } = await import('@huggingface/transformers');
     let text = baseText
@@ -47,7 +52,10 @@ export const runTransformers = async (baseText: string, model: string, config: T
     return outputOne
 }
 
-export const runSummarizer = async (text: string) => {
+export const runSummarizer = (...args: Parameters<typeof runSummarizerModel>) =>
+    watchdogTrack('Local summarizer model', () => runSummarizerModel(...args))
+
+const runSummarizerModel = async (text: string) => {
     await initTransformers()
     const { pipeline } = await import('@huggingface/transformers');
     let classifier = await pipeline("summarization", "Xenova/distilbart-cnn-6-6")
@@ -58,7 +66,10 @@ export const runSummarizer = async (text: string) => {
 let extractor: FeatureExtractionPipeline = null
 let lastEmbeddingModelQuery: string = ''
 type EmbeddingModel = 'Xenova/all-MiniLM-L6-v2' | 'nomic-ai/nomic-embed-text-v1.5'
-export const runEmbedding = async (texts: string[], model: EmbeddingModel = 'Xenova/all-MiniLM-L6-v2', device: 'webgpu' | 'wasm'): Promise<Float32Array[]> => {
+export const runEmbedding = (...args: Parameters<typeof runEmbeddingModel>) =>
+    watchdogTrack('Local embedding model', () => runEmbeddingModel(...args), `${args[1] ?? 'Xenova/all-MiniLM-L6-v2'} (${args[2]}), ${args[0].length} texts`)
+
+const runEmbeddingModel = async (texts: string[], model: EmbeddingModel = 'Xenova/all-MiniLM-L6-v2', device: 'webgpu' | 'wasm'): Promise<Float32Array[]> => {
     await initTransformers()
     console.log('running embedding')
     let embeddingModelQuery = model + device
@@ -92,7 +103,10 @@ export const runEmbedding = async (texts: string[], model: EmbeddingModel = 'Xen
     return res ?? [];
 }
 
-export const runImageEmbedding = async (dataurl: string) => {
+export const runImageEmbedding = (...args: Parameters<typeof runImageEmbeddingModel>) =>
+    watchdogTrack('Local image caption model', () => runImageEmbeddingModel(...args))
+
+const runImageEmbeddingModel = async (dataurl: string) => {
     await initTransformers()
     const { pipeline } = await import('@huggingface/transformers');
     const captioner = await pipeline('image-to-text', 'Xenova/vit-gpt2-image-captioning');
@@ -109,7 +123,10 @@ export interface OnnxModelFiles {
     name?: string
 }
 
-export const runVITS = async (text: string, modelData: string | OnnxModelFiles = 'Xenova/mms-tts-eng') => {
+export const runVITS = (...args: Parameters<typeof runVITSModel>) =>
+    watchdogTrack('Local TTS model', () => runVITSModel(...args), typeof args[1] === 'object' ? args[1]?.name ?? args[1]?.id : args[1])
+
+const runVITSModel = async (text: string, modelData: string | OnnxModelFiles = 'Xenova/mms-tts-eng') => {
     await initTransformers()
     const { WaveFile } = await import('wavefile')
     const { pipeline, env } = await import('@huggingface/transformers');

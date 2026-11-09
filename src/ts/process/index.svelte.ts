@@ -33,6 +33,7 @@ import { hypaMemoryV3 } from "./memory/hypav3";
 import { getModuleAssets, getModuleToggles } from "./modules";
 import { readImage } from "../globalApi.svelte";
 import { pluginV2 } from "../plugins/plugins.svelte";
+import { watchdogTrack } from "../watchdog.svelte";
 
 export interface OpenAIChat{
     role: 'system'|'user'|'assistant'|'function'
@@ -96,7 +97,13 @@ export let requestTokenParts:{[key:string]:requestTokenPart[]} = {}
 export let previewFormated:OpenAIChat[] = []
 export let previewBody:string = ''
 
-export async function sendChat(chatProcessIndex = -1,arg:{
+export function sendChat(...args: Parameters<typeof sendChatProcess>):Promise<boolean> {
+    const arg = args[1]
+    const detail = arg?.continue ? 'continue' : (arg?.preview || arg?.previewPrompt) ? 'preview' : undefined
+    return watchdogTrack('Send chat', () => sendChatProcess(...args), detail)
+}
+
+async function sendChatProcess(chatProcessIndex = -1,arg:{
     chatAdditonalTokens?:number,
     signal?:AbortSignal,
     continue?:boolean,

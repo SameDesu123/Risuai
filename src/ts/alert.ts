@@ -4,6 +4,7 @@ import { language } from "../lang"
 import { isTauri, isNodeServer } from "src/ts/platform"
 import { getDatabase, type MessageGenerationInfo } from "./storage/database.svelte"
 import { alertStore as alertStoreImported } from "./stores.svelte"
+import { watchdogErrorNote, watchdogProgress } from "./watchdog.svelte"
 
 export interface alertData{
     type: 'error'|'normal'|'none'|'ask'|'wait'|'selectChar'
@@ -31,6 +32,8 @@ export const alertStore = {
 export function alertError(msg: string | Error) {
     console.error(msg)
     const db = getDatabase()
+    //saves a watchdog report when the error is an out-of-memory error
+    const watchdogNote = watchdogErrorNote(msg)
 
     let stackTrace: string | undefined = undefined; 
 
@@ -63,6 +66,9 @@ export function alertError(msg: string | Error) {
     if(msg.includes('Failed to fetch') || msg.includes("NetworkError when attempting to fetch resource.")){
         submsg =    db.usePlainFetch ? language.errors.networkFetchPlain :
                     (!isTauri && !isNodeServer) ? language.errors.networkFetchWeb : language.errors.networkFetch
+    }
+    if(watchdogNote){
+        submsg = submsg ? `${submsg}\n${watchdogNote}` : watchdogNote
     }
 
     alertStoreImported.set({
@@ -166,6 +172,8 @@ export function alertToast(msg:string){
 }
 
 export function alertWait(msg:string){
+    //long operations report their progress here, which tells the watchdog how far they got
+    watchdogProgress(msg)
     alertStoreImported.set({
         'type': 'wait',
         'msg': msg

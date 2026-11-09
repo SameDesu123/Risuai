@@ -13,6 +13,7 @@ import { language } from "src/lang";
 import { collectColdStorageBackupPayloads, confirmIncompleteColdStorageOperation, getColdStorageBackupKey, getColdStorageItem, isColdStorageBackupData, isValidColdStorageItem, listColdDataKeys, listPluginStorageColdKeys, pluginStorage, setColdStorageItem } from "../process/coldstorage.svelte";
 import { getPluginStorageIndexPointer } from "../process/coldstorageData";
 import { DBState } from "../stores.svelte";
+import { watchdogTrack } from "../watchdog.svelte";
 
 function getBasename(data:string){
     const baseNameRegex = /\\/g
@@ -21,7 +22,11 @@ function getBasename(data:string){
     return lasts
 }
 
-export async function SaveLocalBackup(){
+export function SaveLocalBackup(){
+    return watchdogTrack('Save local backup', saveLocalBackupProcess)
+}
+
+async function saveLocalBackupProcess(){
     alertWait("Saving local backup...")
     const db = getDatabase()
     const coldStoragePayloads = await collectColdStorageBackupPayloads(db)
@@ -202,7 +207,11 @@ export async function SaveLocalBackup(){
  * - Faster and more efficient for quick backups
  * - Ideal for backing up core visual identity without bulk data
  */
-export async function SavePartialLocalBackup(){
+export function SavePartialLocalBackup(){
+    return watchdogTrack('Save partial local backup', savePartialLocalBackupProcess)
+}
+
+async function savePartialLocalBackupProcess(){
     // First confirmation: Explain the difference from regular backup
     const firstConfirm = await alertConfirm(language.partialBackupFirstConfirm)
     
@@ -415,7 +424,7 @@ export function LoadLocalBackup(){
         }
         input.type = 'file';
         input.accept = '.bin';
-        input.onchange = async () => {
+        input.onchange = () => watchdogTrack('Load local backup', async () => {
             if (!input.files || input.files.length === 0) {
                 input.remove();
                 return;
@@ -617,7 +626,7 @@ export function LoadLocalBackup(){
             }
 
             alertNormal('Success');
-        };
+        });
 
         input.click();
     } catch (error) {

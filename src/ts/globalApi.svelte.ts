@@ -46,6 +46,7 @@ import { isTauri, isNodeServer } from "./platform";
 import { isLocalNetworkUrl } from "./network/localNetwork";
 import { decodeProxyJobWsChunk, formatProxyStreamErrorMessage, parseProxyJobWsEvent } from "./network/proxyJobWs";
 import { getNodeServerProxyAuth } from "./storage/nodeStorage";
+import { watchdogBegin, watchdogSize, type WatchdogTaskHandle } from "./watchdog.svelte";
 
 export const forageStorage = new AutoStorage()
 
@@ -418,6 +419,7 @@ export async function saveDb() {
         saving.state = true
         changed = false
         let kvDirty: string[] = []
+        let saveTask: WatchdogTaskHandle | null = null
         try {
 
             if (requiresFullEncoderReload.state) {
@@ -451,6 +453,7 @@ export async function saveDb() {
 
             kvDirty = saveKV.takeDirty()
             toSave.kv = kvDirty
+            saveTask = watchdogBegin('Save database')
             await encoder.set(db, toSave)
             const encoded = encoder.encode()
             if (!encoded) {
@@ -459,6 +462,7 @@ export async function saveDb() {
                 continue
             }
             const dbData = new Uint8Array(encoded)
+            saveTask.update(watchdogSize(dbData.byteLength))
             if (isTauri) {
                 await writeFile('database/database.bin', dbData, { baseDir: BaseDirectory.AppData });
                 await writeFile(`database/dbbackup-${(Date.now() / 100).toFixed()}.bin`, dbData, { baseDir: BaseDirectory.AppData });
@@ -473,6 +477,7 @@ export async function saveDb() {
                     await sleep(3000)
                 }
             }
+            saveTask.end()
             if (!forageStorage.isAccount) {
                 await getDbBackups()
             }
@@ -489,6 +494,8 @@ export async function saveDb() {
             else {
                 console.error(error)
             }
+        } finally {
+            saveTask?.end()
         }
 
         saving.state = false

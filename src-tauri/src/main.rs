@@ -25,8 +25,20 @@ use futures::future::{AbortHandle, Abortable};
 use tauri::{Listener, Manager};
 use tauri::{AppHandle, Emitter};
 
+mod watchdog;
+
+// Records native allocation failures for the OOM watchdog before the process aborts
+#[global_allocator]
+static GLOBAL_ALLOCATOR: watchdog::WatchdogAllocator = watchdog::WatchdogAllocator;
+
 #[tauri::command]
 async fn native_request(url: String, body: String, header: String, method: String) -> String {
+    let _op = watchdog::track_native_op(format!(
+        "native_request {} {} (body {} bytes)",
+        method,
+        watchdog::redact_url(&url),
+        body.len()
+    ));
     let headers_json: Value = match serde_json::from_str(&header) {
         Ok(h) => h,
         Err(e) => return format!(r#"{{"success":false,"body":"{}"}}"#, e.to_string()),
@@ -229,6 +241,13 @@ async fn streamed_fetch(
         seen.push_back(id.clone());
     }
 
+    let _op = watchdog::track_native_op(format!(
+        "streamed_fetch {} {} (body {} bytes)",
+        method,
+        watchdog::redact_url(&url),
+        body.len()
+    ));
+
     let (abort_handle, abort_registration) = AbortHandle::new_pair();
     STREAMED_FETCH_ABORTS
         .lock()
@@ -417,7 +436,24 @@ fn main() {
         }));
     }
 
+    // WKWebView: Tauri reloads the page by default; the watchdog records the crash and
+    // decides whether to reload
+    #[cfg(target_os = "macos")]
+    {
+        builder = builder.on_web_content_process_terminate(|webview| {
+            watchdog::on_web_content_process_terminate(webview)
+        });
+    }
+
     builder
+        .setup(|app| {
+            watchdog::init(app.handle());
+            if let Some(window) = app.get_webview_window("main") {
+                watchdog::attach(&window);
+            }
+            Ok(())
+        })
+        .on_page_load(|webview, payload| watchdog::on_page_load(webview, payload))
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_shell::init())
@@ -431,10 +467,19 @@ fn main() {
             streamed_fetch,
             cancel_streamed_fetch,
             cancel_all_streamed_fetch,
-            oauth_login
+            oauth_login,
+            watchdog::watchdog_start,
+            watchdog::watchdog_ack_reports,
+            watchdog::watchdog_heartbeat,
+            watchdog::watchdog_report_js_error
         ])
-        .run(tauri::generate_context!())
+        .build(tauri::generate_context!())
         .expect("error while running tauri application")
+        .run(|_app, event| {
+            if let tauri::RunEvent::Exit = event {
+                watchdog::on_exit();
+            }
+        })
 }
 
 fn header_map_to_json(header_map: &HeaderMap) -> serde_json::Value {

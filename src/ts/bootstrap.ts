@@ -47,6 +47,7 @@ import { isTauri } from "./platform";
 import { registerModelDynamic } from "./model/modellist";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { appDataDir, join } from "@tauri-apps/api/path";
+import { showWatchdogReports, watchdogSize, watchdogTrack } from "./watchdog.svelte";
 
 const appWindow = isTauri ? getCurrentWebviewWindow() : null
 
@@ -60,6 +61,8 @@ export async function loadData() {
             if (isTauri) {
                 LoadingStatusState.text = "Checking Files..."
                 appWindow.maximize()
+                // Before the save file: if it is what runs out of memory, the user still learns why
+                await showWatchdogReports()
                 if (!await exists('', { baseDir: BaseDirectory.AppData })) {
                     await mkdir('', { baseDir: BaseDirectory.AppData })
                 }
@@ -516,9 +519,11 @@ async function checkNewFormat(): Promise<void> {
  * Decodes a save file and makes it live: the database and its SaveKV data together.
  */
 async function applyDecodedSave(data: Uint8Array) {
-    const { database, kv } = await decodeRisuSave(data)
-    setDatabase(database)
-    saveKV.load(kv)
+    await watchdogTrack('Decode save file', async () => {
+        const { database, kv } = await decodeRisuSave(data)
+        setDatabase(database)
+        saveKV.load(kv)
+    }, watchdogSize(data.byteLength))
 }
 
 async function cleanChunks(options:{

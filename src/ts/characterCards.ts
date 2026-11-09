@@ -21,6 +21,7 @@ import { onOpenUrl } from '@tauri-apps/plugin-deep-link';
 import { AccountStorage } from "./storage/accountStorage"
 import { filterBlockedRealmCards, isRealmCreatorBlocked } from "./realmBlocking"
 import { normalizeOnboarding } from "./onboarding"
+import { watchdogTrack } from "./watchdog.svelte"
 
 
 const EXTERNAL_HUB_URL = 'https://sv.risuai.xyz';
@@ -51,7 +52,11 @@ export async function importCharacter() {
     }
 }
 
-export async function importCharacterProcess<T extends boolean = false>(f:{
+export function importCharacterProcess<T extends boolean = false>(f:Parameters<typeof importCharacterFile<T>>[0]):ReturnType<typeof importCharacterFile<T>>{
+    return watchdogTrack('Import character', () => importCharacterFile<T>(f), f.name)
+}
+
+async function importCharacterFile<T extends boolean = false>(f:{
     name: string;
     data: Uint8Array|File|ReadableStream<Uint8Array>
     lightningRealmImport?:boolean
@@ -1290,7 +1295,11 @@ function createBaseV2(char:character) {
 }
 
 
-export async function exportCharacterCard(char:character, type:'png'|'json'|'charx'|'charxJpeg' = 'png', arg:{
+export function exportCharacterCard(...args: Parameters<typeof exportCharacterCardProcess>):ReturnType<typeof exportCharacterCardProcess> {
+    return watchdogTrack('Export character', () => exportCharacterCardProcess(...args), args[1] ?? 'png')
+}
+
+async function exportCharacterCardProcess(char:character, type:'png'|'json'|'charx'|'charxJpeg' = 'png', arg:{
     password?:string
     writer?:LocalWriter|VirtualWriter,
     spec?:'v2'|'v3'

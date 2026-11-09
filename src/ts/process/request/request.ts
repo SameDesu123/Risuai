@@ -20,6 +20,7 @@ import { requestClaude } from './anthropic';
 import { requestGoogleCloudVertex } from './google';
 import { requestOpenAI, requestOpenAILegacyInstruct, requestOpenAIResponseAPI } from "./openAI/requests";
 import { applyAdditionalParameters, applyParameters, getAdditionalParameters, type ModelModeExtended } from './shared';
+import { watchdogBreadcrumb, watchdogTrack } from "../../watchdog.svelte";
 
 export type ToolCall = {
     name: string;
@@ -202,7 +203,11 @@ function normalizeOllamaStreamResponse(response: Response): Response {
     })
 }
 
-export async function requestChatData(arg:requestDataArgument, model:ModelModeExtended, abortSignal:AbortSignal=null):Promise<requestDataResponse> {
+export function requestChatData(arg:requestDataArgument, model:ModelModeExtended, abortSignal:AbortSignal=null):Promise<requestDataResponse> {
+    return watchdogTrack('Request', () => requestChatDataProcess(arg, model, abortSignal), model)
+}
+
+async function requestChatDataProcess(arg:requestDataArgument, model:ModelModeExtended, abortSignal:AbortSignal=null):Promise<requestDataResponse> {
     const db = getDatabase()
     const fallBackModels:string[] = safeStructuredClone(db?.fallbackModels?.[model] ?? [])
     const tools = arg.tools ?? (await getTools())
@@ -445,6 +450,8 @@ export async function requestChatDataMain(arg:requestDataArgument, model:ModelMo
             targ.modelInfo = getModelInfo(targ.aiModel)
         }
     }
+
+    watchdogBreadcrumb(`Request (${model}): ${targ.aiModel}`)
 
     if(arg.blockPlugins && targ.modelInfo.id.startsWith('pluginmodel:::')){
         return {
