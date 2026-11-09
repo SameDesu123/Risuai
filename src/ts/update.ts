@@ -4,6 +4,7 @@ import {
     check,
 } from '@tauri-apps/plugin-updater'
 import { relaunch } from '@tauri-apps/plugin-process'
+import { prepareAppExit } from './watchdogClient'
 
 const UPDATE_REMINDER_KEY = 'risu_update_reminder'
 
@@ -56,6 +57,7 @@ export async function checkRisuUpdate(){
                 clearUpdateReminder()
                 alertWait(`Updating to ${checked.version}...`)
                 await checked.downloadAndInstall()
+                await prepareAppExit()
                 await relaunch()
             } else {
                 const options = [

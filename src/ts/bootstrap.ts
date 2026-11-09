@@ -49,6 +49,7 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import { appDataDir, join } from "@tauri-apps/api/path";
 import { blackboxCrumb, registerBlackboxCounter, startBlackbox } from "./blackbox";
 import { promptBlackboxReports, rememberBlackboxLanguage } from "./blackboxReport";
+import { startWatchdogBeats } from "./watchdogClient";
 import { getInlayBlobUrlCacheSize } from "./parser/parser.svelte";
 
 const appWindow = isTauri ? getCurrentWebviewWindow() : null
@@ -65,6 +66,7 @@ export async function loadData() {
         try {
             LoadingStatusState.text = "Checking Previous Session..."
             await startBlackbox(appVer)
+            startWatchdogBeats()
             await promptBlackboxReports()
         } catch (error) {
             console.error('[blackbox] failed to check the previous session', error)

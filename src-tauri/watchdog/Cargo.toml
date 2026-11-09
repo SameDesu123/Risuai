@@ -1,0 +1,10 @@
+[package]
+name = "risu-watchdog"
+version = "0.1.0"
+description = "Out-of-process watchdog for the Risuai desktop app"
+edition = "2021"
+publish = false
+
+[dependencies]
+serde_json = "1.0"
+sysinfo = { version = "0.40", default-features = false, features = ["system"] }

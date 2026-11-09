@@ -20,7 +20,8 @@ use serde_json::json;
 use serde_json::Value;
 use std::collections::{HashMap, VecDeque};
 use std::time::Duration;
-use std::sync::{Arc, LazyLock, Mutex};
+use std::path::PathBuf;
+use std::sync::{Arc, LazyLock, Mutex, OnceLock};
 use futures::future::{AbortHandle, Abortable};
 use tauri::{Listener, Manager};
 use tauri::{AppHandle, Emitter};
@@ -404,7 +405,99 @@ async fn streamed_fetch_inner(
 }
 
 
+// ---------------------------------------------------------------- watchdog
+//
+// A copy of this executable runs as a separate process and watches the webview from
+// outside, so crashes such as running out of memory leave a report behind.
+// See the risu-watchdog crate.
+
+struct Watchdog {
+    handle: Option<risu_watchdog::WatchdogHandle>,
+    dir: PathBuf,
+    session: String,
+    previous: Option<Value>,
+}
+
+static WATCHDOG: OnceLock<Watchdog> = OnceLock::new();
+
+fn watchdog_handle() -> Option<&'static risu_watchdog::WatchdogHandle> {
+    WATCHDOG.get().and_then(|w| w.handle.as_ref())
+}
+
+/// Lives in the app's resource table, which Tauri clears on every way out: a normal
+/// exit, a restart, and the Windows updater quitting to run the installer.
+struct WatchdogStopper;
+
+impl tauri::Resource for WatchdogStopper {}
+
+impl Drop for WatchdogStopper {
+    fn drop(&mut self) {
+        if let Some(handle) = watchdog_handle() {
+            handle.stop();
+        }
+    }
+}
+
+fn start_watchdog(app: &tauri::App) {
+    let Ok(data_dir) = app.path().app_data_dir() else {
+        return;
+    };
+    let dir = data_dir.join("watchdog");
+    // Read before spawning: the new watchdog overwrites it
+    let previous = risu_watchdog::read_last_session(&dir);
+    let session = risu_watchdog::new_session_id();
+    let version = app.package_info().version.to_string();
+    let handle = match risu_watchdog::WatchdogHandle::spawn(&dir, &version, &session) {
+        Ok(handle) => Some(handle),
+        Err(e) => {
+            eprintln!("failed to start the watchdog: {e}");
+            None
+        }
+    };
+    let _ = WATCHDOG.set(Watchdog { handle, dir, session, previous });
+    app.resources_table().add(WatchdogStopper);
+}
+
+#[tauri::command]
+async fn watchdog_beat(payload: Value) {
+    if payload.to_string().len() > risu_watchdog::MAX_BEAT_BYTES {
+        return;
+    }
+    if let Some(handle) = watchdog_handle() {
+        handle.beat(payload);
+    }
+}
+
+/// For exits the page starts itself, so a relaunch is never mistaken for a crash.
+#[tauri::command]
+async fn watchdog_stop() {
+    let _ = tauri::async_runtime::spawn_blocking(|| {
+        if let Some(handle) = watchdog_handle() {
+            handle.stop();
+        }
+    })
+    .await;
+}
+
+/// Reports from earlier sessions (removed from disk once read), and how the last session ended.
+#[tauri::command]
+async fn watchdog_take_reports() -> Value {
+    let Some(w) = WATCHDOG.get() else {
+        return json!({ "enabled": false, "previousSession": null, "reports": [] });
+    };
+    json!({
+        "enabled": w.handle.is_some(),
+        "previousSession": w.previous,
+        "reports": risu_watchdog::take_reports(&w.dir, &w.session),
+    })
+}
+
 fn main() {
+    // When started as the watchdog, run that and nothing else (no window, no single-instance check)
+    if let Some(code) = risu_watchdog::run_if_requested() {
+        std::process::exit(code);
+    }
+
     let mut builder = tauri::Builder::default();
 
     #[cfg(desktop)]
@@ -426,12 +519,20 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_fs::init())
+        .setup(|app| {
+            #[cfg(desktop)]
+            start_watchdog(app);
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             native_request,
             streamed_fetch,
             cancel_streamed_fetch,
             cancel_all_streamed_fetch,
-            oauth_login
+            oauth_login,
+            watchdog_beat,
+            watchdog_stop,
+            watchdog_take_reports
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application")

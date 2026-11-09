@@ -5,6 +5,7 @@ import { isTauri } from "src/ts/platform"
 import { BaseDirectory, exists, readFile, readDir, writeFile } from "@tauri-apps/plugin-fs";
 import { language } from "../../lang";
 import { relaunch } from '@tauri-apps/plugin-process';
+import { prepareAppExit } from '../watchdogClient';
 import { sleep } from "../util";
 import { hubURL } from "../characterCards";
 import { decodeRisuSave, encodeRisuSave } from "../storage/risuSave";
@@ -392,6 +393,7 @@ async function loadDrive(ACCESS_TOKEN:string, mode: 'backup'|'sync'):Promise<voi
             await writeFile('database/database.bin', dbData, {baseDir: BaseDirectory.AppData})
             lastSaved = Date.now()
             localStorage.setItem('risu_lastsaved', `${lastSaved}`)
+            await prepareAppExit()
             relaunch()
             alertStore.set({
                 type: "wait",

@@ -3,6 +3,12 @@ import { alertConfirm, alertNormal, doingAlert } from "./alert"
 import { getBlackboxReports, markBlackboxReportsNotified } from "./blackbox"
 import { downloadFile } from "./globalApi.svelte"
 import { sleep } from "./util"
+import {
+    collectWatchdogReports,
+    getWatchdogReports,
+    isWatchdogReportAlarming,
+    markWatchdogReportsNotified,
+} from "./watchdogClient"
 
 const LANGUAGE_KEY = 'risu_blackbox_lang'
 const PROMPT_LANGUAGES = ['de', 'en', 'es', 'ko', 'cn', 'vi', 'zh-Hant']
@@ -45,14 +51,32 @@ function applyPromptLanguage() {
  * Sessions that were killed in the background are kept silently: mobile browsers do
  * that routinely, and asking every time would be noise. They can still be exported
  * from the settings.
+ *
+ * In the desktop app the watchdog process knows better than the page: it saw whether
+ * the app said goodbye, so a clean exit overrides the page's guess (relaunching after an
+ * update, for one, can end the page without pagehide).
  */
 export async function promptBlackboxReports() {
+    let watchdogAlarms = 0
+    try {
+        const wd = await collectWatchdogReports()
+        if (wd) {
+            watchdogAlarms = wd.newReports.filter(isWatchdogReportAlarming).length
+            if (wd.enabled && wd.previousSession?.exit === 'clean' && watchdogAlarms === 0) {
+                markBlackboxReportsNotified()
+            }
+        }
+    } catch (error) {
+        console.error('[watchdog] failed to collect reports', error)
+    }
+
     const pending = getBlackboxReports().filter((r) => !r.notified && r.verdict === 'crashed-while-visible')
-    if (pending.length === 0) {
+    if (pending.length === 0 && watchdogAlarms === 0) {
         return
     }
     // Mark first, so a crash during the prompt does not ask again forever
     markBlackboxReportsNotified()
+    markWatchdogReportsNotified()
     while (doingAlert()) {
         await sleep(500)
     }
@@ -64,7 +88,8 @@ export async function promptBlackboxReports() {
 
 export async function exportBlackboxReports() {
     const reports = getBlackboxReports()
-    if (reports.length === 0) {
+    const watchdogReports = getWatchdogReports()
+    if (reports.length === 0 && watchdogReports.length === 0) {
         alertNormal(language.noCrashReports)
         return
     }
@@ -73,6 +98,7 @@ export async function exportBlackboxReports() {
         generator: 'risuai-blackbox',
         exportedAt: now.toISOString(),
         reports,
+        watchdogReports,
     }
     const stamp = now.toISOString().replace(/[:.]/g, '-')
     await downloadFile(`risu-crash-report-${stamp}.json`, JSON.stringify(payload, null, 2))

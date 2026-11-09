@@ -596,3 +596,37 @@ export async function blackboxActivity<T>(label: string, fn: () => Promise<T>): 
 export function registerBlackboxCounter(name: string, fn: () => number) {
     counters.set(name, fn)
 }
+
+/**
+ * A small summary of what the page is doing right now, for heartbeats to an outside watchdog.
+ */
+export function getBlackboxLiveState() {
+    const heap = readHeap()
+    const values: Record<string, number> = {}
+    for (const [name, fn] of counters) {
+        try {
+            values[name] = fn()
+        } catch { }
+    }
+    return {
+        visible: typeof document === 'undefined' || document.visibilityState === 'visible',
+        activity: [...activity],
+        heapUsedMB: heap?.used,
+        heapLimitMB: heap?.limit,
+        counters: values,
+        crumbs: record ? record.crumbs.slice(-5).map((c) => c.label) : [],
+    }
+}
+
+/**
+ * Marks this session as ended on purpose, for exits that may not fire pagehide
+ * (such as relaunching the desktop app).
+ */
+export function markBlackboxCleanExit() {
+    if (!record) {
+        return
+    }
+    record.clean = true
+    pushRing(record.crumbs, { t: elapsed(), label: 'app:exit' }, MAX_CRUMBS)
+    writeRecord(true)
+}

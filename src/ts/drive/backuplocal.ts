@@ -7,6 +7,7 @@ import { decodeRisuSave, encodeRisuSave } from "../storage/risuSave";
 import { saveKV } from "../storage/saveKV";
 import { getDatabase, setDatabaseLite } from "../storage/database.svelte";
 import { relaunch } from "@tauri-apps/plugin-process";
+import { prepareAppExit } from "../watchdogClient";
 import { decryptBuffer, encryptBuffer, sleep } from "../util";
 import { hubURL } from "../characterCards";
 import { language } from "src/lang";
@@ -602,6 +603,7 @@ export function LoadLocalBackup(){
             requiresFullEncoderReload.state = true;
             if (isTauri) {
                 await writeFile('database/database.bin', db, { baseDir: BaseDirectory.AppData });
+                await prepareAppExit();
                 await relaunch();
                 alertStore.set({
                     type: "wait",
