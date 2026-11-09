@@ -48,7 +48,7 @@ import { registerModelDynamic } from "./model/modellist";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { appDataDir, join } from "@tauri-apps/api/path";
 import { blackboxCrumb, registerBlackboxCounter, startBlackbox } from "./blackbox";
-import { promptBlackboxReports } from "./blackboxReport";
+import { promptBlackboxReports, rememberBlackboxLanguage } from "./blackboxReport";
 import { getInlayBlobUrlCacheSize } from "./parser/parser.svelte";
 
 const appWindow = isTauri ? getCurrentWebviewWindow() : null
@@ -59,8 +59,16 @@ const appWindow = isTauri ? getCurrentWebviewWindow() : null
 export async function loadData() {
     const loaded = get(loadedStore)
     if (!loaded) {
-        // Start recording before the save is decoded: a crash while loading a huge save is a crash too
-        const blackboxReady = startBlackbox(appVer)
+        // Start recording before the save is decoded: a crash while loading a huge save is a crash too.
+        // Ask about the previous crash here as well, before the save that may have caused it is loaded,
+        // so a save that crashes on every load still gets its report out.
+        try {
+            LoadingStatusState.text = "Checking Previous Session..."
+            await startBlackbox(appVer)
+            await promptBlackboxReports()
+        } catch (error) {
+            console.error('[blackbox] failed to check the previous session', error)
+        }
         try {
             if (isTauri) {
                 LoadingStatusState.text = "Checking Files..."
@@ -265,13 +273,10 @@ export async function loadData() {
             saveDb()
             moduleUpdate()
             cleanChunks()
-            alertTOS().then(async (a) => {
+            alertTOS().then((a) => {
                 if (a === false) {
                     location.reload()
-                    return
                 }
-                await blackboxReady
-                await promptBlackboxReports()
             })
             
         } catch (error) {
@@ -287,6 +292,7 @@ export async function loadData() {
  */
 function initBlackboxCounters() {
     blackboxCrumb('boot:loaded')
+    rememberBlackboxLanguage(DBState.db.language)
     registerBlackboxCounter('characters', () => DBState.db.characters?.length ?? 0)
     registerBlackboxCounter('chatMessages', () => {
         const char = DBState.db.characters?.[get(selectedCharID)]
