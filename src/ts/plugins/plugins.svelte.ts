@@ -11,6 +11,7 @@ import { checkCodeSafety } from "./pluginSafety";
 import { SafeDocument, SafeIdbFactory, SafeLocalStorage } from "./pluginSafeClass";
 import { loadV3Plugins } from "./apiV3/v3.svelte";
 import { pluginCodeTranspiler } from "./apiV3/transpiler";
+import { isEmergencyMode } from "../emergencyMode";
 
 export const customProviderStore = writable([] as string[])
 
@@ -417,6 +418,11 @@ export async function importPlugin(code:string|null = null, argu:{
 let pluginTranslator = false
 
 export async function loadPlugins() {
+    if (isEmergencyMode()) {
+        //also covers toggling plugins in settings: turning one off must not load the others
+        console.warn('Emergency mode: plugins are not loaded')
+        return
+    }
     console.log('Loading plugins...')
     let db = getDatabase()
 

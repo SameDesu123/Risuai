@@ -32,6 +32,7 @@
     import Button from '../UI/GUI/Button.svelte';
     import PluginDefinedIcon from '../Others/PluginDefinedIcon.svelte';
     import { getAdditionalChatLoadPages, getInitialChatLoadPages } from 'src/ts/chatLoadPages';
+    import { isEmergencyMode } from 'src/ts/emergencyMode';
     import { getActiveOnboarding, isOnboardingPending } from 'src/ts/onboarding';
 
     const loadPlaygroundMenu = () => import('../Playground/PlaygroundMenu.svelte').then(m => m.default);
@@ -45,7 +46,7 @@
     let messageInput:string = $state('')
     let messageInputTranslate:string = $state('')
     let openMenu = $state(false)
-    let loadPages = $state(getInitialChatLoadPages(DBState.db))
+    let loadPages = $state(getInitialChatLoadPages(DBState.db, isEmergencyMode()))
     let autoMode = $state(false)
     let rerolls:Message[][] = []
     let rerollid = -1
@@ -496,7 +497,7 @@
                 mergedCanvas.remove();
             }
             alertNormal(language.screenshotSaved)
-            loadPages = getInitialChatLoadPages(DBState.db)
+            loadPages = getInitialChatLoadPages(DBState.db, isEmergencyMode())
         } catch (error) {
             console.error(error)
             alertError("Error while taking screenshot")

@@ -14,8 +14,12 @@ export function normalizeChatLoadPages(value: unknown, fallback: number): number
     return Math.floor(numberValue)
 }
 
-export function getInitialChatLoadPages(db: { chatLoadInitialPages?: number }): number {
-    return normalizeChatLoadPages(db.chatLoadInitialPages, DEFAULT_CHAT_LOAD_INITIAL_PAGES)
+/** messages rendered when a chat is opened in emergency mode */
+export const EMERGENCY_CHAT_LOAD_INITIAL_PAGES = 5
+
+export function getInitialChatLoadPages(db: { chatLoadInitialPages?: number }, emergencyMode = false): number {
+    const pages = normalizeChatLoadPages(db.chatLoadInitialPages, DEFAULT_CHAT_LOAD_INITIAL_PAGES)
+    return emergencyMode ? Math.min(pages, EMERGENCY_CHAT_LOAD_INITIAL_PAGES) : pages
 }
 
 export function getAdditionalChatLoadPages(db: { chatLoadAdditionalPages?: number }): number {

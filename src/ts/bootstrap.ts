@@ -47,6 +47,7 @@ import { isTauri } from "./platform";
 import { registerModelDynamic } from "./model/modellist";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { appDataDir, join } from "@tauri-apps/api/path";
+import { armBootStableTimer, isEmergencyMode, resolveEmergencyBoot } from "./emergencyMode";
 
 const appWindow = isTauri ? getCurrentWebviewWindow() : null
 
@@ -57,6 +58,8 @@ export async function loadData() {
     const loaded = get(loadedStore)
     if (!loaded) {
         try {
+            //before anything heavy runs: records this boot for crash detection and decides on emergency mode
+            await resolveEmergencyBoot()
             if (isTauri) {
                 LoadingStatusState.text = "Checking Files..."
                 appWindow.maximize()
@@ -193,7 +196,7 @@ export async function loadData() {
                 else {
                     setUsingSw(false)
                 }
-                if (getDatabase().didFirstSetup) {
+                if (getDatabase().didFirstSetup && !isEmergencyMode()) {
                     characterURLImport()
                 }
             }
@@ -208,6 +211,7 @@ export async function loadData() {
             } catch (error) {
                 console.error('Failed to migrate plugin storage:', error)
             }
+            //emergency mode: loadPlugins skips loading on its own
             LoadingStatusState.text = "Loading Plugins..."
             try {
                 await loadPlugins()
@@ -258,7 +262,11 @@ export async function loadData() {
             registerModelDynamic()
             saveDb()
             moduleUpdate()
-            cleanChunks()
+            if (!isEmergencyMode()) {
+                //deletes files; not something to run while the app is in a bad state
+                cleanChunks()
+            }
+            armBootStableTimer()
             alertTOS().then((a) => {
                 if (a === false) {
                     location.reload()

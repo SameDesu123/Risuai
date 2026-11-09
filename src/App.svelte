@@ -38,6 +38,8 @@
     import Legal from './lib/Others/Legal.svelte';
     import CustomSidebarConfig from './lib/Others/CustomSidebarConfig.svelte';
     import { RISU_APP_INTERNAL_DRAG_TYPE, RISU_SIDEBAR_DRAG_TYPE } from './ts/dragTypes';
+    import EmergencyModeBanner from './lib/Others/EmergencyModeBanner.svelte';
+    import { EmergencyModeStore } from './ts/emergencyMode';
 
 
   
@@ -247,6 +249,9 @@
             {/if}
             <ChatScreen />
         {/if}
+    {/if}
+    {#if $EmergencyModeStore}
+        <EmergencyModeBanner />
     {/if}
     {#if $alertStore.type !== 'none'}
         <AlertComp />

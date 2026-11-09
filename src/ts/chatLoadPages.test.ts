@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
     DEFAULT_CHAT_LOAD_ADDITIONAL_PAGES,
     DEFAULT_CHAT_LOAD_INITIAL_PAGES,
+    EMERGENCY_CHAT_LOAD_INITIAL_PAGES,
     getAdditionalChatLoadPages,
     getInitialChatLoadPages,
     normalizeChatLoadPages,
@@ -26,5 +27,11 @@ describe('normalizeChatLoadPages', () => {
         expect(getInitialChatLoadPages({ chatLoadInitialPages: 12 })).toBe(12)
         expect(getAdditionalChatLoadPages({})).toBe(DEFAULT_CHAT_LOAD_ADDITIONAL_PAGES)
         expect(getAdditionalChatLoadPages({ chatLoadAdditionalPages: 8 })).toBe(8)
+    })
+
+    it('caps the initial load in emergency mode', () => {
+        expect(getInitialChatLoadPages({}, true)).toBe(EMERGENCY_CHAT_LOAD_INITIAL_PAGES)
+        expect(getInitialChatLoadPages({ chatLoadInitialPages: 2 }, true)).toBe(2)
+        expect(getInitialChatLoadPages({ chatLoadInitialPages: 100 }, false)).toBe(100)
     })
 })
