@@ -1665,14 +1665,14 @@ export const languageEnglish = {
     pluginProviderNotFound: "Unknown Plugin detected. Please change the model or enable the corresponding plugin.",
     emergencyMode: {
         title: "Emergency Mode",
-        banner: "Plugins, custom CSS and background HTML are turned off, and chats open with only their latest messages.",
+        banner: "Plugins, custom CSS and background HTML are turned off, images and RisuRealm are hidden, and chats open with only their latest messages.",
         exit: "Exit Emergency Mode",
         restartInEmergency: "Restart in Emergency Mode",
-        settingDesc: "Restarts Risuai with plugins, custom CSS and background HTML turned off, and chats opening with only their latest messages. Use it when Risuai keeps crashing or running out of memory. Your data is loaded and saved as usual.",
+        settingDesc: "Restarts Risuai with plugins, custom CSS and background HTML turned off, images and RisuRealm hidden, and chats opening with only their latest messages. Use it when Risuai keeps crashing or running out of memory. Your data is loaded and saved as usual.",
         urlHint: "Opening Risuai with ?emergency at the end of the address also starts emergency mode.",
         startEmergency: "Start in Emergency Mode",
         startNormally: "Start Normally",
-        crashDetected: (count: number) => `Risuai stopped unexpectedly while starting the last ${count} times. This can happen when it runs out of memory. Emergency mode starts without plugins, custom CSS and background HTML, so you can turn off or clean up what is causing it.`,
+        crashDetected: (count: number) => `Risuai stopped unexpectedly while starting the last ${count} times. This can happen when it runs out of memory. Emergency mode starts without plugins, custom CSS, background HTML and images, so you can turn off or clean up what is causing it.`,
         restarting: "Saving and restarting...",
     },
     bootstrap: {

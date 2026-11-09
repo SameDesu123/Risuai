@@ -14,6 +14,7 @@ import { doingChat } from "./process/index.svelte";
 import { importCharacter } from "./characterCards";
 import { PngChunk } from "./pngChunk";
 import { getColdStorageItem } from "./process/coldstorage.svelte";
+import { shouldHideAllImages } from "./emergencyState";
 
 export function createNewCharacter() {
     DBState.db.characters.push(createBlankChar())
@@ -55,7 +56,7 @@ export async function getCharImage(loc:string, type:'plain'|'css'|'contain'|'lgc
     const db = DBState.db
     
     // Return placeholder when hideAllImages is enabled
-    if(db.hideAllImages){
+    if(shouldHideAllImages(db)){
         if(type === 'plain'){
             return '/none.webp'
         }

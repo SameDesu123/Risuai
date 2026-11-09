@@ -3,6 +3,7 @@
     import { alertNormal } from "src/ts/alert";
     import { hubURL, type hubType } from "src/ts/characterCards";
     import { DBState } from "src/ts/stores.svelte";
+    import { shouldHideAllImages } from "src/ts/emergencyState";
     import { parseMultilangString } from "src/ts/util";
 
     interface Props {
@@ -17,7 +18,7 @@
 
 <button class="bg-darkbg rounded-lg p-4 flex flex-col hover:bg-selected transition-colors relative lg:w-96 w-full items-start" onclick={onClick}>
     <div class="flex gap-2 w-full">
-    {#if DBState.db.hideAllImages}
+    {#if shouldHideAllImages(DBState.db)}
         <div class="w-20 min-w-20 h-20 sm:h-28 sm:w-28 rounded-md bg-darkbutton flex items-center justify-center text-textcolor2">
             <span class="text-4xl">?</span>
         </div>

@@ -7,6 +7,8 @@
  * - custom CSS is not applied
  * - character / module background HTML is not rendered
  * - a chat opens with only its last few messages rendered
+ * - "Hide All Images" and "Hide RisuRealm" apply as if they were on (see emergencyState.ts);
+ *   the saved settings themselves are not changed
  * - startup skips asset cleanup and character import from the URL
  *
  * The save itself is loaded and saved as usual, so changes made in emergency mode
@@ -15,7 +17,6 @@
  * Entered with `?emergency` / `?safemode` in the URL, with the restart button in
  * Settings > Advanced, or by accepting the prompt shown after repeated crashes at startup.
  */
-import { get, writable } from "svelte/store"
 import { changeLanguage, language } from "src/lang"
 import { alertSelect, alertWait } from "./alert"
 import { SafeModeStore } from "./stores.svelte"
@@ -31,15 +32,15 @@ import {
     urlWithoutEmergencyParams,
     type StorageLike,
 } from "./emergencyBootGuard"
+import { EmergencyModeStore, type EmergencyModeReason } from "./emergencyState"
 
-export type EmergencyModeReason = 'url' | 'manual' | 'crash'
-
-/** null while emergency mode is off */
-export const EmergencyModeStore = writable<{ reason: EmergencyModeReason } | null>(null)
-
-export function isEmergencyMode(): boolean {
-    return get(EmergencyModeStore) !== null
-}
+export {
+    EmergencyModeStore,
+    isEmergencyMode,
+    shouldHideAllImages,
+    shouldHideRealm,
+    type EmergencyModeReason,
+} from "./emergencyState"
 
 function getLocalStorage(): StorageLike | null {
     try {

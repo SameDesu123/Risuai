@@ -8,6 +8,7 @@
     import { getRisuHub, hubAdditionalHTML } from "src/ts/characterCards";
     import RisuHubIcon from "./Realm/RealmHubIcon.svelte";
     import Title from "./Title.svelte";
+    import { shouldHideRealm } from "src/ts/emergencyState";
 
     type RelatedLink = {
       title: string;
@@ -57,7 +58,7 @@
       <h1 class="text-2xl font-bold">Recently Uploaded<button class="text-base font-medium float-right p-1 bg-darkbg rounded-md hover:ring-3" onclick={() => {
         $OpenRealmStore = true
       }}>Get More</button></h1>
-          {#if !DBState.db.hideRealm}
+          {#if !shouldHideRealm(DBState.db)}
             {#await getRisuHub({
                   search: '',
                   page: 0,

@@ -1502,14 +1502,14 @@ export const languageKorean = {
     "savePartialLocalBackup": "부분 로컬 백업 저장 (캐릭터 에셋 제외)",
     "emergencyMode": {
         "title": "긴급 모드",
-        "banner": "플러그인, 커스텀 CSS, 배경 HTML이 꺼져 있고, 채팅은 최근 메시지만 불러옵니다.",
+        "banner": "플러그인, 커스텀 CSS, 배경 HTML이 꺼져 있고, 이미지와 RisuRealm은 숨겨지며, 채팅은 최근 메시지만 불러옵니다.",
         "exit": "긴급 모드 종료",
         "restartInEmergency": "긴급 모드로 재시작",
-        "settingDesc": "플러그인, 커스텀 CSS, 배경 HTML을 끄고 채팅은 최근 메시지만 불러오도록 해서 Risuai를 다시 시작합니다. Risuai가 계속 튕기거나 메모리가 부족할 때 사용하세요. 데이터는 평소대로 불러오고 저장됩니다.",
+        "settingDesc": "플러그인, 커스텀 CSS, 배경 HTML을 끄고, 이미지와 RisuRealm을 숨기고, 채팅은 최근 메시지만 불러오도록 해서 Risuai를 다시 시작합니다. Risuai가 계속 튕기거나 메모리가 부족할 때 사용하세요. 데이터는 평소대로 불러오고 저장됩니다.",
         "urlHint": "주소 끝에 ?emergency 를 붙여서 열어도 긴급 모드로 시작합니다.",
         "startEmergency": "긴급 모드로 시작",
         "startNormally": "평소대로 시작",
-        "crashDetected": (count: number) => `최근 ${count}번 연속으로 Risuai가 시작 도중 비정상 종료되었습니다. 메모리가 부족할 때 이런 일이 생길 수 있습니다. 긴급 모드는 플러그인, 커스텀 CSS, 배경 HTML 없이 시작하므로 원인이 되는 항목을 끄거나 정리할 수 있습니다.`,
+        "crashDetected": (count: number) => `최근 ${count}번 연속으로 Risuai가 시작 도중 비정상 종료되었습니다. 메모리가 부족할 때 이런 일이 생길 수 있습니다. 긴급 모드는 플러그인, 커스텀 CSS, 배경 HTML, 이미지 없이 시작하므로 원인이 되는 항목을 끄거나 정리할 수 있습니다.`,
         "restarting": "저장 후 재시작하는 중...",
     },
     "bootstrap": {

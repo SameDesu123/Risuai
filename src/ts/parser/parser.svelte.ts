@@ -19,6 +19,7 @@ import { language } from 'src/lang';
 import katex from 'katex'
 import { getModelInfo } from '../model/modellist';
 import { registerCBS, type matcherArg, type RegisterCallback } from '../cbs';
+import { shouldHideAllImages } from '../emergencyState';
 import cssSelectorParser from 'postcss-selector-parser'
 
 const markdownItOptions = {
@@ -52,7 +53,7 @@ DOMPurify.addHook("uponSanitizeElement", (node: HTMLElement, data) => {
     }
     if(data.tagName === 'img'){
         // Hide external images when hideAllImages is enabled
-        if(DBState.db?.hideAllImages){
+        if(shouldHideAllImages(DBState.db)){
             const src = node.getAttribute("src") || "";
             // Replace with placeholder if it's an external/loaded image
             if(src && !src.startsWith('data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP')){
@@ -77,7 +78,7 @@ DOMPurify.addHook("uponSanitizeAttribute", (node, data) => {
     switch(data.attrName){
         case 'style':{
             // Remove background-image URLs when hideAllImages is enabled
-            if(DBState.db?.hideAllImages && data.attrValue){
+            if(shouldHideAllImages(DBState.db) && data.attrValue){
                 // Remove background-image property from inline styles
                 data.attrValue = data.attrValue.replace(/background(-image)?:\s*url\([^)]*\);?/gi, '')
                 // Also remove background property if it contains url()
@@ -497,7 +498,7 @@ async function parseAdditionalAssets(data:string, char:simpleCharacterArgument|c
 
         // Skip image-related assets when hideAllImages is enabled
         // raw and path are also included as they're used in CSS background-image
-        if(DBState.db.hideAllImages && imageCBS.includes(type)){
+        if(shouldHideAllImages(DBState.db) && imageCBS.includes(type)){
             return ''  // Hide the image asset
         }
 
@@ -681,7 +682,7 @@ async function parseInlayAssets(data:string){
             switch(asset?.type){
                 case 'image':
                     // Hide inlay images when hideAllImages is enabled
-                    if(DBState.db.hideAllImages){
+                    if(shouldHideAllImages(DBState.db)){
                         data = data.replace(inlay, '')
                         break
                     }
