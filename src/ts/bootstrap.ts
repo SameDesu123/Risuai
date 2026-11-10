@@ -20,7 +20,7 @@ import { checkDriverInit } from "./drive/drive";
 import { characterURLImport } from "./characterCards";
 import { defaultJailbreak, defaultMainPrompt, oldJailbreak, oldMainPrompt } from "./storage/defaultPrompts";
 import { loadRisuAccountData } from "./drive/accounter";
-import { decodeRisuSave, encodeRisuSave } from "./storage/risuSave";
+import { decodeRisuSave, encodeRisuSave, isRemoteSaveFileInUse } from "./storage/risuSave";
 import { saveKV } from "./storage/saveKV";
 import { updateAnimationSpeed } from "./gui/animation";
 import { updateColorScheme, updateTextThemeAndCSS } from "./gui/colorscheme";
@@ -33,7 +33,7 @@ import { initMobileGesture } from "./hotkey";
 import { moduleUpdate } from "./process/modules";
 import type { AccountStorage } from "./storage/accountStorage";
 import { makeColdData, migratePluginStorage } from "./process/coldstorage.svelte";
-import { getRemoteSaveCleanupAction, getRemoteSavePayloadName } from "./storage/remoteSaveCleanup";
+import { getActiveRemotePayloadNames, getInactiveRemoteSaveAction, planRemoteSaveCleanup } from "./storage/remoteSaveCleanup";
 import {
     forageStorage,
     saveDb,
@@ -554,59 +554,55 @@ async function cleanChunks(options:{
         }
 
         const remotes = await readDir('remotes', { baseDir: BaseDirectory.AppData })
-
-        const remoteUncleanables = new Set<string>(
-            db.characters.map((v) => v.chaId)
+        const remotePlan = planRemoteSaveCleanup(
+            remotes.map((remote) => getBasename(remote.name)),
+            getActiveRemotePayloadNames(db.characters)
         )
-        for (const remote of remotes) {
+        for (const fileName of remotePlan.deleteNow) {
+            //saving runs at the same time: leave temp files of payloads this session writes alone
+            if (isRemoteSaveFileInUse(fileName)) {
+                continue
+            }
             try {
-                const remoteFileName = getBasename(remote.name)
-                const remotePayloadName = getRemoteSavePayloadName(remoteFileName)
-                if(!remotePayloadName){
-                    continue
-                }
-                const fexists = remoteUncleanables.has(remotePayloadName)
-                if(!fexists){
-
-                    const metaPath = 'remotes/' + remote.name + '.meta'
-                    let metaExists = false
-                    let metaLastUsed:unknown
+                await remove('remotes/' + fileName, { baseDir: BaseDirectory.AppData })
+            } catch (error) {
+                console.log('error', fileName)
+            }
+        }
+        for (const group of remotePlan.inactive) {
+            try {
+                const metaPath = 'remotes/' + group.metaFile
+                let metaLastUsed:unknown
+                if (group.hasMeta) {
                     try {
-                        metaExists = await exists(metaPath, { baseDir: BaseDirectory.AppData })
-                        if (metaExists) {
-                            const meta = await readFile(metaPath, { baseDir: BaseDirectory.AppData })
-                            const metaJson = JSON.parse(new TextDecoder().decode(meta))
-                            metaLastUsed = metaJson.lastUsed
-                        }
+                        const meta = await readFile(metaPath, { baseDir: BaseDirectory.AppData })
+                        metaLastUsed = JSON.parse(new TextDecoder().decode(meta)).lastUsed
                     } catch (error) {}
-
-                    const cleanupAction = getRemoteSaveCleanupAction({
-                        fileName: remoteFileName,
-                        activeCharacterIds: remoteUncleanables,
-                        hasMeta: metaExists,
-                        metaLastUsed
-                    })
-                    if(cleanupAction === 'create-meta'){
-                        const metaJson = {
-                            lastUsed: Date.now()
-                        }
-                        await writeFile(metaPath, new TextEncoder().encode(JSON.stringify(metaJson)), { baseDir: BaseDirectory.AppData })
+                }
+                const cleanupAction = getInactiveRemoteSaveAction({
+                    hasMeta: group.hasMeta,
+                    metaLastUsed
+                })
+                if(cleanupAction === 'create-meta'){
+                    const metaJson = {
+                        lastUsed: Date.now()
                     }
-                    else if(cleanupAction === 'delete'){
-                        await remove('remotes/' + remote.name, { baseDir: BaseDirectory.AppData })
-                        await remove(metaPath, { baseDir: BaseDirectory.AppData })
+                    await writeFile(metaPath, new TextEncoder().encode(JSON.stringify(metaJson)), { baseDir: BaseDirectory.AppData })
+                }
+                else if(cleanupAction === 'delete'){
+                    for (const fileName of group.files) {
+                        await remove('remotes/' + fileName, { baseDir: BaseDirectory.AppData })
                     }
+                    await remove(metaPath, { baseDir: BaseDirectory.AppData })
                 }
             } catch (error) {
-                console.log('error', remote.name)
+                console.log('error', group.payloadName)
             }
         }
     }
     else {
         const indexes = await forageStorage.keys()
-        const characterIds = new Set<string>(
-            db.characters.map((v) => v.chaId)
-        )
+        const remoteFileNames:string[] = []
         for (const asset of indexes) {
             if (asset.startsWith('assets/')) {
                 const n = getBasename(asset)
@@ -614,38 +610,48 @@ async function cleanChunks(options:{
                     await forageStorage.removeItem(asset)
                 }
             }
-            else if (asset.endsWith('.meta')){
+            else if (asset.startsWith('remotes/')) {
+                remoteFileNames.push(asset.slice('remotes/'.length))
+            }
+        }
+        const remotePlan = planRemoteSaveCleanup(remoteFileNames, getActiveRemotePayloadNames(db.characters))
+        for (const fileName of remotePlan.deleteNow) {
+            //saving runs at the same time: leave temp files of payloads this session writes alone
+            if (isRemoteSaveFileInUse(fileName)) {
                 continue
             }
-            else if (asset.startsWith('remotes/')) {
-                const name = getBasename(asset).slice(0, -10) //remove .local.bin
-                const exists = characterIds.has(name)
-                if(!exists){
-                    let okayToDelete = false
+            try {
+                await forageStorage.removeItem('remotes/' + fileName)
+            } catch (error) {}
+        }
+        for (const group of remotePlan.inactive) {
+            try {
+                const metaPath = 'remotes/' + group.metaFile
+                let metaLastUsed:unknown
+                if (group.hasMeta) {
                     try {
-                        const metaPath = asset + '.meta'
-                        const metaExists = (await forageStorage.keys()).includes(metaPath)
-                        if (metaExists) {
-                            const metaData: Uint8Array = await forageStorage.getItem(metaPath) as unknown as Uint8Array
-                            const metaJson = JSON.parse(new TextDecoder().decode(metaData))
-                            const lastUsed = metaJson.lastUsed as number
-                            if(Date.now() - lastUsed > 1000 * 60 * 60 * 24 * 7) { //not used for 7 days
-                                okayToDelete = true
-                            }
-                        }
-                        else{
-                            //write meta for next time
-                            const metaJson = {
-                                lastUsed: Date.now()
-                            }
-                            await forageStorage.setItem(metaPath, new TextEncoder().encode(JSON.stringify(metaJson)))
-                        }
+                        const metaData: Uint8Array = await forageStorage.getItem(metaPath) as unknown as Uint8Array
+                        metaLastUsed = JSON.parse(new TextDecoder().decode(metaData)).lastUsed
                     } catch (error) {}
-                    if (okayToDelete) {
-                        await forageStorage.removeItem(asset)
-                    }
                 }
-            }
+                const cleanupAction = getInactiveRemoteSaveAction({
+                    hasMeta: group.hasMeta,
+                    metaLastUsed
+                })
+                if(cleanupAction === 'create-meta'){
+                    //write meta for next time
+                    const metaJson = {
+                        lastUsed: Date.now()
+                    }
+                    await forageStorage.setItem(metaPath, new TextEncoder().encode(JSON.stringify(metaJson)))
+                }
+                else if(cleanupAction === 'delete'){
+                    for (const fileName of group.files) {
+                        await forageStorage.removeItem('remotes/' + fileName)
+                    }
+                    await forageStorage.removeItem(metaPath)
+                }
+            } catch (error) {}
         }
     }
 }

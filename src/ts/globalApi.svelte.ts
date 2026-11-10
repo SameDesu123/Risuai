@@ -334,6 +334,15 @@ export async function saveDb() {
         }
     }
 
+    //remote saving (each character, and with split chats each chat, in its own file)
+    const wantsRemoteSaving = () => {
+        try {
+            return (isTauri || isNodeServer) && !!getDatabase()?.enableRemoteSaving
+        } catch (error) {
+            return false
+        }
+    }
+
     /** puts the dirty state of a save attempt that did not complete back into the tracker */
     const restoreDirty = (pending: toSaveType) => {
         for (const chaId of pending.character) {
@@ -359,6 +368,7 @@ export async function saveDb() {
     }
 
     let encoder = new RisuSaveEncoder({ splitChats: wantsSplitChats() })
+    let encoderRemoteSaving = wantsRemoteSaving()
     await encoder.init(getDatabase(), {
         compression: forageStorage.isAccount,
         kv: saveKV
@@ -435,12 +445,13 @@ export async function saveDb() {
         let toSave: toSaveType | null = null
         try {
 
-            if (encoder.splitChats !== wantsSplitChats()) {
-                //the split chat setting was toggled: rebuild every block in the new format
+            if (encoder.splitChats !== wantsSplitChats() || encoderRemoteSaving !== wantsRemoteSaving()) {
+                //the split chat or the remote saving setting was toggled: rebuild every block in the new format
                 requiresFullEncoderReload.state = true
             }
             if (requiresFullEncoderReload.state) {
                 encoder = new RisuSaveEncoder({ splitChats: wantsSplitChats() })
+                encoderRemoteSaving = wantsRemoteSaving()
                 await encoder.init(getDatabase(), {
                     compression: forageStorage.isAccount,
                     skipRemoteSavingOnCharacters: false,

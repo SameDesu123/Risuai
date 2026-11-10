@@ -11,7 +11,18 @@ import {
     exists,
     mkdir,
     readFile,
+    readDir,
+    rename,
 } from "@tauri-apps/plugin-fs"
+import {
+    getRemoteChatPayloadName,
+    parseRemoteSaveFileName,
+    remoteSaveBackupSuffix,
+    remoteSaveChatPrefix,
+    remoteSaveCorruptMarker,
+    remoteSavePayloadExtension,
+    remoteSaveTempSuffix,
+} from "./remoteSaveCleanup"
 
 const packr = new Packr({
     useRecords:false
@@ -31,6 +42,11 @@ const disableRemoteSaving = () => {
     }
 }
 const checkedRemoteExistence = new Set<string>();
+/** remote chat files whose version from before this app session was already preserved (or did not exist) */
+const backedUpRemoteFiles = new Set<string>();
+/** remote payload names this app session has written (startup cleanup must not touch their temp files) */
+const writtenRemoteFiles = new Set<string>();
+let remotesDirReady = false;
 const magicHeader = new Uint8Array([0, 82, 73, 83, 85, 83, 65, 86, 69, 0, 7]); 
 const magicCompressedHeader = new Uint8Array([0, 82, 73, 83, 85, 83, 65, 86, 69, 0, 8]);
 const magicStreamCompressedHeader = new Uint8Array([0, 82, 73, 83, 85, 83, 65, 86, 69, 0, 9]);
@@ -109,12 +125,38 @@ const KV_BLOCK_PREFIX = 'kv:'
  *   A legacy CHARACTER_WITHOUT_CHAT block with a `chats` array is still read as a full character.
  *   An object in `chats` is also not iterable for older clients, which makes them fail to load
  *   the save (and fall back to backups) instead of silently loading characters without chats.
- * - one CHAT block per chat, named `chat:<chaId>:<chatId>`, holding
- *   `{ "v": 1, "chaId": ..., "chatId": ..., "chat": {...} }`. The decoder only uses the payload.
+ * - one CHAT block per chat, named `chat-<chaId>-<chatId>`, holding
+ *   `{ "v": 1, "chaId": ..., "chatId": ..., "chat": {...} }`. The decoder only uses the payload,
+ *   never the name (the name is ambiguous: `chat-a-b-c` may be chaId `a` or `a-b`).
+ * - the decoder detects the marker in CHARACTER_WITH_CHAT blocks too: a crash between writing a
+ *   remote character file and database.bin can leave an old pointer type in front of a new file.
+ *
+ * Together with remote saving (Tauri / Node server), the character block and every chat block are
+ * remote blocks, so each chat is its own file `remotes/chat-<chaId>-<chatId>.local.bin`:
+ * - only ids matching SAFE_REMOTE_ID (and short enough names) are used as file names; other
+ *   characters are saved as a single legacy remote block.
+ * - Tauri writes every remote file to `<file>.tmp` and renames it over the file. The Node server has
+ *   no rename, so files are written in place.
+ * - the first overwrite of a chat file in an app session keeps the previous version as `<file>.bak`.
+ *   A previous version that does not parse is moved to `<file>.corrupt-<time>` instead, so a good
+ *   `.bak` is never replaced by a broken file.
+ * - the decoder falls back to `.bak` when a chat file is missing or does not parse, and probes for the
+ *   files of listed chats that have no block in database.bin (the character's chat list is the source
+ *   of truth). The decoder never writes, renames or deletes files.
  */
 const SPLIT_CHATS_KEY = '__risuSplitChats'
-const CHAT_BLOCK_PREFIX = 'chat:'
+const CHAT_BLOCK_PREFIX = remoteSaveChatPrefix
 const MAX_BLOCK_NAME_BYTES = 255
+/** ids that may be part of a remote file name */
+const SAFE_REMOTE_ID = /^[A-Za-z0-9_-]+$/
+/** longest chat block name stored as a remote file on Tauri */
+const MAX_REMOTE_CHAT_NAME_BYTES = 200
+/**
+ * The Node server stores each key as one hex encoded file name (2 bytes per byte, at most 255), and the
+ * longest key is `remotes/<name>.local.bin.corrupt-<13 digits>` (40 bytes besides the name).
+ */
+const MAX_REMOTE_CHAT_NAME_BYTES_NODE = 87
+const REMOTE_READ_CONCURRENCY = 16
 const RESERVED_BLOCK_NAMES = new Set(['root', 'preset', 'modules', 'loadouts', 'plugins', 'pluginStorage', 'config'])
 
 type ChatBlockPayload = {
@@ -129,7 +171,200 @@ function utf8Length(str:string){
 }
 
 function chatBlockName(chaId:string, chatId:string){
-    return `${CHAT_BLOCK_PREFIX}${chaId}:${chatId}`
+    return getRemoteChatPayloadName(chaId, chatId)
+}
+
+function remoteFilePath(name:string){
+    return `remotes/${name}${remoteSavePayloadExtension}`
+}
+
+function maxRemoteChatNameBytes(){
+    return isTauri ? MAX_REMOTE_CHAT_NAME_BYTES : MAX_REMOTE_CHAT_NAME_BYTES_NODE
+}
+
+/** true if the chat of a character may be stored as (and probed for as) its own remote file */
+function isSafeRemoteChat(chaId:string, chatId:string){
+    return SAFE_REMOTE_ID.test(chaId) &&
+        SAFE_REMOTE_ID.test(chatId) &&
+        utf8Length(chatBlockName(chaId, chatId)) <= maxRemoteChatNameBytes()
+}
+
+function isJsonText(text:string){
+    try {
+        JSON.parse(text)
+        return true
+    } catch (error) {
+        return false
+    }
+}
+
+function toBytes(data:Uint8Array|ArrayBuffer){
+    return data instanceof Uint8Array ? data : new Uint8Array(data)
+}
+
+/** runs at most `limit` tasks at once; results keep the order of the calls that created them */
+function createLimiter(limit:number){
+    let active = 0
+    const queue:(() => void)[] = []
+    return <T>(task:() => Promise<T>):Promise<T> => {
+        return new Promise<T>((resolve, reject) => {
+            const run = () => {
+                active++
+                task().then(resolve, reject).finally(() => {
+                    active--
+                    queue.shift()?.()
+                })
+            }
+            if(active < limit){
+                run()
+            }
+            else{
+                queue.push(run)
+            }
+        })
+    }
+}
+
+/**
+ * True if a file in `remotes/` (name without the folder) belongs to a payload this app session writes.
+ * Startup cleanup uses this to leave temp files of writes that may be in progress alone.
+ */
+export function isRemoteSaveFileInUse(fileName:string){
+    const { payloadName } = parseRemoteSaveFileName(fileName)
+    return payloadName !== null && writtenRemoteFiles.has(payloadName)
+}
+
+/** forgets the per-session remote file state, as if the app was restarted (tests) */
+export function resetRemoteSaveSession(){
+    checkedRemoteExistence.clear()
+    backedUpRemoteFiles.clear()
+    writtenRemoteFiles.clear()
+    remotesDirReady = false
+}
+
+async function ensureRemotesDir(){
+    if(remotesDirReady){
+        return
+    }
+    if(!(await exists('remotes', { baseDir: BaseDirectory.AppData }))){
+        await mkdir('remotes', { recursive: true, baseDir: BaseDirectory.AppData });
+    }
+    remotesDirReady = true
+}
+
+/**
+ * Keeps the version of a chat file from before this app session: as `.bak` if it parses,
+ * otherwise as `.corrupt-<time>` (an existing `.bak` is left alone then).
+ * Tauri moves the file away; the caller renames the new file in right after.
+ */
+async function preserveRemoteFile(fileName:string){
+    if(isTauri){
+        if(!(await exists(fileName, { baseDir: BaseDirectory.AppData }))){
+            return
+        }
+        const previous = await readFile(fileName, { baseDir: BaseDirectory.AppData })
+        const target = isJsonText(new TextDecoder().decode(previous))
+            ? fileName + remoteSaveBackupSuffix
+            : `${fileName}${remoteSaveCorruptMarker}${Date.now()}`
+        await rename(fileName, target, { oldPathBaseDir: BaseDirectory.AppData, newPathBaseDir: BaseDirectory.AppData })
+        return
+    }
+    const previous = await forageStorage.getItem(fileName)
+    if(!previous){
+        return
+    }
+    const bytes = toBytes(previous)
+    if(isJsonText(new TextDecoder().decode(bytes))){
+        await forageStorage.setItem(fileName + remoteSaveBackupSuffix, bytes)
+    }
+    else{
+        await forageStorage.setItem(`${fileName}${remoteSaveCorruptMarker}${Date.now()}`, bytes)
+    }
+}
+
+/** writes a remote block file (atomically on Tauri), keeping a session-first backup for chat files */
+async function writeRemoteFile(name:string, data:Uint8Array, keepSessionBackup:boolean){
+    const fileName = remoteFilePath(name)
+    writtenRemoteFiles.add(name)
+    const backup = keepSessionBackup && !backedUpRemoteFiles.has(name)
+    if(isTauri){
+        await ensureRemotesDir()
+        const tempName = fileName + remoteSaveTempSuffix
+        await writeFile(tempName, data, { baseDir: BaseDirectory.AppData })
+        if(backup){
+            try {
+                await preserveRemoteFile(fileName)
+                backedUpRemoteFiles.add(name)
+            } catch (error) {
+                console.warn(`Could not keep the previous version of ${fileName}:`, error)
+            }
+        }
+        try {
+            await rename(tempName, fileName, { oldPathBaseDir: BaseDirectory.AppData, newPathBaseDir: BaseDirectory.AppData })
+        } catch (error) {
+            console.warn(`Could not move ${tempName} into place, writing ${fileName} directly:`, error)
+            await writeFile(fileName, data, { baseDir: BaseDirectory.AppData })
+        }
+        return
+    }
+    if(backup){
+        try {
+            await preserveRemoteFile(fileName)
+            backedUpRemoteFiles.add(name)
+        } catch (error) {
+            console.warn(`Could not keep the previous version of ${fileName}:`, error)
+        }
+    }
+    await forageStorage.setItem(fileName, data)
+}
+
+async function readRemoteFile(fileName:string):Promise<Uint8Array|null>{
+    try {
+        if(isTauri){
+            if(await exists(fileName, { baseDir: BaseDirectory.AppData })){
+                return await readFile(fileName, { baseDir: BaseDirectory.AppData })
+            }
+            return null
+        }
+        const stored = await forageStorage.getItem(fileName)
+        return stored ? toBytes(stored) : null
+    } catch (error) {
+        console.error(`Error reading remote file ${fileName}:`, error)
+        return null
+    }
+}
+
+/**
+ * Reads the content of a remote block file. With `withBackup` (chat files), a missing or unparsable
+ * file falls back to its `.bak`. Never throws, never writes.
+ */
+async function readRemotePayload(name:string, withBackup:boolean):Promise<string|null>{
+    try {
+        const fileName = remoteFilePath(name)
+        const main = await readRemoteFile(fileName)
+        if(!withBackup){
+            return main ? new TextDecoder().decode(main) : null
+        }
+        if(main){
+            const text = new TextDecoder().decode(main)
+            if(isJsonText(text)){
+                return text
+            }
+            console.warn(`Remote file ${fileName} is corrupt, trying its backup.`)
+        }
+        const backup = await readRemoteFile(fileName + remoteSaveBackupSuffix)
+        if(backup){
+            const text = new TextDecoder().decode(backup)
+            if(isJsonText(text)){
+                console.warn(`Loading ${fileName} from its backup.`)
+                return text
+            }
+        }
+        return null
+    } catch (error) {
+        console.error(`Error reading remote block ${name}:`, error)
+        return null
+    }
 }
 
 /** returns the recorded chat order of a split character, or null if the character holds its chats itself */
@@ -199,6 +434,11 @@ export class RisuSaveEncoder {
     private splitChatBlocks: Map<string, Map<string, string>> = new Map();
     /** chat block name -> chaId of the character that owns it */
     private chatBlockOwner: Map<string, string> = new Map();
+    /** paths of the existing remote files, listed once per init (null outside init) */
+    private remoteListing: Promise<Set<string>> | null = null;
+    /** chaId -> content of the split character file this encoder last wrote (unchanged files are not rewritten) */
+    private remoteCharacterContent: Map<string, string> = new Map();
+    private listingRemoteFiles = false;
 
     constructor(options: { remote?: boolean, cache?: boolean, splitChats?: boolean } = {}){
         this.allowRemote = options.remote ?? true;
@@ -218,6 +458,19 @@ export class RisuSaveEncoder {
         } = arg;
         this.compression = compression;
         this.kv = kv;
+        this.remoteListing = null;
+        this.listingRemoteFiles = true;
+        try {
+            await this.encodeAll(data, skipRemoteSavingOnCharacters);
+        } finally {
+            this.listingRemoteFiles = false;
+            this.remoteListing = null;
+        }
+    }
+
+    private async encodeAll(data:Database, skipRemoteSavingOnCharacters:boolean){
+        const compression = this.compression;
+        const kv = this.kv;
         let obj:Record<any,any> = {}
         let keys = Object.keys(data)
         for(const key of keys){
@@ -327,6 +580,7 @@ export class RisuSaveEncoder {
                     if(!this.chatBlockOwner.has(chaId)){
                         delete this.blocks[chaId];
                     }
+                    this.remoteCharacterContent.delete(chaId);
                     this.removeChatBlocks(chaId);
                 }
             }
@@ -456,8 +710,9 @@ export class RisuSaveEncoder {
         if(utf8Length(chaId) > MAX_BLOCK_NAME_BYTES || !Array.isArray(character.chats)){
             return null;
         }
-        //remote characters are kept in the legacy format for now
-        if(this.shouldEncodeRemote({ remote: 'prefer' })){
+        //with remote saving every block becomes a file named after it
+        const remote = this.shouldEncodeRemote({ remote: 'prefer' });
+        if(remote && !SAFE_REMOTE_ID.test(chaId)){
             return null;
         }
         const chatIds:string[] = [];
@@ -480,6 +735,9 @@ export class RisuSaveEncoder {
             ){
                 return null;
             }
+            if(remote && !isSafeRemoteChat(chaId, chatId)){
+                return null;
+            }
             const owner = this.chatBlockOwner.get(name);
             if(owner !== undefined ? owner !== chaId : this.blocks[name] !== undefined){
                 return null;
@@ -487,7 +745,7 @@ export class RisuSaveEncoder {
             chatIds.push(chatId);
             names.push(name);
         }
-        return { chaId, chatIds, names, chats };
+        return { chaId, chatIds, names, chats, remote };
     }
 
     /** character JSON with `chats` replaced by the split marker and chat order, keeping the key order */
@@ -516,11 +774,14 @@ export class RisuSaveEncoder {
                 remote: 'prefer'
             });
             this.blocks[character.chaId] = block;
+            this.remoteCharacterContent.delete(character.chaId);
             this.removeChatBlocks(character.chaId);
             return;
         }
 
         const { chaId, chatIds, names, chats } = plan;
+        //the names were checked for remote use only if the plan said so; do not re-evaluate the setting here
+        const blockOption:EncodeBlockOption = { remote: plan.remote ? 'force' : 'none' };
         const previous = this.splitChatBlocks.get(chaId);
         const encodedChats:[string, Uint8Array][] = [];
         for(let i = 0; i < chatIds.length; i++){
@@ -542,22 +803,32 @@ export class RisuSaveEncoder {
                 compression: this.compression,
                 data: JSON.stringify(payload),
                 type: RisuSaveType.CHAT,
-                name
-            }, {
-                remote: 'none'
-            })]);
+                name,
+                skipRemoteSaving
+            }, blockOption)]);
         }
-        const characterBlock = await this.encodeBlock({
+        const characterData = this.serializeSplitCharacter(character, chatIds);
+        //a remote character file that did not change is not written again (only its chats changed)
+        const reuseCharacterBlock = plan.remote &&
+            previous !== undefined &&
+            this.blocks[chaId] !== undefined &&
+            this.remoteCharacterContent.get(chaId) === characterData;
+        const characterBlock = reuseCharacterBlock ? this.blocks[chaId] : await this.encodeBlock({
             compression: this.compression,
-            data: this.serializeSplitCharacter(character, chatIds),
+            data: characterData,
             type: RisuSaveType.CHARACTER_WITHOUT_CHAT,
-            name: chaId
-        }, {
-            remote: 'none'
-        });
+            name: chaId,
+            skipRemoteSaving
+        }, blockOption);
 
         //commit
         this.blocks[chaId] = characterBlock;
+        if(plan.remote && !skipRemoteSaving){
+            this.remoteCharacterContent.set(chaId, characterData);
+        }
+        else if(!reuseCharacterBlock){
+            this.remoteCharacterContent.delete(chaId);
+        }
         const current = new Map<string, string>();
         for(let i = 0; i < chatIds.length; i++){
             current.set(chatIds[i], names[i]);
@@ -675,22 +946,42 @@ export class RisuSaveEncoder {
         return buf;
     }
 
+    /** lists the existing remote files (Tauri: the `remotes` folder, otherwise every storage key) */
+    private async listRemoteFiles():Promise<Set<string>>{
+        try {
+            if(isTauri){
+                if(!(await exists('remotes', { baseDir: BaseDirectory.AppData }))){
+                    return new Set();
+                }
+                const entries = await readDir('remotes', { baseDir: BaseDirectory.AppData });
+                return new Set(entries.map((entry) => `remotes/${entry.name}`));
+            }
+            return new Set(await forageStorage.keys());
+        } catch (error) {
+            //unknown means "does not exist": the file is written
+            console.error('Could not list remote files:', error);
+            return new Set();
+        }
+    }
+
+    private async remoteFileExists(fileName:string){
+        if(this.listingRemoteFiles){
+            this.remoteListing ??= this.listRemoteFiles();
+            return (await this.remoteListing).has(fileName);
+        }
+        if(isTauri){
+            return await exists(fileName, { baseDir: BaseDirectory.AppData });
+        }
+        return (await forageStorage.keys()).includes(fileName);
+    }
+
     async encodeRemoteBlock(arg:EncodeBlockArg){
         console.log(`Encoding remote block: ${arg.name}`);
         const encoded = new TextEncoder().encode(arg.data);
-        const fileName = `remotes/${arg.name}.local.bin`
+        const fileName = remoteFilePath(arg.name)
 
         if(arg.skipRemoteSaving && checkedRemoteExistence.has(arg.name) === false){
-            let fileExists = false;
-            if(isTauri){
-                fileExists = await exists(fileName, { baseDir: BaseDirectory.AppData });
-            }
-            else{
-                const stored = await forageStorage.keys();
-                if(stored.includes(fileName)){
-                    fileExists = true;
-                }
-            }
+            const fileExists = await this.remoteFileExists(fileName);
             if(!fileExists){
                 console.log(`Remote file ${fileName} does not exist, disabling skipRemoteSaving for this block.`);
                 arg.skipRemoteSaving = false;
@@ -699,15 +990,7 @@ export class RisuSaveEncoder {
         }
 
         if(!arg.skipRemoteSaving){
-            if(isTauri){
-                if(!(await exists('remotes', { baseDir: BaseDirectory.AppData }))){
-                    await mkdir('remotes', { recursive: true, baseDir: BaseDirectory.AppData });
-                }
-                await writeFile(fileName, encoded!, { baseDir: BaseDirectory.AppData });
-            }
-            else{
-                await forageStorage.setItem(fileName, encoded);
-            }
+            await writeRemoteFile(arg.name, encoded, arg.type === RisuSaveType.CHAT);
         }
         return await this.encodeBlock({
             compression: false,
@@ -779,6 +1062,23 @@ export class RisuSaveDecoder {
             }
         }
         console.log('blocks',this.blocks)
+        //remote files are read ahead with bounded concurrency; their blocks are still appended in pointer order
+        const limitRemoteRead = createLimiter(REMOTE_READ_CONCURRENCY)
+        const remoteReads = new Map<object, Promise<string|null>>()
+        for(const block of this.blocks){
+            if(block.type !== RisuSaveType.REMOTE){
+                continue
+            }
+            try {
+                const remoteInfo = JSON.parse(block.content)
+                if(typeof remoteInfo?.name === 'string'){
+                    const withBackup = remoteInfo.type === RisuSaveType.CHAT
+                    remoteReads.set(block, limitRemoteRead(() => readRemotePayload(remoteInfo.name, withBackup)))
+                }
+            } catch (error) {
+                //reported when the block is processed
+            }
+        }
         let directory: string[] = []
         /** characters saved with CHARACTER_WITHOUT_CHAT + CHAT blocks, in block order */
         const splitCharacters: { character: any, chatIds: string[] }[] = []
@@ -828,8 +1128,9 @@ export class RisuSaveDecoder {
                     case RisuSaveType.CHARACTER_WITHOUT_CHAT:{
                         db.characters ??= [];
                         const character = JSON.parse(this.blocks[key].content);
-                        //a CHARACTER_WITHOUT_CHAT block with a chats array is a legacy full character
-                        const chatIds = this.blocks[key].type === RisuSaveType.CHARACTER_WITHOUT_CHAT ? getSplitChatIds(character) : null;
+                        //a block with a chats array is a full character. The marker is accepted in both types:
+                        //a crash between writing a remote character file and database.bin can leave the old pointer type
+                        const chatIds = getSplitChatIds(character);
                         if(chatIds){
                             //chats are attached after all blocks are read
                             character.chats = [];
@@ -839,11 +1140,8 @@ export class RisuSaveDecoder {
                         break
                     }
                     case RisuSaveType.CHAT:{
-                        const payload:ChatBlockPayload = JSON.parse(this.blocks[key].content);
-                        if(
-                            !payload || typeof payload.chaId !== 'string' || typeof payload.chatId !== 'string' ||
-                            !payload.chat || typeof payload.chat !== 'object' || Array.isArray(payload.chat)
-                        ){
+                        const payload = parseChatPayload(this.blocks[key].content);
+                        if(!payload){
                             console.warn(`Invalid chat block ${this.blocks[key].name}, ignoring.`);
                             break;
                         }
@@ -887,31 +1185,18 @@ export class RisuSaveDecoder {
                             type:RisuSaveType
                             name:string
                         } = JSON.parse(this.blocks[key].content);
-                        const fileName = `remotes/${remoteInfo.name}.local.bin`
-                        let remoteData:Uint8Array|null = null
-                        if(isTauri){
-                            try {
-                                if(await exists(fileName, { baseDir: BaseDirectory.AppData })){
-                                    remoteData = await readFile(fileName, { baseDir: BaseDirectory.AppData });
-                                }
-                            } catch (error) {
-                                console.error(`Error reading remote file ${fileName} in Tauri:`, error);
-                            }
-                        }
-                        else{
-                            const stored = await forageStorage.getItem(fileName);
-                            if(stored){
-                                remoteData = stored as Uint8Array;
-                            }
-                        }
-
-                        if(!remoteData){
+                        const fileName = remoteFilePath(remoteInfo.name)
+                        //blocks loaded from the block cache were not read ahead
+                        const decoded = await (
+                            remoteReads.get(this.blocks[key]) ??
+                            readRemotePayload(remoteInfo.name, remoteInfo.type === RisuSaveType.CHAT)
+                        )
+                        if(decoded === null){
                             console.warn(`Remote file ${fileName} not found.`);
                             break;
                         }
-                        const decoded = new TextDecoder().decode(remoteData)
 
-                        //add to blocks for further processing
+                        //add to blocks for further processing (this loop also visits blocks appended here)
                         this.blocks.push({
                             name: remoteInfo.name,
                             type: remoteInfo.type,
@@ -940,7 +1225,10 @@ export class RisuSaveDecoder {
                 }
             }
         }
-        attachSplitChats(db, splitCharacters, chatRecords)
+        await attachSplitChats(db, splitCharacters, chatRecords, {
+            probeRemote: isTauri || isNodeServer,
+            limit: limitRemoteRead
+        })
         //to fix botpreset bugs
         if(!Array.isArray(db.botPresets) || db.botPresets.length === 0){
             db.botPresets = [presetTemplate]
@@ -951,14 +1239,70 @@ export class RisuSaveDecoder {
     }
 }
 
+function parseChatPayload(content:string):ChatBlockPayload|null{
+    const payload:ChatBlockPayload = JSON.parse(content)
+    if(
+        !payload || typeof payload.chaId !== 'string' || typeof payload.chatId !== 'string' ||
+        !payload.chat || typeof payload.chat !== 'object' || Array.isArray(payload.chat)
+    ){
+        return null
+    }
+    return payload
+}
+
+/**
+ * Reads the remote files of listed chats that have no decoded block (their pointer may be missing
+ * from database.bin after a crash). Only payloads of exactly that chat are accepted.
+ */
+async function probeRemoteChats(splitCharacters:{ character: any, chatIds: string[] }[], chatRecords:ChatBlockPayload[], limit:ReturnType<typeof createLimiter>){
+    const known = new Set(chatRecords.map((r) => JSON.stringify([r.chaId, r.chatId])))
+    const probes:{ chaId:string, chatId:string }[] = []
+    for(const { character, chatIds } of splitCharacters){
+        const chaId = character?.chaId
+        if(typeof chaId !== 'string'){
+            continue
+        }
+        for(const chatId of chatIds){
+            const key = JSON.stringify([chaId, chatId])
+            if(known.has(key) || !isSafeRemoteChat(chaId, chatId)){
+                continue
+            }
+            known.add(key)
+            probes.push({ chaId, chatId })
+        }
+    }
+    const results = await Promise.all(probes.map(({ chaId, chatId }) => limit(() => readRemotePayload(chatBlockName(chaId, chatId), true))))
+    for(let i = 0; i < probes.length; i++){
+        if(results[i] === null){
+            continue
+        }
+        try {
+            const payload = parseChatPayload(results[i])
+            if(payload && payload.chaId === probes[i].chaId && payload.chatId === probes[i].chatId){
+                console.warn(`Recovered chat ${payload.chatId} of character ${payload.chaId} from its file.`)
+                chatRecords.push(payload)
+            }
+        } catch (error) {
+            console.error(`Error reading the probed chat ${probes[i].chatId}:`, error)
+        }
+    }
+}
+
 /**
  * Attaches decoded CHAT blocks to their split characters, in the recorded order.
- * Missing chats become placeholders, unlisted chats of an existing character are appended,
+ * Listed chats without a block are looked up as remote files first (probeRemote),
+ * then become placeholders. Unlisted chats of an existing character are appended,
  * chats of a character that does not exist are dropped.
  */
-function attachSplitChats(db:Database, splitCharacters:{ character: any, chatIds: string[] }[], chatRecords:ChatBlockPayload[]){
+async function attachSplitChats(db:Database, splitCharacters:{ character: any, chatIds: string[] }[], chatRecords:ChatBlockPayload[], arg:{
+    probeRemote:boolean
+    limit:ReturnType<typeof createLimiter>
+}){
     if(splitCharacters.length === 0 && chatRecords.length === 0){
         return
+    }
+    if(arg.probeRemote){
+        await probeRemoteChats(splitCharacters, chatRecords, arg.limit)
     }
     const recordsByCharacter = new Map<string, ChatBlockPayload[]>()
     for(const record of chatRecords){
