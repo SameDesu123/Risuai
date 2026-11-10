@@ -6,7 +6,8 @@ import { checkNullish, findCharacterbyId, findCharacterIndexbyId, getUserName, s
 import { v4 as uuidv4, v4 } from 'uuid';
 import { getImageType } from "./media";
 import { DBState, MobileGUIStack, OpenRealmStore, selectedCharID } from "./stores.svelte";
-import { AppendableBuffer, changeChatTo, checkCharOrder, downloadFile, getFileSrc, requiresFullEncoderReload } from "./globalApi.svelte";
+import { AppendableBuffer, changeChatTo, checkCharOrder, downloadFile, getFileSrc } from "./globalApi.svelte";
+import { markCharacterChanged, requestSave } from "./storage/saveChangeTracking.svelte";
 import { updateInlayScreen } from "./process/inlayScreen";
 import { parseMarkdownSafe } from "./parser/parser.svelte";
 import { translateHTML } from "./translator/translator";
@@ -829,13 +830,17 @@ export async function removeChar(identifier:string|number,name:string, type:'nor
     }
     if(type === 'normal'){
         chars[index].trashTime = Date.now()
+        // the character may not be selected: its change is not tracked by the save effects
+        markCharacterChanged(chars[index].chaId)
     }
     else{
+        // the encoder drops the blocks of characters that are gone; it only needs a save. Deleting from the
+        // trash with no character selected changes nothing the save effects track (not even characterOrder)
         chars.splice(index, 1)
+        requestSave()
     }
     checkCharOrder()
     DBState.db.characters = chars
-    requiresFullEncoderReload.state = true
     selectedCharID.set(-1)
 }
 

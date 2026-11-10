@@ -11,6 +11,7 @@
     import { language } from "src/lang";
     import { parseMultilangString } from "src/ts/util";
     import { checkCharOrder } from "src/ts/globalApi.svelte";
+    import { markCharacterChanged } from "src/ts/storage/saveChangeTracking.svelte";
     import MobileCharacters from "../Mobile/MobileCharacters.svelte";
     interface Props {
         endGrid?: any;
@@ -142,6 +143,8 @@
                                 const restoreIdx = findCharacterIndexbyId(char.chaId)
                                 if (restoreIdx !== -1) {
                                     DBState.db.characters[restoreIdx].trashTime = undefined
+                                    // usually not the selected character: its change is not tracked by the save effects
+                                    markCharacterChanged(DBState.db.characters[restoreIdx].chaId)
                                     checkCharOrder()
                                 }
                             }}>

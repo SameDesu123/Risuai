@@ -81,7 +81,10 @@ export async function encodeRisuSaveCompressionStream(data:any) {
 }
 
 export type toSaveType = {
-    /** chaIds whose blocks must be re-encoded (an id that is no longer in the database means the character was deleted) */
+    /**
+     * chaIds whose blocks must be re-encoded. Deleted characters do not need to be listed: every `set` drops the
+     * blocks of characters that are no longer in the database (an id listed here that is not in the database is ignored).
+     */
     character: string[];
     /**
      * [chaId, chatId] pairs of chats that changed. Only used when chats are saved as separate blocks.
@@ -90,6 +93,12 @@ export type toSaveType = {
     chat: [string, string][];
     /** chaIds whose chats must all be re-encoded. Only used when chats are saved as separate blocks. */
     allChats?: string[];
+    /**
+     * chaIds whose character data changed, but none of their chats (e.g. a non-selected character was moved to
+     * the trash). With split chats only the character block is re-encoded (and chats that have no block yet);
+     * a legacy character is re-encoded as a whole. A chaId that is also in `character` follows the rules of `character`.
+     */
+    characterOnly?: string[];
     botPreset: boolean;
     modules: boolean;
     loadouts: boolean;
@@ -438,6 +447,10 @@ export class RisuSaveEncoder {
     private remoteListing: Promise<Set<string>> | null = null;
     /** chaId -> content of the split character file this encoder last wrote (unchanged files are not rewritten) */
     private remoteCharacterContent: Map<string, string> = new Map();
+    /** chaIds this encoder holds a character block for (block name = chaId) */
+    private characterBlocks: Set<string> = new Set();
+    /** chaIds that were used by more than one character in the last encode (they share one legacy block) */
+    private duplicateChaIds: Set<string> = new Set();
     private listingRemoteFiles = false;
 
     constructor(options: { remote?: boolean, cache?: boolean, splitChats?: boolean } = {}){
@@ -515,9 +528,11 @@ export class RisuSaveEncoder {
             name: 'pluginStorage'
         });
         const context = this.makeCharacterContext(data);
+        this.removeDeletedCharacters(context);
         for( const character of data.characters ?? []) {
             await this.encodeCharacter(character, context, 'all', skipRemoteSavingOnCharacters);
         }
+        this.duplicateChaIds = context.duplicateChaIds;
         for(const ns of kv?.namespaces() ?? []){
             await this.encodeKVBlock(ns);
         }
@@ -554,8 +569,13 @@ export class RisuSaveEncoder {
             dirtyChats.get(chaId).add(chatId);
         }
         const allChatsDirty = new Set(toSave.allChats ?? []);
+        const characterOnly = new Set(toSave.characterOnly ?? []);
 
-        const savedId = new Set<string>();
+        //deleted characters do not need to be listed as dirty: drop the blocks of every character that is gone
+        this.removeDeletedCharacters(context);
+        //a chaId that is not duplicated anymore: its shared block may hold the character that was removed
+        const resolvedDuplicates = new Set([...this.duplicateChaIds].filter((chaId) => !context.duplicateChaIds.has(chaId)));
+
         for(const character of data.characters) {
             const index = toSave.character.indexOf(character.chaId);
             if (index !== -1) {
@@ -564,27 +584,18 @@ export class RisuSaveEncoder {
                     ? 'all'
                     : dirtyChats.get(character.chaId);
                 await this.encodeCharacter(character, context, dirty);
-                savedId.add(character.chaId);
                 toSave.character.splice(index, 1);
             }
-            else if(!this.blocks[character.chaId]){
+            else if(!this.blocks[character.chaId] || resolvedDuplicates.has(character.chaId)){
                 await this.encodeCharacter(character, context, 'all');
-                savedId.add(character.chaId);
+            }
+            else if(characterOnly.has(character.chaId)){
+                //the character changed, its chats did not (chats without a block are still encoded)
+                await this.encodeCharacter(character, context, new Set());
+                characterOnly.delete(character.chaId);
             }
         }
-        if(toSave.character.length > 0){
-            console.log(`Deleting character data: ${toSave.character.join(', ')}`);
-            //probably deleted characters
-            for(const chaId of toSave.character){
-                if(!savedId.has(chaId)){
-                    if(!this.chatBlockOwner.has(chaId)){
-                        delete this.blocks[chaId];
-                    }
-                    this.remoteCharacterContent.delete(chaId);
-                    this.removeChatBlocks(chaId);
-                }
-            }
-        }
+        this.duplicateChaIds = context.duplicateChaIds;
 
         if(toSave.botPreset){
             this.blocks['preset'] = await this.encodeBlock({
@@ -774,6 +785,7 @@ export class RisuSaveEncoder {
                 remote: 'prefer'
             });
             this.blocks[character.chaId] = block;
+            this.characterBlocks.add(character.chaId);
             this.remoteCharacterContent.delete(character.chaId);
             this.removeChatBlocks(character.chaId);
             return;
@@ -823,6 +835,7 @@ export class RisuSaveEncoder {
 
         //commit
         this.blocks[chaId] = characterBlock;
+        this.characterBlocks.add(chaId);
         if(plan.remote && !skipRemoteSaving){
             this.remoteCharacterContent.set(chaId, characterData);
         }
@@ -860,6 +873,33 @@ export class RisuSaveEncoder {
             }
         }
         this.splitChatBlocks.delete(chaId);
+    }
+
+    /**
+     * Removes the character block, the chat blocks and the per-character state of every character this encoder
+     * holds that is not in the database anymore. Remote files are left on disk (startup cleanup removes them
+     * after a grace period).
+     */
+    private removeDeletedCharacters(context:CharacterEncodeContext){
+        const deleted = [...this.characterBlocks].filter((chaId) => !context.chaIds.has(chaId));
+        if(deleted.length === 0){
+            return;
+        }
+        console.log(`Deleting character data: ${deleted.join(', ')}`);
+        for(const chaId of deleted){
+            //never drop a block that is not a character block: a chat block of another character, or a reserved
+            //or KV block that a character with such a chaId shared (dropping `config` would make the save unencodable)
+            if(
+                !this.chatBlockOwner.has(chaId) &&
+                !RESERVED_BLOCK_NAMES.has(chaId) &&
+                !(typeof chaId === 'string' && chaId.startsWith(KV_BLOCK_PREFIX))
+            ){
+                delete this.blocks[chaId];
+            }
+            this.characterBlocks.delete(chaId);
+            this.remoteCharacterContent.delete(chaId);
+            this.removeChatBlocks(chaId);
+        }
     }
 
     /**

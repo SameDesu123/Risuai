@@ -685,6 +685,216 @@ describe('incremental set', () => {
     })
 })
 
+describe('deleting characters without listing them', () => {
+    function changedBlocks(before: Map<string, ParsedBlock>, after: Map<string, ParsedBlock>) {
+        return [...after.keys()].filter((name) => !before.has(name) || !equalBytes(before.get(name).raw, after.get(name).raw))
+    }
+
+    function expectNoTrace(file: ArrayBuffer | Uint8Array, chaId: string) {
+        const blocks = parseBlocks(file)
+        expect(blocks.some((b) => b.name === chaId)).toBe(false)
+        expect(blocks.some((b) => b.type === TYPE.CHAT && JSON.parse(b.content).chaId === chaId)).toBe(false)
+        expect(blocks.some((b) => b.name.startsWith(`chat-${chaId}-`))).toBe(false)
+        const root = JSON.parse(blocks.find((b) => b.type === TYPE.ROOT).content)
+        expect(root.__directory.some((n: string) => n === chaId || n.startsWith(`chat-${chaId}-`))).toBe(false)
+    }
+
+    it.each([['legacy', false], ['split', true]])('%s: a deleted character that is not dirty is removed', async (_, splitChats) => {
+        const db = makeDatabase()
+        const encoder = new RisuSaveEncoder({ splitChats, remote: false, cache: false })
+        await encoder.init(db)
+        await encoder.set(db, emptyToSave({ character: ['cha-b'], chat: [['cha-b', 'chat-b1']] }))
+        const before = blockMap(encoder.encode())
+
+        db.characters.splice(0, 1)
+        //only the (unchanged) current character is listed, as saveDb does
+        await encoder.set(db, emptyToSave({ character: ['cha-b'], chat: [['cha-b', 'chat-b1']] }))
+        const file = encoder.encode()
+        expectNoTrace(file, 'cha-a')
+        expectNoStaleBlocks(file, db)
+        //nothing else changed (database.bin of other characters is byte for byte the same)
+        expect(changedBlocks(before, blockMap(file)).filter((n) => n !== 'root')).toEqual([])
+        const decoded = await decode(file)
+        expect(decoded).toEqual(db)
+    })
+
+    it('removes a deleted character with no tracker entries at all, and keeps the reserved blocks', async () => {
+        const db = makeDatabase()
+        const encoder = await makeSplitEncoder(db)
+        db.characters.splice(1, 2)
+        await encoder.set(db, emptyToSave())
+        const file = encoder.encode()
+        expectNoTrace(file, 'cha-b')
+        expectNoTrace(file, 'group-1')
+        const names = parseBlocks(file).map((b) => b.name)
+        for (const name of ['root', 'preset', 'modules', 'loadouts', 'plugins', 'pluginStorage', 'config']) {
+            expect(names).toContain(name)
+        }
+        expect(await decode(file)).toEqual(db)
+    })
+
+    it('a character with a reserved chaId never drops the reserved block', async () => {
+        const db = makeDatabase()
+        db.characters.push(makeCharacter('config', []))
+        const encoder = await makeSplitEncoder(db)
+        db.characters.pop()
+        await encoder.set(db, emptyToSave())
+        expect(encoder.encode()).not.toBeNull()
+    })
+
+    it('a chaId that is not duplicated anymore is encoded again', async () => {
+        const db = makeDatabase()
+        db.characters.push(makeCharacter('cha-a', [makeChat('dup-1', 'dup', [])], { name: 'duplicate' }))
+        const encoder = await makeSplitEncoder(db)
+        //the shared legacy block holds the duplicate (encoded last)
+        expect(JSON.parse(blockMap(encoder.encode()).get('cha-a').content).name).toBe('duplicate')
+        db.characters.pop()
+        await encoder.set(db, emptyToSave())
+        const file = encoder.encode()
+        expect(blockMap(file).get('cha-a').type).toBe(TYPE.CHARACTER_WITHOUT_CHAT)
+        expectNoStaleBlocks(file, db)
+        expect(await decode(file)).toEqual(db)
+    })
+
+    it('a character re-added with the same chaId is encoded again', async () => {
+        const db = makeDatabase()
+        const encoder = await makeSplitEncoder(db)
+        const removed = db.characters.splice(0, 1)[0]
+        await encoder.set(db, emptyToSave())
+        db.characters.push(removed)
+        await encoder.set(db, emptyToSave())
+        const file = encoder.encode()
+        expectNoStaleBlocks(file, db)
+        expect(await decode(file)).toEqual(db)
+    })
+})
+
+describe('character-only dirty', () => {
+    it('split: re-encodes only the character block', async () => {
+        const db = makeDatabase()
+        const encoder = await makeSplitEncoder(db)
+        const before = blockMap(encoder.encode())
+        db.characters[0].trashTime = 1234
+        //not saved: proves the chats are not re-encoded
+        db.characters[0].chats[0].note = 'unsaved'
+        await encoder.set(db, emptyToSave({ characterOnly: ['cha-a'] }))
+        const file = encoder.encode()
+        const after = blockMap(file)
+        const changed = [...after.keys()].filter((name) => !equalBytes(before.get(name).raw, after.get(name).raw))
+        //the root block does not change either (it only lists the block names)
+        expect(changed).toEqual(['cha-a'])
+        const decoded = await decode(file)
+        expect(decoded.characters[0].trashTime).toBe(1234)
+        expect(decoded.characters[0].chats[0].note).toBe('note of First')
+        db.characters[0].chats[0].note = 'note of First'
+        expect(decoded).toEqual(db)
+    })
+
+    it('split: still encodes chats that have no block yet', async () => {
+        const db = makeDatabase()
+        const encoder = await makeSplitEncoder(db)
+        db.characters[1].chats.push(makeChat('chat-b3', 'new', makeMessages(2, 'b3')))
+        await encoder.set(db, emptyToSave({ characterOnly: ['cha-b'] }))
+        const file = encoder.encode()
+        expect(blockMap(file).has('chat-cha-b-chat-b3')).toBe(true)
+        expectNoStaleBlocks(file, db)
+        expect(await decode(file)).toEqual(db)
+    })
+
+    it('legacy: rewrites the whole character block', async () => {
+        const db = makeDatabase()
+        const encoder = new RisuSaveEncoder({ remote: false, cache: false })
+        await encoder.init(db)
+        db.characters[1].trashTime = 99
+        db.characters[1].chats[0].note = 'saved too'
+        await encoder.set(db, emptyToSave({ characterOnly: ['cha-b'] }))
+        expect(await decode(encoder.encode())).toEqual(db)
+    })
+
+    it('a chaId also listed in character follows the character rules (all chats without chat information)', async () => {
+        const db = makeDatabase()
+        const encoder = await makeSplitEncoder(db)
+        db.characters[0].chats[2].note = 'changed'
+        await encoder.set(db, emptyToSave({ character: ['cha-a'], characterOnly: ['cha-a'] }))
+        expect(await decode(encoder.encode())).toEqual(db)
+    })
+
+    it('ignores a chaId that is not in the database', async () => {
+        const db = makeDatabase()
+        const encoder = await makeSplitEncoder(db)
+        await encoder.set(db, emptyToSave({ characterOnly: ['nobody'] }))
+        expect(await decode(encoder.encode())).toEqual(db)
+    })
+})
+
+describe('chaId / chat block name collisions with deleted characters', () => {
+    const colliding = 'chat-cha-a-chat-a1'
+
+    it('deleting the colliding character lets the owner split again, without a trace of it', async () => {
+        const db = makeDatabase()
+        db.characters.push(makeCharacter(colliding, [makeChat('x-1', 'x', [])]))
+        const encoder = await makeSplitEncoder(db)
+        expect(blockMap(encoder.encode()).get('cha-a').type).toBe(TYPE.CHARACTER_WITH_CHAT)
+        db.characters.pop()
+        await encoder.set(db, emptyToSave({ character: ['cha-a'], chat: [['cha-a', 'chat-a2']] }))
+        const file = encoder.encode()
+        const block = blockMap(file).get(colliding)
+        //the name is now cha-a's chat block
+        expect(block.type).toBe(TYPE.CHAT)
+        expect(JSON.parse(block.content).chaId).toBe('cha-a')
+        expect(parseBlocks(file).some((b) => b.name === `chat-${colliding}-x-1`)).toBe(false)
+        expectNoStaleBlocks(file, db)
+        expect(await decode(file)).toEqual(db)
+    })
+
+    it('deleting the colliding character without listing anything keeps the owner valid', async () => {
+        const db = makeDatabase()
+        db.characters.push(makeCharacter(colliding, [makeChat('x-1', 'x', [])]))
+        const encoder = await makeSplitEncoder(db)
+        db.characters.pop()
+        await encoder.set(db, emptyToSave())
+        const file = encoder.encode()
+        expect(blockMap(file).has(colliding)).toBe(false)
+        expectNoStaleBlocks(file, db)
+        expect(await decode(file)).toEqual(db)
+    })
+
+    it('adding a colliding character releases the chat block, then deleting the owner removes the rest', async () => {
+        const db = makeDatabase()
+        const encoder = await makeSplitEncoder(db)
+        expect(blockMap(encoder.encode()).get(colliding).type).toBe(TYPE.CHAT)
+        db.characters.push(makeCharacter(colliding, [makeChat('x-1', 'x', [])]))
+        await encoder.set(db, emptyToSave())
+        let file = encoder.encode()
+        expect(blockMap(file).get(colliding).type).toBe(TYPE.CHARACTER_WITHOUT_CHAT)
+        expect(blockMap(file).get('cha-a').type).toBe(TYPE.CHARACTER_WITH_CHAT)
+        expect(await decode(file)).toEqual(db)
+
+        db.characters.splice(0, 1)
+        await encoder.set(db, emptyToSave())
+        file = encoder.encode()
+        expect(blockMap(file).has('cha-a')).toBe(false)
+        expect(blockMap(file).get(colliding).type).toBe(TYPE.CHARACTER_WITHOUT_CHAT)
+        expectNoStaleBlocks(file, db)
+        expect(await decode(file)).toEqual(db)
+    })
+
+    it('the owner is deleted in the same save that adds the colliding character', async () => {
+        const db = makeDatabase()
+        const encoder = await makeSplitEncoder(db)
+        db.characters.splice(0, 1)
+        db.characters.push(makeCharacter(colliding, [makeChat('x-1', 'x', [])]))
+        await encoder.set(db, emptyToSave())
+        const file = encoder.encode()
+        expect(blockMap(file).get(colliding).type).toBe(TYPE.CHARACTER_WITHOUT_CHAT)
+        expect(blockMap(file).has('cha-a')).toBe(false)
+        expect(parseBlocks(file).filter((b) => b.name.startsWith('chat-cha-a-')).map((b) => b.name)).toEqual([colliding])
+        expect(chatBlocksOf(file, 'cha-a')).toHaveLength(0)
+        expectNoStaleBlocks(file, db)
+        expect(await decode(file)).toEqual(db)
+    })
+})
+
 describe('decoder robustness', () => {
     it('inserts a placeholder for a missing chat block', async () => {
         const db = makeDatabase()
@@ -1106,6 +1316,42 @@ describe.each<[Platform]>([['tauri'], ['node']])('remote split saving (%s)', (pl
             expect(maxActive).toBeGreaterThan(1)
             expect(maxActive).toBeLessThanOrEqual(16)
         })
+    })
+
+    it('deleting a character that is not dirty removes its pointers and writes no file', async () => {
+        const db = makeDatabase()
+        const encoder = await makeRemoteSplitEncoder(db)
+        const filesBefore = remotePaths(platform)
+        db.characters.splice(0, 1)
+        const written = await writtenDuring(platform, () =>
+            encoder.set(db, emptyToSave({ character: ['cha-b'], chat: [['cha-b', 'chat-b1']] })))
+        //only the current chat (always dirty) is written; the other characters' files are not rewritten
+        expect(written).toEqual([chatFile('cha-b', 'chat-b1')])
+        const file = encoder.encode()
+        expect(parseBlocks(file).some((b) => b.name === 'cha-a' || b.name.startsWith('chat-cha-a-'))).toBe(false)
+        //remote files are left on disk (startup cleanup removes them later)
+        expect(remotePaths(platform).filter((p) => !p.endsWith('.bak'))).toEqual(filesBefore)
+        const decoded = await decode(file)
+        expect(decoded).toEqual(db)
+        expect(decoded.characters.some((c: any) => c.chaId === 'cha-a')).toBe(false)
+    })
+
+    it('a character-only change writes the character file and no chat file', async () => {
+        const db = makeDatabase()
+        const encoder = await makeRemoteSplitEncoder(db)
+        db.characters[0].trashTime = 4321
+        const written = await writtenDuring(platform, () =>
+            encoder.set(db, emptyToSave({ characterOnly: ['cha-a'] })))
+        expect(written).toEqual(['remotes/cha-a.local.bin'])
+        expect(JSON.parse(readRemote(platform, 'remotes/cha-a.local.bin')).trashTime).toBe(4321)
+        const decoded = await decode(encoder.encode())
+        expect(decoded.characters[0].trashTime).toBe(4321)
+        expect(decoded).toEqual(db)
+
+        //unchanged again: nothing is written
+        const written2 = await writtenDuring(platform, () =>
+            encoder.set(db, emptyToSave({ characterOnly: ['cha-a'] })))
+        expect(written2).toEqual([])
     })
 
     it('turning split chats off saves legacy remote characters that decode fully', async () => {

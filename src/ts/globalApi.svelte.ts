@@ -27,7 +27,7 @@ import { defaultJailbreak, defaultMainPrompt, oldJailbreak, oldMainPrompt } from
 import { loadRisuAccountData } from "./drive/accounter";
 import { decodeRisuSave, RisuSaveEncoder, type toSaveType } from "./storage/risuSave";
 import { saveKV } from "./storage/saveKV";
-import { registerSaveChangeTracking } from "./storage/saveChangeTracking.svelte";
+import { clearTakenDirty, mergePendingDirty, registerSaveChangeTracking } from "./storage/saveChangeTracking.svelte";
 import { AutoStorage } from "./storage/autoStorage";
 import { updateAnimationSpeed } from "./gui/animation";
 import { updateColorScheme, updateTextThemeAndCSS } from "./gui/colorscheme";
@@ -318,6 +318,7 @@ export async function saveDb() {
         character: [],
         chat: [],
         allChats: [],
+        characterOnly: [],
         botPreset: false,
         modules: false,
         loadouts: false,
@@ -345,26 +346,7 @@ export async function saveDb() {
 
     /** puts the dirty state of a save attempt that did not complete back into the tracker */
     const restoreDirty = (pending: toSaveType) => {
-        for (const chaId of pending.character) {
-            if (!changeTracker.character.includes(chaId)) {
-                changeTracker.character.push(chaId)
-            }
-        }
-        for (const [chaId, chatId] of pending.chat) {
-            if (!changeTracker.chat.some((v) => v[0] === chaId && v[1] === chatId)) {
-                changeTracker.chat.push([chaId, chatId])
-            }
-        }
-        for (const chaId of pending.allChats ?? []) {
-            if (!changeTracker.allChats.includes(chaId)) {
-                changeTracker.allChats.push(chaId)
-            }
-        }
-        changeTracker.botPreset ||= pending.botPreset
-        changeTracker.modules ||= pending.modules
-        changeTracker.loadouts ||= pending.loadouts
-        changeTracker.plugins ||= pending.plugins
-        changeTracker.pluginCustomStorage ||= pending.pluginCustomStorage
+        mergePendingDirty(changeTracker, pending)
     }
 
     let encoder = new RisuSaveEncoder({ splitChats: wantsSplitChats() })
@@ -462,11 +444,7 @@ export async function saveDb() {
 
             toSave = safeStructuredClone(changeTracker)
             // the current character and the current chat stay dirty, so they are always re-encoded
-            changeTracker.character = changeTracker.character.length === 0 ? [] : [changeTracker.character[0]]
-            changeTracker.chat = changeTracker.chat.length === 0 ? [] : [changeTracker.chat[0]]
-            changeTracker.allChats = []
-            changeTracker.botPreset = false
-            changeTracker.modules = false
+            clearTakenDirty(changeTracker)
             if (gotChannel) {
                 //Data is saved in other tab
                 restoreDirty(toSave)
