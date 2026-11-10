@@ -444,8 +444,10 @@ fn header_map_to_json(header_map: &HeaderMap) -> serde_json::Value {
     for (key, value) in header_map {
         map.insert(
             key.as_str().to_string(),
-            // to_str() fails on non-ASCII bytes, which servers do send
-            String::from_utf8_lossy(value.as_bytes()).into_owned(),
+            // Map each byte to the char with the same code (Latin-1), like
+            // browsers do. to_str() fails on non-ASCII bytes, and a lossy
+            // UTF-8 decode can give chars above U+00FF, which JS Headers rejects.
+            value.as_bytes().iter().map(|&b| b as char).collect::<String>(),
         );
     }
     json!(map)
