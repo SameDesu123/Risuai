@@ -33,19 +33,12 @@
     });
 </script>
 
-<label for={inputId} class="rs-setting-check flex items-center justify-between gap-4 py-2 cursor-pointer select-none text-textcolor {item.classes ?? 'mt-2'}">
+<!-- w-fit keeps the click target to the switch and its label instead of the whole row width. -->
+<label for={inputId} class="rs-setting-check flex w-fit max-w-full items-center gap-3 py-1 cursor-pointer select-none text-textcolor {item.classes ?? 'mt-2'}">
+    <SwitchInput id={inputId} bind:check={localValue} />
     <span class="min-w-0">
         {getLabel(item)}
         {#if item.showExperimental}<Help key="experimental"/>{/if}
         {#if item.helpKey}<Help key={item.helpKey as any} unrecommended={item.helpUnrecommended ?? false}/>{/if}
     </span>
-    <SwitchInput id={inputId} bind:check={localValue} />
 </label>
-
-<style>
-    /* :global because the sibling is another instance of this component, which Svelte would prune as unused. */
-    :global(.rs-setting-check + .rs-setting-check) {
-        margin-top: 0;
-        border-top: 1px solid var(--risu-setting-divider);
-    }
-</style>
