@@ -16,6 +16,9 @@
       logoIcon: "source" | "globe" | "mail" | "paper-airplane";
     };
 
+    // The hub returns this many cards per page
+    const realmPlaceholderCount = 60
+
     const relatedLinkIconClass =
       "h-40 w-40 md:h-44 md:w-44 origin-right -rotate-12 opacity-[0.12] transition-all duration-500 group-hover:scale-105 group-hover:opacity-[0.22]";
 
@@ -63,7 +66,16 @@
                   page: 0,
                   nsfw: false,
                   sort: 'recommended'
-              }) then charas}
+              })}
+              <!-- Placeholder cards sized like RisuHubIcon, so the list does not push the page down when it arrives -->
+              <div class="w-full flex gap-4 p-2 flex-wrap justify-center" aria-hidden="true">
+                  {#each { length: realmPlaceholderCount } as _}
+                      <div class="bg-darkbg rounded-lg p-4 flex lg:w-96 w-full animate-pulse">
+                          <div class="w-20 min-w-20 h-20 sm:h-28 sm:w-28 rounded-md bg-darkbutton"></div>
+                      </div>
+                  {/each}
+              </div>
+            {:then charas}
             {#if charas.length > 0}
               {@html hubAdditionalHTML}
               <div class="w-full flex gap-4 p-2 flex-wrap justify-center">

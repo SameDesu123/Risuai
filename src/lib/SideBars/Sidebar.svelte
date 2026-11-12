@@ -1,4 +1,9 @@
+<script module lang="ts">
+    // The first sidebar of the session is part of the initial screen, not something the user opened
+    let isFirstSidebarMount = true
+</script>
 <script lang="ts">
+    import { untrack } from "svelte";
     import {
     CharEmotion,
     DynamicGUI,
@@ -79,6 +84,16 @@
   let { openGrid = () => {}, hidden = false }: Props = $props();
 
   sideBarClosing.set(false)
+
+  // Animating the width on startup re-lays out the whole main screen on every frame while it is
+  // still rendering, so the open animation is skipped until the sidebar has been hidden once.
+  let skipOpenAnimation = $state(untrack(() => isFirstSidebarMount && !hidden && !$DynamicGUI))
+  isFirstSidebarMount = false
+  $effect(() => {
+    if(hidden || $sideBarClosing){
+      skipOpenAnimation = false
+    }
+  })
 
   $effect(() => {
     let newCharImages: sortType[] = [];
@@ -893,7 +908,7 @@
 {/if}
 <div
   class="setting-area h-full flex-col overflow-y-auto overflow-x-hidden bg-darkbg py-6 text-textcolor max-h-full"
-  class:risu-sidebar={!$sideBarClosing}
+  class:risu-sidebar={!$sideBarClosing && !skipOpenAnimation}
   class:w-96={$sideBarSize === 0}
   class:w-110={$sideBarSize === 1}
   class:w-124={$sideBarSize === 2}
