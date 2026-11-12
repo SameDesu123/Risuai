@@ -301,7 +301,7 @@
         <WelcomeBackground />
         <div class="vignette pointer-events-none absolute inset-0"></div>
         <div class="pointer-events-none absolute inset-0 bg-linear-to-t from-black/60 via-black/10 to-black/20 lg:bg-linear-to-r lg:from-black/40 lg:via-transparent lg:to-transparent"></div>
-        <img src={Airisu} alt="" class="airisu pointer-events-none absolute bottom-0 right-[6%] hidden h-[44%] max-h-[22rem] w-auto lg:block" draggable="false">
+        <img src={Airisu} alt="" fetchpriority="high" class="airisu pointer-events-none absolute bottom-0 right-[6%] hidden h-[44%] max-h-[22rem] w-auto lg:block" draggable="false">
 
     <header class="relative z-20 flex shrink-0 items-center p-[clamp(1rem,2.4vmin,1.75rem)]">
         <!-- scales with the shorter screen side so tablets don't get a phone-sized logo -->
@@ -313,7 +313,7 @@
     <main class="relative z-10 flex min-h-0 flex-1 items-end">
         <!-- on desktop the modal is centered on 25% of the screen width and keeps a fixed height that scales with the screen -->
         <div class="relative z-10 flex max-h-[78%] w-full flex-col rounded-t-[2rem] bg-darkbg shadow-2xl lg:absolute lg:left-1/4 lg:top-1/2 lg:h-[clamp(30rem,62%,40rem)] lg:max-h-[calc(100%-2.5rem)] lg:w-[clamp(26rem,32vw,36rem)] lg:-translate-x-1/2 lg:-translate-y-1/2 lg:rounded-[2rem]">
-            <img src={Airisu} alt="" class="airisu pointer-events-none absolute bottom-full right-4 -mb-3 h-44 w-auto lg:hidden" draggable="false">
+            <img src={Airisu} alt="" fetchpriority="high" class="airisu pointer-events-none absolute bottom-full right-4 -mb-3 h-44 w-auto lg:hidden" draggable="false">
             <div class="flex items-center justify-between px-7 pt-6">
                 <button class="-ml-2 flex h-9 w-9 items-center justify-center rounded-full text-textcolor2 transition-colors hover:bg-textcolor/10 hover:text-textcolor disabled:invisible" disabled={step === 0 || step === 10} onclick={goBack} aria-label={language.goback}>
                     <ArrowLeft size={20} />
