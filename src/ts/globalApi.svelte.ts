@@ -44,7 +44,7 @@ import type { AccountStorage } from "./storage/accountStorage";
 import { getColdStorageItem, makeColdData } from "./process/coldstorage.svelte";
 import { isTauri, isNodeServer } from "./platform";
 import { isLocalNetworkUrl } from "./network/localNetwork";
-import { decodeProxyJobWsChunk, formatProxyStreamErrorMessage, parseProxyJobWsEvent } from "./network/proxyJobWs";
+import { startProxyJobWsRelay } from "./network/proxyJobWs";
 import { getNodeServerProxyAuth } from "./storage/nodeStorage";
 
 export const forageStorage = new AutoStorage()
@@ -1520,15 +1520,46 @@ export class AppendableBuffer {
  * @returns {ReadableStream<Uint8Array>} - The new readable stream.
  */
 const pipeFetchLog = (fetchLogIndex: number, readableStream: ReadableStream<Uint8Array>) => {
-    
-    const splited = readableStream.tee();
-    
-    (async () => {
-        const text = await (new Response(splited[0])).text()
-        fetchLog[fetchLogIndex].response = text
-    })()
-    
-    return splited[1]
+    // Passes chunks through while recording them. Unlike tee(), a cancel from the consumer
+    // reaches the source, and a stream error is recorded instead of becoming an unhandled rejection.
+    const reader = readableStream.getReader()
+    const decoder = new TextDecoder()
+    let text = ''
+    let saved = false
+    const save = (suffix = '') => {
+        if (saved) {
+            return
+        }
+        saved = true
+        text += decoder.decode()
+        if (fetchLog[fetchLogIndex]) {
+            fetchLog[fetchLogIndex].response = text + suffix
+        }
+    }
+
+    return new ReadableStream<Uint8Array>({
+        async pull(controller) {
+            let result: ReadableStreamReadResult<Uint8Array>
+            try {
+                result = await reader.read()
+            } catch (error) {
+                save(`\n\n[Stream error] ${error instanceof Error ? error.message : String(error)}`)
+                controller.error(error)
+                return
+            }
+            if (result.done) {
+                save()
+                controller.close()
+                return
+            }
+            text += decoder.decode(result.value, { stream: true })
+            controller.enqueue(result.value)
+        },
+        cancel(reason) {
+            save('\n\n[Stream cancelled]')
+            return reader.cancel(reason)
+        }
+    })
 }
 
 async function fetchViaProxyJobWs(url: string, arg: {
@@ -1540,176 +1571,26 @@ async function fetchViaProxyJobWs(url: string, arg: {
     chatId?: string,
     fetchLogIndex?: number | null
 }): Promise<Response> {
-    const auth = await getNodeServerProxyAuth();
-
-    const requestSignal = arg.signal;
-    const baseUrl = getProxyStreamJobBaseUrl();
-
-    let jobId = '';
-    const createRes = await fetch(`${baseUrl}/proxy-stream-jobs`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'risu-auth': auth
-        },
-        body: JSON.stringify({
-            url,
-            method: arg.method,
-            headers: arg.headers ?? {},
-            bodyBase64: Buffer.from(arg.body).toString('base64'),
-            timeoutMs: arg.requestTimeoutMs,
-            heartbeatSec: defaultProxyJobHeartbeatSec
-        }),
-        signal: requestSignal
-    });
-
-    if (!createRes.ok) {
-        const errText = await createRes.text();
-        throw new Error(`Proxy stream job creation failed: ${createRes.status} ${errText}`);
-    }
-
-    const created = await createRes.json() as { jobId?: string };
-    if (!created.jobId) {
-        throw new Error('Proxy stream job creation returned no jobId');
-    }
-    jobId = created.jobId;
-
     const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${wsProtocol}//${location.host}/proxy-stream-jobs/${encodeURIComponent(jobId)}/ws?risu-auth=${encodeURIComponent(auth)}`;
-
-    let headersReady = false;
-    let status = 200;
-    let responseHeaders: HeadersInit = { 'content-type': 'text/event-stream' };
-    let settled = false;
-    let resolveHeaders: () => void = () => {};
-    const waitHeaders = new Promise<void>((resolve) => {
-        resolveHeaders = resolve;
+    const relay = await startProxyJobWsRelay({
+        baseUrl: getProxyStreamJobBaseUrl(),
+        wsOrigin: `${wsProtocol}//${location.host}`,
+        auth: await getNodeServerProxyAuth(),
+        url,
+        method: arg.method,
+        headers: arg.headers,
+        body: arg.body,
+        signal: arg.signal,
+        requestTimeoutMs: arg.requestTimeoutMs,
+        heartbeatSec: defaultProxyJobHeartbeatSec
+    }, {
+        fetch: (input, init) => fetch(input, init),
+        WebSocket
     });
-    let streamController: ReadableStreamDefaultController<Uint8Array> | null = null;
-    const encoder = new TextEncoder();
-
-    const ws = new WebSocket(wsUrl);
-    const readable = new ReadableStream<Uint8Array>({
-        start(controller) {
-            streamController = controller;
-        },
-        cancel() {
-            try {
-                ws.close();
-            } catch {
-                // no-op
-            }
-        }
-    });
-    const pipedReadable = arg.fetchLogIndex != null ? pipeFetchLog(arg.fetchLogIndex, readable) : readable;
-
-    const ensureHeadersReady = () => {
-        if (!headersReady) {
-            headersReady = true;
-            resolveHeaders();
-        }
-    };
-
-    const closeAndEnd = () => {
-        if (settled) {
-            return;
-        }
-        settled = true;
-        if (streamController) {
-            try {
-                streamController.close();
-            } catch {
-                // no-op
-            }
-        }
-        try {
-            ws.close();
-        } catch {
-            // no-op
-        }
-    };
-
-    ws.onmessage = (event) => {
-        const parsed = parseProxyJobWsEvent(typeof event.data === 'string' ? event.data : '');
-        if (!parsed || !streamController) {
-            return;
-        }
-        switch (parsed.type) {
-            case 'job_accepted':
-            case 'ping':
-                return;
-            case 'upstream_headers':
-                status = parsed.status;
-                responseHeaders = parsed.headers ?? {};
-                ensureHeadersReady();
-                return;
-            case 'chunk':
-                ensureHeadersReady();
-                streamController.enqueue(decodeProxyJobWsChunk(parsed.dataBase64));
-                return;
-            case 'error': {
-                status = parsed.status ?? 502;
-                responseHeaders = { 'content-type': 'text/plain; charset=utf-8' };
-                ensureHeadersReady();
-                const msg = formatProxyStreamErrorMessage(parsed.status, parsed.message);
-                streamController.enqueue(encoder.encode(msg));
-                closeAndEnd();
-                return;
-            }
-            case 'done':
-                ensureHeadersReady();
-                closeAndEnd();
-                return;
-        }
-    };
-
-    ws.onerror = () => {
-        if (!streamController) {
-            return;
-        }
-        status = 502;
-        responseHeaders = { 'content-type': 'text/plain; charset=utf-8' };
-        ensureHeadersReady();
-        streamController.enqueue(encoder.encode('Proxy WebSocket stream error'));
-        closeAndEnd();
-    };
-
-    ws.onclose = () => {
-        if (!headersReady) {
-            status = 502;
-            responseHeaders = { 'content-type': 'text/plain; charset=utf-8' };
-            ensureHeadersReady();
-        }
-        closeAndEnd();
-    };
-
-    const abortHandler = () => {
-        status = 499;
-        responseHeaders = { 'content-type': 'text/plain; charset=utf-8' };
-        ensureHeadersReady();
-        if (streamController && !settled) {
-            streamController.enqueue(encoder.encode('Aborted'));
-        }
-        void fetch(`${baseUrl}/proxy-stream-jobs/${encodeURIComponent(jobId)}`, {
-            method: 'DELETE',
-            headers: {
-                'risu-auth': auth
-            }
-        }).catch(() => {});
-        closeAndEnd();
-    };
-    if (requestSignal?.aborted) {
-        abortHandler();
-    }
-    else {
-        requestSignal?.addEventListener('abort', abortHandler, { once: true });
-    }
-
-    await waitHeaders;
-    requestSignal?.removeEventListener('abort', abortHandler);
-    return new Response(pipedReadable, {
-        status,
-        headers: new Headers(responseHeaders)
+    const body = arg.fetchLogIndex != null ? pipeFetchLog(arg.fetchLogIndex, relay.body) : relay.body;
+    return new Response(body, {
+        status: relay.status,
+        headers: new Headers(relay.headers)
     });
 }
 
@@ -1794,7 +1675,11 @@ export async function fetchNative(url: string, arg: {
             throughProxy = false
         }
     }
-    const timeoutSignal = buildTimeoutSignal(arg.signal, arg.requestTimeoutMs)
+    // Local Network Mode timeout means "no data for this long". The Node relay, /proxy2 and Tauri
+    // enforce it themselves, so no total timer here; it would cut long generations short.
+    const timeoutSignal = useLocalNetworkRoute
+        ? { signal: arg.signal, cleanup: () => { /* no-op */ } }
+        : buildTimeoutSignal(arg.signal, arg.requestTimeoutMs)
     const requestSignal = timeoutSignal.signal
     const shouldLogFetch = arg.logFetch ?? true
     let fetchLogIndex: number | null = null

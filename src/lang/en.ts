@@ -154,6 +154,7 @@ export const languageEnglish = {
             "- Applies only when Local Network Mode is enabled and the target URL is detected as local/private.\n" +
             "- Node self-host: streaming uses experimental Job+WebSocket relay first (fallback to `/proxy2` on failure); non-streaming uses `/proxy2`.\n" +
             "- Tauri: uses native/direct path.\n" +
+            "- Local Network Timeout counts how long no data arrives, not the total generation time.\n" +
             "- Public web mode: blocked for local/private direct calls by design.\n\n" +
             "**Constraints**\n" +
             "- Scope is OpenAI-compatible request paths only.\n" +

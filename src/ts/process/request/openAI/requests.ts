@@ -641,7 +641,8 @@ export async function requestOpenAI(arg:RequestDataArgumentExtended):Promise<req
 
         const transtream = getTranStream(arg)
 
-        da.body.pipeTo(transtream.writable)
+        // A source error still reaches transtream.readable; only the pipe promise is silenced.
+        da.body.pipeTo(transtream.writable).catch(() => {})
 
         return {
             type: 'streaming',
@@ -1297,7 +1298,7 @@ function wrapToolStream(
                         }
                         
                         const transtream = getTranStream(arg)                    
-                        resRec.body.pipeTo(transtream.writable)
+                        resRec.body.pipeTo(transtream.writable).catch(() => {})
                         
                         reader = transtream.readable.getReader()
                         

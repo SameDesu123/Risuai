@@ -94,11 +94,14 @@ const PROXY_STREAM_MAX_TIMEOUT_MS = 3600000;
 const PROXY_STREAM_DEFAULT_HEARTBEAT_SEC = 15;
 const PROXY_STREAM_HEARTBEAT_MIN_SEC = 5;
 const PROXY_STREAM_HEARTBEAT_MAX_SEC = 60;
-const PROXY_STREAM_GC_INTERVAL_MS = 60000;
-const PROXY_STREAM_DONE_GRACE_MS = 30000;
+const PROXY_STREAM_GC_INTERVAL_MS = 10000;
+// A finished job stays around this long so a client that lost its socket can reconnect and read the end.
+const PROXY_STREAM_DONE_GRACE_MS = 60000;
+// An unfinished job with no client for this long is aborted, e.g. when the tab was closed.
+const PROXY_STREAM_ORPHAN_GRACE_MS = 60000;
 const PROXY_STREAM_MAX_ACTIVE_JOBS = 64;
-const PROXY_STREAM_MAX_PENDING_EVENTS = 512;
-const PROXY_STREAM_MAX_PENDING_BYTES = 2 * 1024 * 1024;
+// Every event is kept for replay on reconnect; past this size the oldest ones are dropped.
+const PROXY_STREAM_MAX_REPLAY_BYTES = 16 * 1024 * 1024;
 const PROXY_STREAM_MAX_BODY_BASE64_BYTES = 8 * 1024 * 1024;
 const proxyStreamJobs = new Map();
 const authenticatedRouteLimiter = rateLimit({
@@ -209,20 +212,38 @@ function getRequestTimeoutMs(timeoutHeader) {
     return timeoutMs;
 }
 
-function createTimeoutController(timeoutMs) {
+// Idle timeout: aborts only when nothing happens for timeoutMs. Call bump() whenever data moves.
+function createIdleTimeoutController(timeoutMs) {
     if (!timeoutMs) {
         return {
             signal: undefined,
+            bump: () => {},
             cleanup: () => {}
         };
     }
 
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    let timer = setTimeout(() => controller.abort(), timeoutMs);
 
     return {
         signal: controller.signal,
+        bump: () => {
+            if (controller.signal.aborted) {
+                return;
+            }
+            clearTimeout(timer);
+            timer = setTimeout(() => controller.abort(), timeoutMs);
+        },
         cleanup: () => clearTimeout(timer)
+    };
+}
+
+function idleTimeoutPassThrough(timeout) {
+    return async function* (source) {
+        for await (const chunk of source) {
+            timeout.bump();
+            yield chunk;
+        }
     };
 }
 
@@ -369,6 +390,7 @@ function requestLocalTargetStream(targetUrl, arg) {
         }
 
         let settled = false;
+        let upstreamRes = null;
         let cleanupAbort = () => {};
         const finishReject = (error) => {
             if (settled) {
@@ -389,6 +411,7 @@ function requestLocalTargetStream(targetUrl, arg) {
             }
             settled = true;
             cleanupAbort();
+            upstreamRes = res;
             resolve({
                 status: res.statusCode || 502,
                 headers: normalizeProxyResponseHeaders(res.headers),
@@ -400,8 +423,11 @@ function requestLocalTargetStream(targetUrl, arg) {
             finishReject(error);
         });
 
+        // Socket idle timeout: it fires only when no bytes move for timeoutMs, before or after headers.
         req.setTimeout(arg.timeoutMs, () => {
-            req.destroy(new Error(`Upstream request timed out after ${arg.timeoutMs}ms`));
+            const timeoutError = new Error(`No data received from upstream for ${arg.timeoutMs}ms`);
+            req.destroy(timeoutError);
+            upstreamRes?.destroy(timeoutError);
         });
 
         if (arg.signal) {
@@ -435,37 +461,57 @@ function createProxyStreamJob(arg) {
         id: jobId,
         createdAt,
         updatedAt: createdAt,
+        lastUpstreamAt: createdAt,
         done: false,
         cleanupAt: 0,
         clients: new Set(),
-        pendingEvents: [],
-        pendingBytes: 0,
+        // Replay buffer: { seq, text, bytes }, kept whether or not a client is connected.
+        replayEvents: [],
+        replayBytes: 0,
+        nextSeq: 1,
+        firstSeq: 1,
+        orphanTimer: null,
         abortController: controller,
-        deadlineAt: createdAt + timeoutMs,
         heartbeatSec,
         timeoutMs // lgtm[js/request-forgery]
     };
     proxyStreamJobs.set(jobId, job);
+    startOrphanTimer(job);
     return job;
+}
+
+function startOrphanTimer(job) {
+    stopOrphanTimer(job);
+    if (job.done) {
+        return;
+    }
+    job.orphanTimer = setTimeout(() => {
+        job.orphanTimer = null;
+        if (!job.done && job.clients.size === 0 && proxyStreamJobs.get(job.id) === job) {
+            cleanupJob(job.id);
+        }
+    }, PROXY_STREAM_ORPHAN_GRACE_MS);
+    job.orphanTimer.unref?.();
+}
+
+function stopOrphanTimer(job) {
+    if (job.orphanTimer) {
+        clearTimeout(job.orphanTimer);
+        job.orphanTimer = null;
+    }
 }
 
 function pushJobEvent(job, event) {
     job.updatedAt = Date.now();
-    const text = JSON.stringify(event);
-    if (job.clients.size === 0) {
-        job.pendingEvents.push(text);
-        job.pendingBytes += Buffer.byteLength(text);
-        while (
-            job.pendingEvents.length > PROXY_STREAM_MAX_PENDING_EVENTS
-            || job.pendingBytes > PROXY_STREAM_MAX_PENDING_BYTES
-        ) {
-            const removed = job.pendingEvents.shift();
-            if (!removed) {
-                break;
-            }
-            job.pendingBytes -= Buffer.byteLength(removed);
-        }
-        return;
+    const seq = job.nextSeq++;
+    const text = JSON.stringify({ ...event, seq });
+    const bytes = Buffer.byteLength(text);
+    job.replayEvents.push({ seq, text, bytes });
+    job.replayBytes += bytes;
+    while (job.replayBytes > PROXY_STREAM_MAX_REPLAY_BYTES && job.replayEvents.length > 1) {
+        const removed = job.replayEvents.shift();
+        job.replayBytes -= removed.bytes;
+        job.firstSeq = removed.seq + 1;
     }
     for (const client of job.clients) {
         if (client.readyState === client.OPEN) {
@@ -480,6 +526,7 @@ function markJobDone(job) {
     }
     job.done = true;
     job.cleanupAt = Date.now() + PROXY_STREAM_DONE_GRACE_MS;
+    stopOrphanTimer(job);
 }
 
 function cleanupJob(jobId) {
@@ -487,6 +534,11 @@ function cleanupJob(jobId) {
     if (!job) {
         return;
     }
+    if (!job.done) {
+        abortProxyStreamJob(job, 'Proxy stream job cancelled');
+        markJobDone(job);
+    }
+    stopOrphanTimer(job);
     for (const client of job.clients) {
         try {
             client.close();
@@ -494,6 +546,8 @@ function cleanupJob(jobId) {
             // ignore
         }
     }
+    job.replayEvents = [];
+    job.replayBytes = 0;
     proxyStreamJobs.delete(jobId);
 }
 
@@ -532,6 +586,7 @@ async function runProxyStreamJob(job, arg) {
             filteredHeaders[key] = value;
         }
 
+        job.lastUpstreamAt = Date.now();
         pushJobEvent(job, {
             type: 'upstream_headers',
             status: upstreamResponse.status,
@@ -539,22 +594,48 @@ async function runProxyStreamJob(job, arg) {
         });
 
         if (upstreamResponse.body) {
-            for await (const value of upstreamResponse.body) {
-                if (job.abortController.signal.aborted) {
-                    break;
-                }
-                if (value && value.length > 0) {
-                    pushJobEvent(job, {
-                        type: 'chunk',
-                        dataBase64: Buffer.from(value).toString('base64')
-                    });
-                }
+            // The abort listener inside requestLocalTargetStream is gone once headers arrive,
+            // so tear the response down here; a silent upstream would otherwise never notice.
+            const upstreamBody = upstreamResponse.body;
+            const onAbort = () => {
+                const abortError = new Error(job.abortMessage || 'Proxy stream job aborted');
+                abortError.name = 'AbortError';
+                upstreamBody.destroy(abortError);
+            };
+            if (job.abortController.signal.aborted) {
+                onAbort();
+            } else {
+                job.abortController.signal.addEventListener('abort', onAbort, { once: true });
             }
+            try {
+                for await (const value of upstreamBody) {
+                    if (job.abortController.signal.aborted) {
+                        break;
+                    }
+                    if (value && value.length > 0) {
+                        job.lastUpstreamAt = Date.now();
+                        pushJobEvent(job, {
+                            type: 'chunk',
+                            dataBase64: Buffer.from(value).toString('base64')
+                        });
+                    }
+                }
+            } finally {
+                job.abortController.signal.removeEventListener('abort', onAbort);
+            }
+        }
+        if (job.abortController.signal.aborted) {
+            // Never report an interrupted stream as complete.
+            const abortError = new Error(job.abortMessage || 'Proxy stream job aborted');
+            abortError.name = 'AbortError';
+            throw abortError;
         }
         pushJobEvent(job, { type: 'done' });
         markJobDone(job);
     } catch (error) {
-        const message = error?.name === 'AbortError' ? 'Proxy stream job aborted' : `${error}`;
+        const message = error?.name === 'AbortError'
+            ? (job.abortMessage || 'Proxy stream job aborted')
+            : `${error}`;
         pushJobEvent(job, {
             type: 'error',
             status: 504,
@@ -562,6 +643,14 @@ async function runProxyStreamJob(job, arg) {
         });
         markJobDone(job);
     }
+}
+
+function abortProxyStreamJob(job, message) {
+    if (job.abortController.signal.aborted) {
+        return;
+    }
+    job.abortMessage = message;
+    job.abortController.abort();
 }
 
 async function forwardUpstreamResponse(originalResponse, res) {
@@ -797,7 +886,7 @@ const reverseProxyFunc = async (req, res, next) => {
         }
     }
     const timeoutMs = getRequestTimeoutMs(req.headers['risu-timeout-ms']);
-    const timeout = createTimeoutController(timeoutMs);
+    const timeout = createIdleTimeoutController(timeoutMs);
     let originalResponse;
     try {
         // make request to original server
@@ -824,8 +913,9 @@ const reverseProxyFunc = async (req, res, next) => {
         res.header(headObj);
         // send response status to client
         res.status(originalResponse.status);
+        timeout.bump();
         // send response body to client
-        await pipeline(originalResponse.body, res);
+        await pipeline(originalResponse.body, idleTimeoutPassThrough(timeout), res);
 
     }
     catch (err) {
@@ -833,7 +923,7 @@ const reverseProxyFunc = async (req, res, next) => {
             if (!res.headersSent) {
                 res.status(504).send({
                     error: timeoutMs
-                        ? `Proxy request timed out after ${timeoutMs}ms`
+                        ? `Proxy request timed out: no data for ${timeoutMs}ms`
                         : 'Proxy request aborted'
                 });
             } else {
@@ -866,7 +956,7 @@ const reverseProxyFunc_get = async (req, res, next) => {
         header['x-forwarded-for'] = req.ip
     }
     const timeoutMs = getRequestTimeoutMs(req.headers['risu-timeout-ms']);
-    const timeout = createTimeoutController(timeoutMs);
+    const timeout = createIdleTimeoutController(timeoutMs);
     let originalResponse;
     try {
         // make request to original server
@@ -892,15 +982,16 @@ const reverseProxyFunc_get = async (req, res, next) => {
         res.header(headObj);
         // send response status to client
         res.status(originalResponse.status);
+        timeout.bump();
         // send response body to client
-        await pipeline(originalResponse.body, res);
+        await pipeline(originalResponse.body, idleTimeoutPassThrough(timeout), res);
     }
     catch (err) {
         if (err?.name === 'AbortError') {
             if (!res.headersSent) {
                 res.status(504).send({
                     error: timeoutMs
-                        ? `Proxy request timed out after ${timeoutMs}ms`
+                        ? `Proxy request timed out: no data for ${timeoutMs}ms`
                         : 'Proxy request aborted'
                 });
             } else {
@@ -1143,8 +1234,6 @@ app.delete('/proxy-stream-jobs/:jobId', authenticatedRouteLimiter, async (req, r
         res.send({ success: true });
         return;
     }
-    job.abortController.abort();
-    markJobDone(job);
     cleanupJob(job.id);
     res.send({ success: true });
 });
@@ -1529,20 +1618,41 @@ function setupProxyStreamWebSocket(server) {
         }
     });
 
-    wsServer.on('connection', (ws, _req, jobId) => {
+    wsServer.on('connection', (ws, req, jobId) => {
         const job = proxyStreamJobs.get(jobId);
         if (!job) {
             ws.close();
             return;
         }
 
-        job.clients.add(ws);
-        ws.send(JSON.stringify({ type: 'job_accepted', jobId }));
-        for (const event of job.pendingEvents) {
-            ws.send(event);
+        // `after` is the last seq the client already has. Old clients send none and get everything.
+        let after = 0;
+        try {
+            const rawAfter = new URL(req.url, 'http://localhost').searchParams.get('after');
+            const parsedAfter = rawAfter === null ? 0 : Number.parseInt(rawAfter, 10);
+            after = Number.isFinite(parsedAfter) && parsedAfter > 0 ? parsedAfter : 0;
+        } catch {
+            after = 0;
         }
-        job.pendingEvents = [];
-        job.pendingBytes = 0;
+        if (after + 1 < job.firstSeq) {
+            ws.send(JSON.stringify({
+                type: 'error',
+                code: 'replay_gap',
+                status: 502,
+                message: 'Proxy stream relay lost part of the response while disconnected'
+            }));
+            ws.close();
+            return;
+        }
+
+        stopOrphanTimer(job);
+        job.clients.add(ws);
+        ws.send(JSON.stringify({ type: 'job_accepted', jobId, resumable: true }));
+        for (const event of job.replayEvents) {
+            if (event.seq > after) {
+                ws.send(event.text);
+            }
+        }
 
         const pingTimer = setInterval(() => {
             if (ws.readyState !== ws.OPEN) {
@@ -1558,8 +1668,9 @@ function setupProxyStreamWebSocket(server) {
                 return;
             }
             currentJob.clients.delete(ws);
-            if (currentJob.done && currentJob.clients.size === 0) {
-                cleanupJob(jobId);
+            // A finished job is kept until cleanupAt so a client that missed the end can still reconnect.
+            if (!currentJob.done && currentJob.clients.size === 0) {
+                startOrphanTimer(currentJob);
             }
         });
 
@@ -1605,10 +1716,11 @@ async function startServer() {
     setInterval(() => {
         const now = Date.now();
         for (const [jobId, job] of proxyStreamJobs.entries()) {
-            if (!job.done && now >= job.deadlineAt && !job.abortController.signal.aborted) {
-                job.abortController.abort();
+            if (!job.done && now - job.lastUpstreamAt >= job.timeoutMs) {
+                abortProxyStreamJob(job, `No data received from upstream for ${job.timeoutMs}ms`);
             }
-            if (job.done && job.clients.size === 0 && job.cleanupAt > 0 && now >= job.cleanupAt) {
+            const doneExpired = job.done && job.cleanupAt > 0 && now >= job.cleanupAt;
+            if (doneExpired && (job.clients.size === 0 || now >= job.cleanupAt + PROXY_STREAM_DONE_GRACE_MS)) {
                 cleanupJob(jobId);
                 continue;
             }

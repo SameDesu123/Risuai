@@ -336,12 +336,11 @@ async fn streamed_fetch_inner(
         return streamed_fetch_failure("Invalid method");
     }
 
-    // Local Network Timeout is a total limit, as on the Node server. Otherwise only
-    // give up when no data arrives for a while, so long generations are not cut off.
-    let (builder, idle_timeout) = match timeout_secs {
-        Some(secs) => (builder.timeout(Duration::from_secs(secs)), None),
-        None => (builder, Some(Duration::from_secs(STREAMED_FETCH_IDLE_TIMEOUT_SECS))),
-    };
+    // Only give up when no data arrives for a while, so long generations are not cut off.
+    // Local Network Timeout, when given, replaces the default wait, as on the Node server.
+    let idle_timeout = Some(Duration::from_secs(
+        timeout_secs.unwrap_or(STREAMED_FETCH_IDLE_TIMEOUT_SECS),
+    ));
 
     let response = match with_idle_timeout(idle_timeout, builder.send()).await {
         Ok(response) => response,
