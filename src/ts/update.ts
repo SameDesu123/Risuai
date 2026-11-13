@@ -1,9 +1,11 @@
-import { alertConfirm, alertSelect, alertWait } from "./alert";
-import { language } from "../lang";
+import { alertConfirm, alertSelect } from "./alert";
+import { applyPreloadLanguage, language } from "../lang";
 import {
     check,
+    type Update,
 } from '@tauri-apps/plugin-updater'
 import { relaunch } from '@tauri-apps/plugin-process'
+import { LoadingStatusState } from "./stores.svelte";
 
 const UPDATE_REMINDER_KEY = 'risu_update_reminder'
 
@@ -43,6 +45,44 @@ function isUpdateReminderActive(): boolean {
     return false
 }
 
+/**
+ * Downloads and installs the update while reporting progress to the loading screen.
+ * The caller clears the progress state afterwards.
+ */
+async function installUpdateWithProgress(update: Update){
+    LoadingStatusState.update = {
+        version: update.version,
+        phase: 'downloading',
+        downloaded: 0,
+        total: null,
+    }
+    await update.download((event) => {
+        const progress = LoadingStatusState.update
+        if (!progress) {
+            return
+        }
+        switch (event.event) {
+            case 'Started':
+                // A missing or zero length means the size is unknown
+                progress.total = event.data.contentLength || null
+                progress.downloaded = 0
+                break
+            case 'Progress':
+                progress.downloaded += event.data.chunkLength
+                break
+            case 'Finished':
+                progress.phase = 'installing'
+                break
+        }
+    })
+    LoadingStatusState.update.phase = 'installing'
+    await update.install()
+}
+
+/**
+ * Checks for a desktop update at launch. Runs before the save file is loaded,
+ * so it must not depend on the database. Never throws: failures are logged.
+ */
 export async function checkRisuUpdate(){
     try {
         const checked = await check()     
@@ -51,11 +91,12 @@ export async function checkRisuUpdate(){
                 return
             }
 
+            // The save (and its language setting) is not loaded yet
+            applyPreloadLanguage()
             const conf = await alertConfirm(language.newVersion)
             if(conf){
                 clearUpdateReminder()
-                alertWait(`Updating to ${checked.version}...`)
-                await checked.downloadAndInstall()
+                await installUpdateWithProgress(checked)
                 await relaunch()
             } else {
                 const options = [
@@ -89,6 +130,8 @@ export async function checkRisuUpdate(){
         }
     } catch (error) {
         console.error(error)
+    } finally {
+        LoadingStatusState.update = null
     }
 }
 

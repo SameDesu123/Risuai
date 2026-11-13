@@ -58,8 +58,11 @@ export async function loadData() {
     if (!loaded) {
         try {
             if (isTauri) {
-                LoadingStatusState.text = "Checking Files..."
                 appWindow.maximize()
+                // Runs before the save is read, so the save is never touched by a version about to be replaced
+                LoadingStatusState.text = "Checking Update..."
+                await checkRisuUpdate()
+                LoadingStatusState.text = "Checking Files..."
                 if (!await exists('', { baseDir: BaseDirectory.AppData })) {
                     await mkdir('', { baseDir: BaseDirectory.AppData })
                 }
@@ -112,8 +115,6 @@ export async function loadData() {
                         throw "Your save file is corrupted"
                     }
                 }
-                LoadingStatusState.text = "Checking Update..."
-                await checkRisuUpdate()
                 await changeFullscreen()
 
             }

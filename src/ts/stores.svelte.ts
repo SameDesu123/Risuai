@@ -106,8 +106,16 @@ export const DBState = $state({
     db: {} as any as Database
 });
 
+export type LoadingUpdateProgress = {
+    version: string,
+    phase: 'downloading' | 'installing',
+    downloaded: number,
+    total: number | null,
+}
+
 export const LoadingStatusState = $state({
     text: '',
+    update: null as LoadingUpdateProgress | null,
 })
 
 export const QuickSettings = $state({

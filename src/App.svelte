@@ -39,6 +39,13 @@
     import CustomSidebarConfig from './lib/Others/CustomSidebarConfig.svelte';
     import { RISU_APP_INTERNAL_DRAG_TYPE, RISU_SIDEBAR_DRAG_TYPE } from './ts/dragTypes';
 
+    function formatBytes(bytes: number) {
+        if (bytes < 1024 * 1024) {
+            return `${(bytes / 1024).toFixed(0)} KB`
+        }
+        return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+    }
+
 
   
     let didFirstSetup: boolean  = $derived(DBState.db?.didFirstSetup)
@@ -217,6 +224,33 @@
             </div>
 
             <span class="text-sm mt-2 text-textcolor2">{LoadingStatusState.text}</span>
+            {#if LoadingStatusState.update}
+                {@const update = LoadingStatusState.update}
+                {@const fraction = update.total ? Math.min(update.downloaded / update.total, 1) : null}
+                <div class="mt-6 w-72 max-w-[90vw] flex flex-col gap-2 text-sm">
+                    <span class="text-textcolor">
+                        {(update.phase === 'installing' ? language.updateInstalling : language.updateDownloading).replace('{version}', update.version)}
+                    </span>
+                    <div class="w-full h-2 bg-darkbg border border-darkborderc rounded-md overflow-hidden"
+                        role="progressbar"
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                        aria-valuenow={fraction === null ? undefined : Math.round(fraction * 100)}>
+                        {#if fraction === null && update.phase === 'downloading'}
+                            <div class="h-full w-full bg-textcolor/40 animate-pulse"></div>
+                        {:else}
+                            <div class="h-full bg-textcolor/80 transition-[width]" style:width={(update.phase === 'installing' ? 100 : fraction * 100) + '%'}></div>
+                        {/if}
+                    </div>
+                    <span class="text-textcolor2 text-xs self-end">
+                        {#if update.total}
+                            {formatBytes(update.downloaded)} / {formatBytes(update.total)} ({Math.round(fraction * 100)}%)
+                        {:else}
+                            {formatBytes(update.downloaded)} · {language.updateSizeUnknown}
+                        {/if}
+                    </span>
+                </div>
+            {/if}
         </div>
     {:else if $CustomGUISettingMenuStore}
         <CustomGUISettingMenu />
