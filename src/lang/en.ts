@@ -1763,7 +1763,7 @@ export const languageEnglish = {
     applyAdditionalParamsToAll: "Apply Additional Parameters to All Models",
     localToggles: "Local Toggles",
     cloudflaredTunnel: {
-        title: "Cloudflare Tunnel",
+        title: "Remote Access",
         desc: "Open this Risuai server to the internet with a Cloudflare Quick Tunnel. It only opens when you press the button.",
         nodeOnly: "This feature is only available on the Risuai Node server (self-hosted).",
         unsupported: (platform: string) => `cloudflared is not available for this platform (${platform}).`,

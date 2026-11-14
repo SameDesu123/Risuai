@@ -1574,7 +1574,7 @@ export const languageKorean = {
     nanoGPTManualModelSelect: "수동 모델 선택",
     localToggles: "로컬 토글",
     cloudflaredTunnel: {
-        title: "Cloudflare 터널",
+        title: "원격 접속",
         desc: "Cloudflare Quick Tunnel로 이 Risuai 서버를 외부에 엽니다. 버튼을 눌렀을 때만 열립니다.",
         nodeOnly: "이 기능은 Risuai Node 서버(셀프 호스팅)에서만 사용할 수 있습니다.",
         unsupported: (platform: string) => `이 플랫폼(${platform})에서는 cloudflared를 사용할 수 없습니다.`,
