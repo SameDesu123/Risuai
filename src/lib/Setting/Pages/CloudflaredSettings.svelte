@@ -274,21 +274,19 @@
 
         <!-- QR + URL -->
         {#if tunnelState === 'open'}
-            <div class="px-4 py-3 border-t border-darkborderc flex flex-col sm:flex-row gap-4 sm:items-center">
+            <div class="px-4 py-4 border-t border-darkborderc flex flex-col items-center gap-3">
                 {#if qrDataUrl}
-                    <img src={qrDataUrl} alt="QR" class="w-36 h-36 shrink-0 rounded-lg bg-white self-center sm:self-auto" />
+                    <img src={qrDataUrl} alt="QR" class="w-48 h-48 rounded-lg bg-white" />
                 {/if}
-                <div class="flex-1 min-w-0 flex flex-col gap-2">
-                    <span class="text-xs text-textcolor2">{t.scanHint}</span>
-                    <div class="flex items-stretch rounded-md border border-darkborderc bg-darkbg overflow-hidden">
-                        <span class="flex-1 min-w-0 px-4 py-3 text-lg sm:text-xl font-semibold font-mono [overflow-wrap:anywhere] leading-snug select-all">{#each status.url.split(/(?=\.)/) as part}<wbr />{part}{/each}</span>
-                        <button class="px-3 border-l border-darkborderc text-textcolor2 hover:text-textcolor hover:bg-textcolor/5" title={copied ? t.copied : t.copy} onclick={copyUrl}>
-                            {#if copied}<CheckIcon size={18} />{:else}<CopyIcon size={18} />{/if}
-                        </button>
-                        <a class="px-3 border-l border-darkborderc text-textcolor2 hover:text-textcolor hover:bg-textcolor/5 flex items-center" title={t.openLink} href={status.url} target="_blank" rel="noopener noreferrer">
-                            <ExternalLinkIcon size={18} />
-                        </a>
-                    </div>
+                <span class="text-xs text-textcolor2 text-center">{t.scanHint}</span>
+                <div class="w-full flex items-stretch rounded-md border border-darkborderc bg-darkbg overflow-hidden">
+                    <span class="flex-1 min-w-0 px-4 py-3 text-lg sm:text-xl font-semibold font-mono text-center [overflow-wrap:anywhere] leading-snug select-all">{#each status.url.split(/(?=\.)/) as part}<wbr />{part}{/each}</span>
+                    <button class="px-3 border-l border-darkborderc text-textcolor2 hover:text-textcolor hover:bg-textcolor/5" title={copied ? t.copied : t.copy} onclick={copyUrl}>
+                        {#if copied}<CheckIcon size={18} />{:else}<CopyIcon size={18} />{/if}
+                    </button>
+                    <a class="px-3 border-l border-darkborderc text-textcolor2 hover:text-textcolor hover:bg-textcolor/5 flex items-center" title={t.openLink} href={status.url} target="_blank" rel="noopener noreferrer">
+                        <ExternalLinkIcon size={18} />
+                    </a>
                 </div>
             </div>
         {/if}
