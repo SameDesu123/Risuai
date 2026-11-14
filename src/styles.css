@@ -140,6 +140,12 @@
   --radius-2xl: calc(1rem * var(--risu-radius-scale, 1));
   --radius-3xl: calc(1.5rem * var(--risu-radius-scale, 1));
   --radius-4xl: calc(2rem * var(--risu-radius-scale, 1));
+
+  /* Role tokens: change a role here instead of editing every component. */
+  /* Buttons and text fields */
+  --radius-control: calc(0.375rem * var(--risu-radius-scale, 1));
+  /* Checkboxes never get rounder than today, so they stay distinct from radio buttons */
+  --radius-check: calc(0.375rem * min(var(--risu-radius-scale, 1), 1));
 }
 
 /*
@@ -391,7 +397,7 @@ body {
 .x-risu-risu-file {
   padding: 1rem;
   border: 1px solid var(--risu-theme-selected);
-  border-radius: 0.5rem;
+  border-radius: var(--radius-lg);
   color: var(--FontColorStandard);
   min-width: 0;
   max-width: 20rem;
@@ -401,7 +407,7 @@ body {
 }
 
 .x-risu-button-default {
-  @apply border text-textcolor rounded-md shadow-xs focus:outline-hidden focus:ring-2 transition-colors duration-200 border-darkborderc px-4 py-2 bg-darkbutton hover:bg-borderc focus:ring-borderc;
+  @apply border text-textcolor rounded-control shadow-xs focus:outline-hidden focus:ring-2 transition-colors duration-200 border-darkborderc px-4 py-2 bg-darkbutton hover:bg-borderc focus:ring-borderc;
 }
 
 .loadmove {
@@ -469,7 +475,7 @@ body {
 
 .prose :where(code):not(:where([class~="not-prose"], [class~="not-prose"] *)):not(pre code) {
   background-color: var(--tw-prose-pre-bg);
-  border-radius: 0.25rem;
+  border-radius: var(--radius-sm);
   color: var(--tw-prose-pre-code);
   padding: 0.125rem 0.25rem;
 }
@@ -551,7 +557,7 @@ body {
   width: calc(100% - 1rem);
   max-width: 20rem;
   height: auto;
-  border-radius: 0.5rem;
+  border-radius: var(--radius-lg);
   box-shadow: 0 2px 4px rgba(137, 137, 137, 0.1);
 }
 
