@@ -101,7 +101,7 @@
         display: inline-flex;
         width: fit-content;
         align-items: center;
-        border-radius: 0.5rem;
+        border-radius: var(--radius-lg);
         background-color: var(--risu-theme-darkbg);
         border: 1px solid var(--risu-theme-darkborderc);
         padding: 4px;
