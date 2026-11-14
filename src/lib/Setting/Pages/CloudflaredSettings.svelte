@@ -5,6 +5,7 @@
     import { alertError } from "src/ts/alert";
     import { getNodeServerProxyAuth } from "src/ts/storage/nodeStorage";
     import Button from "src/lib/UI/GUI/Button.svelte";
+    import { CloudIcon, CopyIcon, CheckIcon, ExternalLinkIcon } from "@lucide/svelte";
 
     type CloudflaredStatus = {
         supported: boolean
@@ -30,6 +31,10 @@
     let copied = $state(false)
     let qrDataUrl = $state('')
     let pollTimer: ReturnType<typeof setInterval> | null = null
+
+    const tunnelState = $derived<'closed' | 'opening' | 'open'>(
+        status?.running ? (status.url ? 'open' : 'opening') : 'closed'
+    )
 
     const hasUpdate = $derived(
         !!status?.installedVersion && !!latestVersion && status.installedVersion !== latestVersion
@@ -156,69 +161,101 @@
 {:else if !status.supported}
     <div class="text-textcolor2 text-sm">{t.unsupported(status.platform)}</div>
 {:else}
-    <!-- Binary: one small line -->
-    <div class="flex items-center gap-2 flex-wrap text-sm text-textcolor2 border-b border-darkborderc pb-3 mb-6">
-        {#if status.phase === 'downloading'}
-            <span>{t.downloading}</span>
-        {:else if !status.installed}
-            <span>{t.notInstalled}</span>
-            <Button size="sm" onclick={install} disabled={busy}>{t.download}</Button>
-        {:else}
-            <span>
-                cloudflared {status.installedVersion || ''}
-                {#if hasUpdate}
-                    · <span class="text-textcolor">{t.updateAvailable(latestVersion)}</span>
-                {:else if latestVersion}
-                    · {t.latest}
-                {/if}
-            </span>
-            {#if hasUpdate}
-                <Button size="sm" onclick={install} disabled={busy || status.running}>{t.update}</Button>
-            {/if}
-        {/if}
-    </div>
-
-    <!-- Tunnel -->
-    <div class="flex flex-col items-center gap-4 py-4">
-        {#if status.running}
-            {#if status.url}
-                {#if qrDataUrl}
-                    <img src={qrDataUrl} alt="QR" class="w-48 h-48 rounded-md bg-white" />
-                {/if}
-                <div class="flex items-center gap-2 max-w-full">
-                    <a class="underline break-all text-center" href={status.url} target="_blank" rel="noopener noreferrer">{status.url}</a>
-                    <Button size="sm" styled="outlined" onclick={copyUrl}>{copied ? t.copied : t.copy}</Button>
-                </div>
+    <div class="w-full max-w-2xl rounded-md border border-darkborderc overflow-hidden">
+        <!-- Binary: slim strip -->
+        <div class="flex items-center gap-2 px-4 py-2 bg-darkbg text-xs text-textcolor2 border-b border-darkborderc min-h-10">
+            {#if status.phase === 'downloading'}
+                <span>{t.downloading}</span>
+            {:else if !status.installed}
+                <span>{t.notInstalled}</span>
+                <button class="ml-auto shrink-0 text-textcolor hover:underline disabled:opacity-50" onclick={install} disabled={busy}>{t.download}</button>
             {:else}
-                <span class="text-textcolor2">{t.opening}</span>
+                <span class="min-w-0 truncate whitespace-nowrap">
+                    cloudflared {status.installedVersion}{#if hasUpdate}<span class="text-textcolor"> · {t.updateAvailable(latestVersion)}</span>{:else if latestVersion} · {t.latest}{/if}
+                </span>
+                {#if hasUpdate}
+                    <button class="ml-auto shrink-0 text-textcolor hover:underline disabled:opacity-50" onclick={install} disabled={busy || status.running}>{t.update}</button>
+                {/if}
             {/if}
-            <Button styled="danger" onclick={closeTunnel} disabled={busy || status.phase === 'stopping'}>{t.close}</Button>
-        {:else if showTerms}
-            <div class="w-full max-w-lg border border-darkborderc rounded-md p-4 flex flex-col gap-3">
-                <span class="font-bold">{t.termsTitle}</span>
-                <ul class="list-disc pl-5 text-sm text-textcolor2 flex flex-col gap-1">
+        </div>
+
+        <!-- Tunnel row -->
+        <div class="flex items-center gap-3 px-4 py-3">
+            <div class="relative w-9 h-9 shrink-0 rounded-full bg-textcolor/5 flex items-center justify-center">
+                <CloudIcon size={18} />
+                <span class="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-bgcolor"
+                    class:bg-green-500={tunnelState === 'open'}
+                    class:bg-yellow-500={tunnelState === 'opening'}
+                    class:bg-gray-500={tunnelState === 'closed'}
+                ></span>
+            </div>
+            <div class="flex-1 min-w-0 flex flex-col">
+                <span class="text-sm font-semibold">
+                    {tunnelState === 'open' ? t.statusOpen : tunnelState === 'opening' ? t.statusOpening : t.statusClosed}
+                </span>
+                <span class="text-xs text-textcolor2 truncate">
+                    {#if tunnelState === 'open'}
+                        {status.url.replace('https://', '')}
+                    {:else if !status.installed}
+                        {t.needBinary}
+                    {:else}
+                        {t.closedHint}
+                    {/if}
+                </span>
+            </div>
+            {#if status.running}
+                <Button size="sm" styled="danger" onclick={closeTunnel} disabled={busy || status.phase === 'stopping'}>{t.close}</Button>
+            {:else if !showTerms}
+                <Button size="sm" onclick={openTunnel} disabled={busy || !status.installed || status.phase !== 'idle'}>{t.open}</Button>
+            {/if}
+        </div>
+
+        <!-- Terms (first open only) -->
+        {#if showTerms && !status.running}
+            <div class="px-4 py-3 border-t border-darkborderc flex flex-col gap-2 bg-darkbg/50">
+                <span class="text-sm font-semibold">{t.termsTitle}</span>
+                <ul class="list-disc pl-4 text-xs text-textcolor2 flex flex-col gap-0.5">
                     {#each t.termsLimits as item}
                         <li>{item}</li>
                     {/each}
                 </ul>
-                <a class="underline text-sm text-textcolor2 hover:text-textcolor" href={TERMS_URL} target="_blank" rel="noopener noreferrer">{t.termsLink}</a>
-                <div class="flex gap-2 justify-end">
-                    <Button size="sm" styled="outlined" onclick={() => { showTerms = false }}>{t.cancel}</Button>
-                    <Button size="sm" onclick={agreeAndOpen} disabled={busy}>{t.agreeAndOpen}</Button>
+                <div class="flex items-center gap-2 mt-1">
+                    <a class="text-xs underline text-textcolor2 hover:text-textcolor" href={TERMS_URL} target="_blank" rel="noopener noreferrer">{t.termsLink}</a>
+                    <div class="ml-auto flex gap-2">
+                        <Button size="sm" styled="outlined" onclick={() => { showTerms = false }}>{t.cancel}</Button>
+                        <Button size="sm" onclick={agreeAndOpen} disabled={busy}>{t.agreeAndOpen}</Button>
+                    </div>
                 </div>
             </div>
-        {:else}
-            <Button size="lg" onclick={openTunnel} disabled={busy || !status.installed || status.phase !== 'idle'}>{t.open}</Button>
-            {#if !status.installed}
-                <span class="text-xs text-textcolor2">{t.needBinary}</span>
-            {/if}
         {/if}
+
+        <!-- QR + URL -->
+        {#if tunnelState === 'open'}
+            <div class="px-4 py-3 border-t border-darkborderc flex flex-col sm:flex-row gap-4 sm:items-center">
+                {#if qrDataUrl}
+                    <img src={qrDataUrl} alt="QR" class="w-32 h-32 shrink-0 rounded-md bg-white p-1 self-center sm:self-auto" />
+                {/if}
+                <div class="flex-1 min-w-0 flex flex-col gap-2">
+                    <span class="text-xs text-textcolor2">{t.scanHint}</span>
+                    <div class="flex items-stretch rounded-md border border-darkborderc bg-darkbg overflow-hidden">
+                        <span class="flex-1 min-w-0 px-3 py-2 text-sm font-mono truncate select-all">{status.url}</span>
+                        <button class="px-3 border-l border-darkborderc text-textcolor2 hover:text-textcolor hover:bg-textcolor/5" title={copied ? t.copied : t.copy} onclick={copyUrl}>
+                            {#if copied}<CheckIcon size={16} />{:else}<CopyIcon size={16} />{/if}
+                        </button>
+                        <a class="px-3 border-l border-darkborderc text-textcolor2 hover:text-textcolor hover:bg-textcolor/5 flex items-center" title={t.openLink} href={status.url} target="_blank" rel="noopener noreferrer">
+                            <ExternalLinkIcon size={16} />
+                        </a>
+                    </div>
+                </div>
+            </div>
+        {/if}
+
         {#if status.error}
-            <span class="text-sm text-draculared">{status.error}</span>
+            <div class="px-4 py-2 border-t border-darkborderc text-xs text-draculared">{status.error}</div>
         {/if}
     </div>
 
-    <span class="text-xs text-textcolor2 text-center mt-auto pt-6">
-        {t.termsFooter}<a class="underline hover:text-textcolor" href={TERMS_URL} target="_blank" rel="noopener noreferrer">{t.termsLink}</a>
+    <span class="text-xs text-textcolor2 mt-2">
+        {t.termsFooter}<a class="underline hover:text-textcolor" href={TERMS_URL} target="_blank" rel="noopener noreferrer">{t.termsShort}</a>
     </span>
 {/if}
