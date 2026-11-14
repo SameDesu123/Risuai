@@ -2,37 +2,40 @@
     import { onDestroy, onMount } from "svelte";
     import { language } from "src/lang";
     import { isNodeServer } from "src/ts/platform";
-    import { alertConfirm, alertError } from "src/ts/alert";
+    import { alertError } from "src/ts/alert";
     import { getNodeServerProxyAuth } from "src/ts/storage/nodeStorage";
     import Button from "src/lib/UI/GUI/Button.svelte";
-    import CheckInput from "src/lib/UI/GUI/CheckInput.svelte";
 
     type CloudflaredStatus = {
         supported: boolean
         platform: string
         installed: boolean
         version: string
+        installedVersion: string
         phase: 'idle' | 'downloading' | 'starting' | 'running' | 'stopping'
         running: boolean
         url: string
         error: string
-        logs: string[]
     }
 
-    // Printed verbatim by cloudflared itself whenever a Quick Tunnel is created.
-    const OFFICIAL_DISCLAIMER = "Thank you for trying Cloudflare Tunnel. Doing so, without a Cloudflare account, is a quick way to experiment and try it out. However, be aware that these account-less Tunnels have no uptime guarantee, are subject to the Cloudflare Online Services Terms of Use (https://www.cloudflare.com/website-terms/), and Cloudflare reserves the right to investigate your use of Tunnels for violations of such terms. If you intend to use Tunnels in production you should use a pre-created named tunnel by following: https://developers.cloudflare.com/cloudflare-one/connections/connect-apps"
     const TERMS_URL = "https://www.cloudflare.com/website-terms/"
-    const DOCS_URL = "https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/do-more-with-tunnels/trycloudflare/"
+    const TERMS_ACCEPTED_KEY = "risu-cloudflared-terms-accepted"
 
     const t = language.cloudflaredTunnel
 
     let status = $state<CloudflaredStatus | null>(null)
+    let latestVersion = $state('')
     let busy = $state(false)
-    let acceptedTerms = $state(false)
+    let showTerms = $state(false)
     let copied = $state(false)
+    let qrDataUrl = $state('')
     let pollTimer: ReturnType<typeof setInterval> | null = null
 
-    async function call(method: 'GET' | 'POST', endpoint: string, body?: object) {
+    const hasUpdate = $derived(
+        !!status?.installedVersion && !!latestVersion && status.installedVersion !== latestVersion
+    )
+
+    async function call<T = CloudflaredStatus>(method: 'GET' | 'POST', endpoint: string, body?: object): Promise<T> {
         const res = await fetch(`/api/cloudflared/${endpoint}`, {
             method,
             headers: {
@@ -48,7 +51,7 @@
         if (!res.ok) {
             throw new Error(data?.error || `Request failed (${res.status})`)
         }
-        return data as CloudflaredStatus
+        return data as T
     }
 
     async function refresh() {
@@ -56,6 +59,15 @@
             await call('GET', 'status')
         } catch (error) {
             console.error(error)
+        }
+    }
+
+    async function checkLatest() {
+        try {
+            const data = await call<{ latest: string }>('GET', 'latest')
+            latestVersion = data.latest
+        } catch (error) {
+            console.warn('cloudflared update check failed:', error)
         }
     }
 
@@ -72,22 +84,28 @@
     }
 
     function install() {
-        run(() => call('POST', 'install'))
-    }
-
-    function uninstall() {
-        run(() => call('POST', 'uninstall'))
-    }
-
-    function start() {
-        if (!acceptedTerms) return
         run(async () => {
-            if (!await alertConfirm(t.confirmStart)) return
-            await call('POST', 'start', { acceptTerms: true })
+            await call('POST', 'install')
+            await checkLatest()
         })
     }
 
-    function stop() {
+    function openTunnel() {
+        // Show the Quick Tunnel terms until the user has agreed once.
+        if (localStorage.getItem(TERMS_ACCEPTED_KEY) !== 'true') {
+            showTerms = true
+            return
+        }
+        run(() => call('POST', 'start', { acceptTerms: true }))
+    }
+
+    function agreeAndOpen() {
+        localStorage.setItem(TERMS_ACCEPTED_KEY, 'true')
+        showTerms = false
+        run(() => call('POST', 'start', { acceptTerms: true }))
+    }
+
+    function closeTunnel() {
         run(() => call('POST', 'stop'))
     }
 
@@ -98,10 +116,24 @@
         setTimeout(() => { copied = false }, 1500)
     }
 
-    onMount(() => {
+    $effect(() => {
+        const url = status?.url
+        if (!url) {
+            qrDataUrl = ''
+            return
+        }
+        import('qrcode').then(async (QRCode) => {
+            qrDataUrl = await QRCode.toDataURL(url, { margin: 1, width: 360 })
+        })
+    })
+
+    onMount(async () => {
         if (!isNodeServer) return
-        // Only reads status; never installs or starts anything by itself.
-        refresh()
+        // Only reads state; never downloads or opens anything by itself.
+        await refresh()
+        if (status?.installed) {
+            checkLatest()
+        }
         pollTimer = setInterval(() => {
             if (status && (status.running || status.phase !== 'idle')) {
                 refresh()
@@ -118,86 +150,75 @@
 <span class="text-textcolor2 text-sm mb-4">{t.desc}</span>
 
 {#if !isNodeServer}
-    <div class="border border-darkborderc rounded-md p-4 text-textcolor2">{t.nodeOnly}</div>
+    <div class="text-textcolor2 text-sm">{t.nodeOnly}</div>
 {:else if !status}
-    <div class="text-textcolor2">...</div>
+    <div class="text-textcolor2 text-sm">...</div>
 {:else if !status.supported}
-    <div class="border border-darkborderc rounded-md p-4 text-textcolor2">{t.unsupported(status.platform)}</div>
+    <div class="text-textcolor2 text-sm">{t.unsupported(status.platform)}</div>
 {:else}
-    <!-- Binary -->
-    <div class="border border-darkborderc rounded-md p-4 mb-4 flex flex-col gap-2">
-        <h3 class="text-lg font-bold">{t.binary}</h3>
-        <span class="text-sm" class:text-textcolor2={!status.installed}>
-            {status.installed ? `${t.installed}${status.version ? ` · ${status.version}` : ''}` : t.notInstalled}
-        </span>
-        <span class="text-xs text-textcolor2">{t.downloadNotice}</span>
-        <div class="flex gap-2 flex-wrap">
-            <Button size="sm" onclick={install} disabled={busy || status.running || status.phase === 'downloading'}>
-                {status.phase === 'downloading' ? t.downloading : status.installed ? t.redownload : t.download}
-            </Button>
-            {#if status.installed}
-                <Button size="sm" styled="danger" onclick={uninstall} disabled={busy || status.running}>
-                    {t.remove}
-                </Button>
+    <!-- Binary: one small line -->
+    <div class="flex items-center gap-2 flex-wrap text-sm text-textcolor2 border-b border-darkborderc pb-3 mb-6">
+        {#if status.phase === 'downloading'}
+            <span>{t.downloading}</span>
+        {:else if !status.installed}
+            <span>{t.notInstalled}</span>
+            <Button size="sm" onclick={install} disabled={busy}>{t.download}</Button>
+        {:else}
+            <span>
+                cloudflared {status.installedVersion || ''}
+                {#if hasUpdate}
+                    · <span class="text-textcolor">{t.updateAvailable(latestVersion)}</span>
+                {:else if latestVersion}
+                    · {t.latest}
+                {/if}
+            </span>
+            {#if hasUpdate}
+                <Button size="sm" onclick={install} disabled={busy || status.running}>{t.update}</Button>
             {/if}
-        </div>
-    </div>
-
-    <!-- Terms -->
-    <div class="border border-darkborderc rounded-md p-4 mb-4 flex flex-col gap-2">
-        <h3 class="text-lg font-bold">{t.terms}</h3>
-        <span class="text-sm">{t.termsSummary}</span>
-        <ul class="list-disc pl-5 text-sm text-textcolor2 flex flex-col gap-1">
-            {#each t.termsLimits as item}
-                <li>{item}</li>
-            {/each}
-        </ul>
-        <details class="text-sm">
-            <summary class="cursor-pointer text-textcolor2 hover:text-textcolor">{t.officialNotice}</summary>
-            <p class="mt-2 p-2 bg-darkbg rounded-md text-xs text-textcolor2 whitespace-pre-wrap break-words">{OFFICIAL_DISCLAIMER}</p>
-        </details>
-        <div class="flex flex-col gap-1 text-sm">
-            <a class="underline text-textcolor2 hover:text-textcolor" href={TERMS_URL} target="_blank" rel="noopener noreferrer">Cloudflare Online Services Terms of Use</a>
-            <a class="underline text-textcolor2 hover:text-textcolor" href={DOCS_URL} target="_blank" rel="noopener noreferrer">Cloudflare Quick Tunnels (TryCloudflare)</a>
-        </div>
-        <div class="mt-2">
-            <CheckInput bind:check={acceptedTerms} name={t.accept} />
-        </div>
+        {/if}
     </div>
 
     <!-- Tunnel -->
-    <div class="border border-darkborderc rounded-md p-4 mb-4 flex flex-col gap-2">
-        <h3 class="text-lg font-bold">{t.tunnel}</h3>
+    <div class="flex flex-col items-center gap-4 py-4">
         {#if status.running}
             {#if status.url}
-                <span class="text-sm text-textcolor2">{t.publicUrl}</span>
-                <div class="flex gap-2 items-center flex-wrap">
-                    <a class="underline break-all" href={status.url} target="_blank" rel="noopener noreferrer">{status.url}</a>
+                {#if qrDataUrl}
+                    <img src={qrDataUrl} alt="QR" class="w-48 h-48 rounded-md bg-white" />
+                {/if}
+                <div class="flex items-center gap-2 max-w-full">
+                    <a class="underline break-all text-center" href={status.url} target="_blank" rel="noopener noreferrer">{status.url}</a>
                     <Button size="sm" styled="outlined" onclick={copyUrl}>{copied ? t.copied : t.copy}</Button>
                 </div>
             {:else}
-                <span class="text-sm text-textcolor2">{t.starting}</span>
+                <span class="text-textcolor2">{t.opening}</span>
             {/if}
-            <div>
-                <Button size="sm" styled="danger" onclick={stop} disabled={busy || status.phase === 'stopping'}>{t.stop}</Button>
+            <Button styled="danger" onclick={closeTunnel} disabled={busy || status.phase === 'stopping'}>{t.close}</Button>
+        {:else if showTerms}
+            <div class="w-full max-w-lg border border-darkborderc rounded-md p-4 flex flex-col gap-3">
+                <span class="font-bold">{t.termsTitle}</span>
+                <ul class="list-disc pl-5 text-sm text-textcolor2 flex flex-col gap-1">
+                    {#each t.termsLimits as item}
+                        <li>{item}</li>
+                    {/each}
+                </ul>
+                <a class="underline text-sm text-textcolor2 hover:text-textcolor" href={TERMS_URL} target="_blank" rel="noopener noreferrer">{t.termsLink}</a>
+                <div class="flex gap-2 justify-end">
+                    <Button size="sm" styled="outlined" onclick={() => { showTerms = false }}>{t.cancel}</Button>
+                    <Button size="sm" onclick={agreeAndOpen} disabled={busy}>{t.agreeAndOpen}</Button>
+                </div>
             </div>
         {:else}
-            <span class="text-sm text-textcolor2">{t.stopped}</span>
-            <div>
-                <Button size="sm" onclick={start} disabled={busy || !status.installed || !acceptedTerms}>{t.start}</Button>
-            </div>
+            <Button size="lg" onclick={openTunnel} disabled={busy || !status.installed || status.phase !== 'idle'}>{t.open}</Button>
+            {#if !status.installed}
+                <span class="text-xs text-textcolor2">{t.needBinary}</span>
+            {/if}
         {/if}
         {#if status.error}
             <span class="text-sm text-draculared">{status.error}</span>
         {/if}
     </div>
 
-    <!-- Logs -->
-    <details class="border border-darkborderc rounded-md p-4">
-        <summary class="cursor-pointer font-bold">{t.logs}</summary>
-        <div class="mt-2 flex justify-end">
-            <Button size="sm" styled="outlined" onclick={refresh}>{t.refresh}</Button>
-        </div>
-        <pre class="mt-2 p-2 bg-darkbg rounded-md text-xs text-textcolor2 overflow-x-auto max-h-80 overflow-y-auto">{status.logs.join('\n')}</pre>
-    </details>
+    <span class="text-xs text-textcolor2 text-center mt-auto pt-6">
+        {t.termsFooter}<a class="underline hover:text-textcolor" href={TERMS_URL} target="_blank" rel="noopener noreferrer">{t.termsLink}</a>
+    </span>
 {/if}

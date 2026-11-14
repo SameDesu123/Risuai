@@ -15,6 +15,8 @@ const { pipeline } = require('stream/promises');
 
 const RELEASE_API = 'https://api.github.com/repos/cloudflare/cloudflared/releases/latest';
 const RELEASE_DOWNLOAD = 'https://github.com/cloudflare/cloudflared/releases/latest/download/';
+const RELEASE_LATEST_PAGE = 'https://github.com/cloudflare/cloudflared/releases/latest';
+const LATEST_CACHE_MS = 10 * 60 * 1000;
 const TRYCLOUDFLARE_URL_REGEX = /https:\/\/[a-z0-9-]+\.trycloudflare\.com/i;
 const MAX_LOG_LINES = 200;
 
@@ -29,7 +31,29 @@ const state = {
     error: '',
     logs: [],
     version: '',
+    latest: { version: '', checkedAt: 0 },
 };
+
+// "cloudflared version 2026.11.0 (built ...)" -> "2026.11.0"
+function shortVersion(full) {
+    const match = String(full || '').match(/(\d+\.\d+\.\d+)/);
+    return match ? match[1] : '';
+}
+
+// Resolves the latest release tag by following GitHub's /releases/latest redirect.
+async function getLatestVersion(force = false) {
+    if (!force && state.latest.version && Date.now() - state.latest.checkedAt < LATEST_CACHE_MS) {
+        return state.latest.version;
+    }
+    const res = await fetch(RELEASE_LATEST_PAGE, { redirect: 'manual', headers: { 'user-agent': 'risuai-node-server' } });
+    const location = res.headers.get('location') || '';
+    const version = shortVersion(location.split('/tag/')[1]);
+    if (!version) {
+        throw new Error(`Could not resolve the latest cloudflared version (${res.status})`);
+    }
+    state.latest = { version, checkedAt: Date.now() };
+    return version;
+}
 
 function pushLog(line) {
     const trimmed = String(line).trimEnd();
@@ -218,6 +242,7 @@ function getStatus() {
         platform: `${process.platform}/${process.arch}`,
         installed: existsSync(binPath),
         version: state.version,
+        installedVersion: shortVersion(state.version),
         phase: state.phase,
         running: !!state.process,
         url: state.url,
@@ -240,6 +265,18 @@ function registerCloudflaredRoutes(app, { checkAuth, limiter, getOriginUrl }) {
         res.send(getStatus());
     });
 
+    app.get('/api/cloudflared/latest', limiter, async (req, res) => {
+        if (!await checkAuth(req, res)) {
+            return;
+        }
+        try {
+            const latest = await getLatestVersion(req.query.force === '1');
+            res.send({ latest });
+        } catch (error) {
+            res.status(502).send({ error: error.message });
+        }
+    });
+
     app.post('/api/cloudflared/install', limiter, async (req, res) => {
         if (!await checkAuth(req, res)) {
             return;
@@ -257,6 +294,7 @@ function registerCloudflaredRoutes(app, { checkAuth, limiter, getOriginUrl }) {
         try {
             await downloadBinary();
             state.phase = 'idle';
+            state.latest.checkedAt = 0;
             res.send(getStatus());
         } catch (error) {
             state.phase = 'idle';
