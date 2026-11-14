@@ -23,6 +23,7 @@ const fs = require('fs/promises')
 const crypto = require('crypto')
 const rateLimit = require('express-rate-limit');
 const { WebSocketServer } = require('ws');
+const { registerCloudflaredRoutes } = require('./cloudflared.cjs');
 app.use(express.static(path.join(process.cwd(), 'dist'), {index: false}));
 app.use(express.json({ limit: requestBodyLimit }));
 app.use(express.raw({ type: 'application/octet-stream', limit: requestBodyLimit }));
@@ -1370,6 +1371,14 @@ const oauthData = {
     code_verifier: ''
 
 }
+// Cloudflare Quick Tunnel (built-in cloudflared). Only starts on explicit user action.
+let localOriginUrl = `http://localhost:${process.env.PORT || 6001}`;
+registerCloudflaredRoutes(app, {
+    checkAuth,
+    limiter: authenticatedRouteLimiter,
+    getOriginUrl: () => localOriginUrl,
+});
+
 app.get('/api/oauth_login', async (req, res) => {
     const redirect_uri = (new URL (req.url)).host + '/api/oauth_callback'
 
@@ -1578,6 +1587,7 @@ async function startServer() {
 
         if (httpsOptions) {
             // HTTPS
+            localOriginUrl = `https://localhost:${port}`;
             server = https.createServer(httpsOptions, app);
             setupProxyStreamWebSocket(server);
             server.listen(port, () => {
