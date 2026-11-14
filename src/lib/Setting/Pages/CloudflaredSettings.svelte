@@ -127,10 +127,53 @@
             qrDataUrl = ''
             return
         }
-        import('qrcode').then(async (QRCode) => {
-            qrDataUrl = await QRCode.toDataURL(url, { margin: 1, width: 360 })
+        import('qrcode').then((QRCode) => {
+            const { size, data } = QRCode.create(url, { errorCorrectionLevel: 'M' }).modules
+            qrDataUrl = roundedQrSvg(size, (r, c) => r >= 0 && c >= 0 && r < size && c < size && data[r * size + c] === 1)
         })
     })
+
+    // Renders a QR matrix as an SVG with rounded modules and rounded finder patterns.
+    function roundedQrSvg(size: number, on: (r: number, c: number) => boolean): string {
+        const R = 0.5
+        const inFinder = (r: number, c: number) =>
+            (r < 7 && c < 7) || (r < 7 && c >= size - 7) || (r >= size - 7 && c < 7)
+        const dark = (r: number, c: number) => on(r, c) && !inFinder(r, c)
+        let d = ''
+        for (let r = 0; r < size; r++) {
+            for (let c = 0; c < size; c++) {
+                if (!dark(r, c)) continue
+                const up = dark(r - 1, c), down = dark(r + 1, c), left = dark(r, c - 1), right = dark(r, c + 1)
+                const tl = !up && !left ? R : 0
+                const tr = !up && !right ? R : 0
+                const br = !down && !right ? R : 0
+                const bl = !down && !left ? R : 0
+                // Bleed slightly into neighbours so joined modules have no hairline seams.
+                const e = 0.02
+                const x0 = c - (left ? e : 0), x1 = c + 1 + (right ? e : 0)
+                const y0 = r - (up ? e : 0), y1 = r + 1 + (down ? e : 0)
+                d += `M${x0 + tl} ${y0}H${x1 - tr}`
+                    + (tr ? `A${tr} ${tr} 0 0 1 ${x1} ${y0 + tr}` : '')
+                    + `V${y1 - br}`
+                    + (br ? `A${br} ${br} 0 0 1 ${x1 - br} ${y1}` : '')
+                    + `H${x0 + bl}`
+                    + (bl ? `A${bl} ${bl} 0 0 1 ${x0} ${y1 - bl}` : '')
+                    + `V${y0 + tl}`
+                    + (tl ? `A${tl} ${tl} 0 0 1 ${x0 + tl} ${y0}` : '')
+                    + 'Z'
+            }
+        }
+        let finders = ''
+        for (const [fr, fc] of [[0, 0], [0, size - 7], [size - 7, 0]]) {
+            finders += `<rect x="${fc + 0.5}" y="${fr + 0.5}" width="6" height="6" rx="1.8" fill="none" stroke="#000" stroke-width="1"/>`
+            finders += `<rect x="${fc + 2}" y="${fr + 2}" width="3" height="3" rx="0.9"/>`
+        }
+        const m = 1.5
+        const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${-m} ${-m} ${size + m * 2} ${size + m * 2}">`
+            + `<rect x="${-m}" y="${-m}" width="${size + m * 2}" height="${size + m * 2}" fill="#fff"/>`
+            + `<path d="${d}"/>${finders}</svg>`
+        return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
+    }
 
     onMount(async () => {
         if (!isNodeServer) return
@@ -171,7 +214,7 @@
                 <button class="ml-auto shrink-0 text-textcolor hover:underline disabled:opacity-50" onclick={install} disabled={busy}>{t.download}</button>
             {:else}
                 <span class="min-w-0 truncate whitespace-nowrap">
-                    cloudflared {status.installedVersion}{#if hasUpdate}<span class="text-textcolor"> · {t.updateAvailable(latestVersion)}</span>{:else if latestVersion} · {t.latest}{/if}
+                    cloudflared {status.installedVersion}{#if hasUpdate}<span class="text-textcolor">{' · '}{t.updateAvailable(latestVersion)}</span>{:else if latestVersion}{' · '}{t.latest}{/if}
                 </span>
                 {#if hasUpdate}
                     <button class="ml-auto shrink-0 text-textcolor hover:underline disabled:opacity-50" onclick={install} disabled={busy || status.running}>{t.update}</button>
@@ -233,17 +276,17 @@
         {#if tunnelState === 'open'}
             <div class="px-4 py-3 border-t border-darkborderc flex flex-col sm:flex-row gap-4 sm:items-center">
                 {#if qrDataUrl}
-                    <img src={qrDataUrl} alt="QR" class="w-32 h-32 shrink-0 rounded-md bg-white p-1 self-center sm:self-auto" />
+                    <img src={qrDataUrl} alt="QR" class="w-36 h-36 shrink-0 rounded-lg bg-white self-center sm:self-auto" />
                 {/if}
                 <div class="flex-1 min-w-0 flex flex-col gap-2">
                     <span class="text-xs text-textcolor2">{t.scanHint}</span>
                     <div class="flex items-stretch rounded-md border border-darkborderc bg-darkbg overflow-hidden">
-                        <span class="flex-1 min-w-0 px-3 py-2 text-sm font-mono truncate select-all">{status.url}</span>
+                        <span class="flex-1 min-w-0 px-4 py-3 text-lg sm:text-xl font-semibold font-mono [overflow-wrap:anywhere] leading-snug select-all">{#each status.url.split(/(?=\.)/) as part}<wbr />{part}{/each}</span>
                         <button class="px-3 border-l border-darkborderc text-textcolor2 hover:text-textcolor hover:bg-textcolor/5" title={copied ? t.copied : t.copy} onclick={copyUrl}>
-                            {#if copied}<CheckIcon size={16} />{:else}<CopyIcon size={16} />{/if}
+                            {#if copied}<CheckIcon size={18} />{:else}<CopyIcon size={18} />{/if}
                         </button>
                         <a class="px-3 border-l border-darkborderc text-textcolor2 hover:text-textcolor hover:bg-textcolor/5 flex items-center" title={t.openLink} href={status.url} target="_blank" rel="noopener noreferrer">
-                            <ExternalLinkIcon size={16} />
+                            <ExternalLinkIcon size={18} />
                         </a>
                     </div>
                 </div>
