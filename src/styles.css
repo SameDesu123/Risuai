@@ -630,6 +630,16 @@ html.risu-aurora .setting-area {
   box-shadow: var(--aurora-shadow);
 }
 
+/* On narrow screens both slide over the chat, so they stay flush and flat on the shell */
+html.risu-aurora .risu-sidebar-overlay > .rs-sidebar,
+html.risu-aurora .risu-sidebar-overlay > .setting-area {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background-color: var(--aurora-shell);
+  box-shadow: none;
+}
+
 /* Stage: everything right of the sidebars is one inset, rounded window */
 html.risu-aurora .risu-main-stage {
   isolation: isolate;
@@ -1092,16 +1102,6 @@ html.risu-aurora .risu-sidebar-add > button:hover {
   color: var(--risu-theme-textcolor);
 }
 
-/* On narrow screens the panels float over the chat, so the dim spreads into the gaps between them */
-html.risu-aurora .risu-sidebar-overlay.fixed {
-  background-color: rgb(0 0 0 / 0.5);
-}
-
-html.risu-aurora .risu-sidebar-overlay > .sidebar-dark-animation,
-html.risu-aurora .risu-sidebar-overlay:has(> .sidebar-dark-close-animation) {
-  background-color: transparent;
-}
-
 /* The menu that drops out of the button keeps the bot list's own tone and stays inside its border */
 html.risu-aurora .risu-sidebar-popout {
   left: 0;
@@ -1110,6 +1110,10 @@ html.risu-aurora .risu-sidebar-popout {
   gap: 0;
   border-color: var(--aurora-line);
   background-color: var(--aurora-surface);
+}
+
+html.risu-aurora .risu-sidebar-overlay .risu-sidebar-popout {
+  background-color: var(--aurora-shell);
 }
 
 html.risu-aurora .rs-sidebar > .border-b-selected {
