@@ -1217,3 +1217,14 @@ html.risu-aurora ::-webkit-scrollbar-thumb {
   border-radius: 999px;
   background: var(--aurora-line-strong);
 }
+
+/* Scrollbars ignore border-radius, so keep the thumb clear of the rounded corners */
+html.risu-aurora ::-webkit-scrollbar-track:vertical {
+  margin-top: var(--aurora-radius);
+  margin-bottom: var(--aurora-radius);
+}
+
+html.risu-aurora ::-webkit-scrollbar-track:horizontal {
+  margin-left: var(--aurora-radius);
+  margin-right: var(--aurora-radius);
+}
