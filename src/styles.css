@@ -992,18 +992,31 @@ html.risu-aurora .risu-search-bar > button:hover {
 }
 
 /* Sidebar: a quiet menu button and a segmented Chat / Character switch */
-html.risu-aurora .risu-sidebar-menu {
-  width: 2.5rem;
-  min-width: 2.5rem;
-  height: 2.5rem;
-  min-height: 2.5rem;
-  border-radius: 0.75rem;
+html.risu-aurora .risu-sidebar-menu,
+html.risu-aurora .risu-sidebar-popout > button {
+  width: 3.5rem;
+  min-width: 3.5rem;
+  border-radius: 0.875rem;
   background-color: var(--aurora-fill-strong);
+  box-shadow: none;
   color: var(--risu-theme-textcolor);
 }
 
-html.risu-aurora .risu-sidebar-menu:hover {
+html.risu-aurora .risu-sidebar-menu {
+  height: 2.5rem;
+  min-height: 2.5rem;
+}
+
+html.risu-aurora .risu-sidebar-menu:hover,
+html.risu-aurora .risu-sidebar-popout > button:hover {
   background-color: color-mix(in oklab, var(--risu-theme-textcolor) 16%, transparent);
+}
+
+/* The menu that drops out of the button keeps the sidebar's own tone */
+html.risu-aurora .risu-sidebar-popout {
+  gap: 0;
+  border-color: var(--aurora-line);
+  background-color: var(--aurora-shell);
 }
 
 html.risu-aurora .rs-sidebar > .border-b-selected {
@@ -1012,6 +1025,8 @@ html.risu-aurora .rs-sidebar > .border-b-selected {
 
 html.risu-aurora .risu-sidebar-tabs,
 html.risu-aurora .risu-seg {
+  /* both sit in column flex parents that would otherwise squash them */
+  flex-shrink: 0;
   gap: 0.1875rem;
   height: auto;
   min-height: 0;
@@ -1023,10 +1038,6 @@ html.risu-aurora .risu-seg {
 
 html.risu-aurora .risu-sidebar-tabs {
   bottom: 0.75rem;
-}
-
-html.risu-aurora .risu-seg {
-  flex-shrink: 0;
 }
 
 html.risu-aurora .risu-sidebar-tabs > button,
