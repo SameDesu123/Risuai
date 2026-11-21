@@ -1551,58 +1551,67 @@ html.risu-aurora .risu-icon-row svg {
   height: 1.125rem;
 }
 
-/* Lorebook entries: rounded rows with icon buttons inside a soft panel */
-html.risu-aurora .risu-lore-list {
+/* Lists of lorebook entries or regex scripts: rounded rows with icon buttons inside a soft panel */
+html.risu-aurora .risu-list {
   padding: 0.25rem;
 }
 
-html.risu-aurora .risu-lore-item {
+html.risu-aurora .risu-list-item {
   border-color: var(--aurora-line);
 }
 
-html.risu-aurora .risu-lore-item.pb-2 {
+html.risu-aurora .risu-list-item.pb-2:not(:last-child) {
   padding-bottom: 0.25rem;
   margin-bottom: 0.25rem;
 }
 
-html.risu-aurora .risu-lore-row {
+html.risu-aurora .risu-list-item.pt-2:not(:first-child) {
+  padding-top: 0.25rem;
+  margin-top: 0.25rem;
+}
+
+html.risu-aurora .risu-list > .text-textcolor2 {
+  padding: 0.5rem 0.625rem;
+}
+
+html.risu-aurora .risu-list-row {
   gap: 0.125rem;
   min-height: 2.5rem;
   padding: 0.25rem 0.25rem 0.25rem 0.625rem;
   border-radius: 0.5rem;
 }
 
-html.risu-aurora .risu-lore-row:hover {
+html.risu-aurora .risu-list-row:hover {
   background-color: var(--aurora-fill);
 }
 
-html.risu-aurora .risu-lore-row:has(+ .risu-lore-editor) {
+html.risu-aurora .risu-list-row:has(+ .risu-list-editor) {
   background-color: var(--aurora-fill-strong);
 }
 
-html.risu-aurora .risu-lore-row > .endflex {
+html.risu-aurora .risu-list-row > .endflex {
   min-width: 0;
   align-self: stretch;
   gap: 0.375rem;
 }
 
-html.risu-aurora .risu-lore-row > .endflex > span {
+html.risu-aurora .risu-list-row > .endflex > span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-html.risu-aurora .risu-lore-row > .endflex > svg {
+html.risu-aurora .risu-list-row > .endflex > svg {
   flex-shrink: 0;
   margin-right: 0;
   color: var(--risu-theme-textcolor2);
 }
 
-html.risu-aurora .risu-lore-row > .endflex:hover {
+html.risu-aurora .risu-list-row > .endflex:hover {
   color: var(--risu-theme-textcolor);
 }
 
-html.risu-aurora .risu-lore-row > button:not(.endflex) {
+html.risu-aurora .risu-list-row > button:not(.endflex) {
   display: inline-flex;
   flex-shrink: 0;
   align-items: center;
@@ -1616,26 +1625,26 @@ html.risu-aurora .risu-lore-row > button:not(.endflex) {
     color 0.15s ease;
 }
 
-html.risu-aurora .risu-lore-row > button.valuer:not(.endflex) {
+html.risu-aurora .risu-list-row > button.valuer:not(.endflex) {
   color: var(--risu-theme-textcolor2);
 }
 
-html.risu-aurora .risu-lore-row > button:not(.endflex):hover {
+html.risu-aurora .risu-list-row > button:not(.endflex):hover {
   background-color: var(--aurora-fill-strong);
   color: var(--risu-theme-textcolor);
 }
 
-html.risu-aurora .risu-lore-row > button:not(.endflex) svg {
+html.risu-aurora .risu-list-row > button:not(.endflex) svg {
   width: 1.125rem;
   height: 1.125rem;
 }
 
-html.risu-aurora .risu-lore-editor {
+html.risu-aurora .risu-list-editor {
   margin-top: 0;
   padding: 0 0.625rem 0.5rem;
 }
 
-html.risu-aurora .risu-lore-editor > span.text-textcolor:first-child {
+html.risu-aurora .risu-list-editor > span.text-textcolor:first-child {
   margin-top: 1rem;
 }
 
@@ -1653,4 +1662,67 @@ html.risu-aurora .setting-area > .risu-check-solo {
 html.risu-aurora .setting-area > .risu-field:not(.mb-4) + span.text-textcolor,
 html.risu-aurora .setting-area > .risu-btn:not(.mb-4) + span.text-textcolor {
   margin-top: 0.75rem;
+}
+
+html.risu-aurora .setting-area > span.text-textcolor + .risu-check:not(.risu-check-solo) {
+  margin-top: 0.5rem;
+}
+
+/* Trigger script mode (V1 / V2 / Lua) as a compact segmented switch */
+html.risu-aurora .risu-trigger-mode {
+  align-self: flex-start;
+}
+
+html.risu-aurora .risu-trigger-mode > button {
+  padding: 0.25rem 0.875rem;
+  background-color: transparent;
+}
+
+html.risu-aurora .risu-seg > button.ring-1 {
+  background-color: var(--aurora-bubble);
+  color: var(--risu-theme-textcolor);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.15);
+}
+
+/* The V2 trigger editor opens from a plain button, not a boxed one */
+html.risu-aurora .risu-trigger-edit {
+  border: 0;
+  border-radius: 0;
+  background-color: transparent;
+}
+
+/* Onboarding editor: a soft panel holding raised question cards */
+html.risu-aurora .risu-onboarding {
+  gap: 0.625rem;
+  padding: 0.75rem;
+}
+
+html.risu-aurora .risu-onboarding-question {
+  border-color: var(--aurora-line);
+  border-radius: 0.625rem;
+  background-color: var(--aurora-raised);
+}
+
+/* The shared segmented control matches the Aurora switches */
+html.risu-aurora .segmented-control-container {
+  padding: 0.1875rem;
+  border-color: var(--aurora-line);
+  border-radius: 0.75rem;
+  background-color: var(--aurora-fill);
+}
+
+html.risu-aurora .segmented-indicator {
+  top: 0.1875rem;
+  bottom: 0.1875rem;
+  border-radius: 0.5625rem;
+  background-color: var(--aurora-bubble);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.15);
+}
+
+html.risu-aurora .segmented-btn-active {
+  color: var(--risu-theme-textcolor);
+}
+
+html.risu-aurora .segmented-btn:focus-visible {
+  outline-color: var(--aurora-accent);
 }

@@ -96,7 +96,7 @@
 
     
 </script>
-<div class={"w-full flex flex-col risu-lore-item " + (
+<div class={"w-full flex flex-col risu-list-item " + (
     isLastInContainer ? 
         'pb-0 mb-0 border-0' : // Last item in container: no border
         'pb-2 mb-2 border-b border-b-selected last:pb-0 last:mb-0 last:border-0'
@@ -104,7 +104,7 @@
     class:no-sort={value.mode === 'folder' && openFolders > 0}
     data-risu-idx={idx} data-risu-idgroup={idgroup}
 >
-    <div class="flex items-center transition-colors w-full p-1 risu-lore-row">
+    <div class="flex items-center transition-colors w-full p-1 risu-list-row">
 
     {#if value.mode !== 'child'}
         <button class="endflex valuer border-darkborderc flex items-center" onclick={() => {
@@ -194,7 +194,7 @@
     </div>
     {#if open}
         {#if value.mode === 'folder'}
-        <div class="border-0 outline-hidden w-full mt-2 flex flex-col mb-2 risu-lore-editor">
+        <div class="border-0 outline-hidden w-full mt-2 flex flex-col mb-2 risu-list-editor">
             <span class="text-textcolor mt-6 mb-2">{language.folderName}</span>
             <TextInput size="sm" bind:value={value.comment}/>
 
@@ -221,7 +221,7 @@
             </div>
         </div>
         {:else}
-        <div class="border-0 outline-hidden w-full mt-2 flex flex-col mb-2 risu-lore-editor">
+        <div class="border-0 outline-hidden w-full mt-2 flex flex-col mb-2 risu-list-editor">
             <span class="text-textcolor mt-6">{language.name} <Help key="loreName"/></span>
             <TextInput size="sm" bind:value={value.comment}/>
             {#if !lorePlus}

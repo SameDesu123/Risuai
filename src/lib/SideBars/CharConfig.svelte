@@ -701,7 +701,7 @@
 
         <span class="text-textcolor mt-4">{language.regexScript} <Help key="regexScript"/></span>
         <RegexList bind:value={DBState.db.characters[$selectedCharID].customscript} />
-        <div class="text-textcolor2 mt-2 flex gap-2">
+        <div class="text-textcolor2 mt-2 flex gap-2 risu-icon-row">
             <button class="font-medium cursor-pointer hover:text-green-500" onclick={() => {
                 if(DBState.db.characters[$selectedCharID].type === 'character'){
                     let script = DBState.db.characters[$selectedCharID].customscript
