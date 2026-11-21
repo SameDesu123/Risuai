@@ -290,7 +290,7 @@
     {:else if licensed !== 'private' && DBState.db.characters[$selectedCharID].type === 'group'}
         <TextInput size="xl" marginBottom placeholder="Group Name" bind:value={DBState.db.characters[$selectedCharID].name} />
         <span class="text-textcolor">{language.character}</span>
-        <div class="p-4 gap-2 bg-bgcolor rounded-lg char-grid risu-group-grid">
+        <div class="p-4 gap-2 bg-bgcolor rounded-lg char-grid risu-panel">
             {#if (DBState.db.characters[$selectedCharID] as groupChat).characters.length === 0}
                 <span class="text-textcolor2">No Character</span>
             {:else}
@@ -364,10 +364,10 @@
     })()}
 {:else if $CharConfigSubMenu === 1}
     {#if !$MobileGUI}
-        <h2 class="mb-2 text-2xl font-bold mt-2">{language.characterDisplay}</h2>
+        <h2 class="mb-2 text-2xl font-bold mt-2 risu-charconfig-title">{language.characterDisplay}</h2>
     {/if}
 
-    <div class="flex w-full rounded-md border border-selected mb-4">
+    <div class="flex w-full rounded-md border border-selected mb-4 risu-seg risu-seg-wrap">
         <button onclick={() => {
             viewSubMenu = 0
         }} class="p-2 flex-1" class:bg-selected={viewSubMenu === 0}>
@@ -389,13 +389,13 @@
         {#if DBState.db.characters[$selectedCharID].type === 'group'}
             <button onclick={async () => {await selectCharImg($selectedCharID)}}>
                 {#await getCharImage(DBState.db.characters[$selectedCharID].image, 'css')}
-                    <div class="rounded-md h-24 w-24 shadow-lg bg-textcolor2 cursor-pointer ring-3"></div>
+                    <div class="rounded-md h-24 w-24 shadow-lg bg-textcolor2 cursor-pointer ring-3 risu-icon-tile"></div>
                 {:then im}
-                    <div class="rounded-md h-24 w-24 shadow-lg bg-textcolor2 cursor-pointer ring-3" style={im}></div>     
+                    <div class="rounded-md h-24 w-24 shadow-lg bg-textcolor2 cursor-pointer ring-3 risu-icon-tile" style={im}></div>     
                 {/await}
             </button>
         {:else}
-            <div class="p-2 border-darkborderc border rounded-md flex flex-wrap gap-2">
+            <div class="p-2 border-darkborderc border rounded-md flex flex-wrap gap-2 risu-panel">
                 {#if DBState.db.characters[$selectedCharID].image !== '' && DBState.db.characters[$selectedCharID].image}
                     <button onclick={() => {
                         if(
@@ -413,12 +413,12 @@
                     }}>
                         {#await getCharImage(DBState.db.characters[$selectedCharID].image, (DBState.db.characters[$selectedCharID] as character).largePortrait ? 'lgcss' : 'css')}
                             <div
-                                class="rounded-md h-24 w-24 shadow-lg bg-textcolor2 cursor-pointer ring-3 transition-shadow"
+                                class="rounded-md h-24 w-24 shadow-lg bg-textcolor2 cursor-pointer ring-3 transition-shadow risu-icon-tile"
                                 class:ring-red-500={iconRemoveMode}
     ></div>
                         {:then im}
                             <div
-                                class="rounded-md h-24 w-24 shadow-lg bg-textcolor2 cursor-pointer ring-3 transition-shadow"
+                                class="rounded-md h-24 w-24 shadow-lg bg-textcolor2 cursor-pointer ring-3 transition-shadow risu-icon-tile"
                                 class:ring-red-500={iconRemoveMode}
                                 style={im}
     ></div>     
@@ -438,12 +438,12 @@
                         }}>
                             {#await getCharImage(assets.uri, (DBState.db.characters[$selectedCharID] as character).largePortrait ? 'lgcss' : 'css')}
                                 <div
-                                    class="rounded-md h-24 w-24 shadow-lg bg-textcolor2 cursor-pointer hover:ring-3 transition-shadow"
+                                    class="rounded-md h-24 w-24 shadow-lg bg-textcolor2 cursor-pointer hover:ring-3 transition-shadow risu-icon-tile"
                                     class:ring-red-500={iconRemoveMode} class:ring-3={iconRemoveMode}
     ></div>
                             {:then im}
                                 <div
-                                    class="rounded-md h-24 w-24 shadow-lg bg-textcolor2 cursor-pointer hover:ring-3 transition-shadow"
+                                    class="rounded-md h-24 w-24 shadow-lg bg-textcolor2 cursor-pointer hover:ring-3 transition-shadow risu-icon-tile"
                                     style={im} class:ring-red-500={iconRemoveMode} class:ring-3={iconRemoveMode}
     ></div>     
                             {/await}
@@ -452,14 +452,14 @@
                 {/if}
                 <button onclick={async () => {await selectCharImg($selectedCharID);}}>
                     <div
-                        class="rounded-md h-24 w-24 cursor-pointer border-darkborderc border border-dashed flex justify-center items-center hover:border-blue-500"
+                        class="rounded-md h-24 w-24 cursor-pointer border-darkborderc border border-dashed flex justify-center items-center hover:border-blue-500 risu-icon-add"
                         style={(DBState.db.characters[$selectedCharID] as character).largePortrait ? 'height: 10.66rem;' : ''}
                     >
                         <PlusIcon />
                     </div>
                 </button>
             </div>
-            <div class="flex w-full items-end justify-end mt-2">
+            <div class="flex w-full items-end justify-end mt-2 risu-icon-row">
                 <button class={iconRemoveMode ? "text-red-500" : "text-textcolor2 hover:text-textcolor"} onclick={() => {
                     iconRemoveMode = !iconRemoveMode
                 }}>
@@ -508,7 +508,7 @@
             <span class="text-textcolor mt-6">{language.emotionImage} <Help key="emotion"/></span>
             <span class="text-textcolor2 text-xs">{language.emotionWarn}</span>
 
-            <div class="w-full max-w-full border border-selected p-2 rounded-md">
+            <div class="w-full max-w-full border border-selected p-2 rounded-md risu-panel">
 
                 <table class="w-full max-w-full tabler">
                     <tbody>
@@ -546,7 +546,7 @@
 
             </div>
 
-            <div class="text-textcolor2 hover:text-textcolor mt-2 flex">
+            <div class="text-textcolor2 hover:text-textcolor mt-2 flex risu-icon-row">
                 {#if !$addingEmotion}
                     <button class="cursor-pointer hover:text-green-500" onclick={() => {addCharEmotion($selectedCharID)}}>
                         <PlusIcon />
@@ -601,7 +601,7 @@
                 <OptionInput value="dynamic">{language.dynamic}</OptionInput>
             </SelectInput>
             {/if}
-            <div class="w-full max-w-full border border-selected rounded-md p-2 mt-2">
+            <div class="w-full max-w-full border border-selected rounded-md p-2 mt-2 risu-panel">
                 <table class="contain w-full max-w-full tabler mt-2">
                 <tbody>
                     <tr>
@@ -687,13 +687,13 @@
     {/if}
 {:else if $CharConfigSubMenu === 3}
     {#if !$MobileGUI}
-        <h2 class="mb-2 text-2xl font-bold mt-2">{language.loreBook} <Help key="lorebook"/></h2>
+        <h2 class="mb-2 text-2xl font-bold mt-2 risu-charconfig-title">{language.loreBook} <Help key="lorebook"/></h2>
     {/if}
     <LoreBook />
 {:else if $CharConfigSubMenu === 4}
     {#if DBState.db.characters[$selectedCharID].type === 'character'}
         {#if !$MobileGUI}
-            <h2 class="mb-2 text-2xl font-bold mt-2">{language.scripts}</h2>
+            <h2 class="mb-2 text-2xl font-bold mt-2 risu-charconfig-title">{language.scripts}</h2>
         {/if}
 
         <span class="text-textcolor mt-2">{language.backgroundHTML} <Help key="backgroundHTML" /></span>
@@ -768,7 +768,7 @@
 {:else if $CharConfigSubMenu === 5}
     {#if DBState.db.characters[$selectedCharID].type === 'character'}
         {#if !$MobileGUI}
-            <h2 class="mb-2 text-2xl font-bold mt-2">TTS</h2>
+            <h2 class="mb-2 text-2xl font-bold mt-2 risu-charconfig-title">TTS</h2>
         {/if}
         <span class="text-textcolor">{language.provider}</span>
         <SelectInput className="mb-4 mt-2" bind:value={DBState.db.characters[$selectedCharID].ttsMode} onchange={(e) => {
@@ -1069,7 +1069,7 @@
     {/if}
 {:else if $CharConfigSubMenu === 2}
     {#if !$MobileGUI}
-        <h2 class="mb-2 text-2xl font-bold mt-2">{language.advancedSettings}</h2>
+        <h2 class="mb-2 text-2xl font-bold mt-2 risu-charconfig-title">{language.advancedSettings}</h2>
     {/if}
         {#if DBState.db.characters[$selectedCharID].type !== 'group'}
         <span class="text-textcolor mt-2">Bias <Help key="bias"/></span>
