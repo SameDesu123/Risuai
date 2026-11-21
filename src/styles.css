@@ -1038,6 +1038,22 @@ html.risu-aurora .risu-sidebar-popout > button:hover {
   background-color: color-mix(in oklab, var(--risu-theme-textcolor) 16%, transparent);
 }
 
+/* The add-character button takes the shape of the character icons above it */
+html.risu-aurora .risu-sidebar-add > button {
+  border-color: var(--aurora-line-strong);
+  color: var(--risu-theme-textcolor2);
+}
+
+html.risu-aurora .risu-sidebar-add:not(.risu-round-icons) > button {
+  border-radius: 0.375rem;
+}
+
+html.risu-aurora .risu-sidebar-add > button:hover {
+  border-color: color-mix(in oklab, var(--risu-theme-textcolor) 28%, transparent);
+  background-color: var(--aurora-fill);
+  color: var(--risu-theme-textcolor);
+}
+
 /* The menu that drops out of the button keeps the sidebar's own tone */
 html.risu-aurora .risu-sidebar-popout {
   gap: 0;
@@ -1064,6 +1080,8 @@ html.risu-aurora .risu-seg {
 
 html.risu-aurora .risu-sidebar-tabs {
   bottom: 0.75rem;
+  /* relative offset leaves the layout box behind, so this sets the visible gap below */
+  margin-bottom: 0.75rem;
 }
 
 html.risu-aurora .risu-sidebar-tabs > button,
