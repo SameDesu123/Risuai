@@ -1304,7 +1304,14 @@ html.risu-aurora .risu-check > input:checked + .risu-check-box {
 }
 
 html.risu-aurora .risu-check-box > svg {
+  width: 0.9375rem;
+  height: 0.9375rem;
   stroke: var(--risu-theme-bgcolor);
+}
+
+/* The path's own stroke-width attribute outranks anything inherited from the svg */
+html.risu-aurora .risu-check-box > svg > path {
+  stroke-width: 3;
 }
 
 /* Sliders: a field-shaped track that fills with the accent */
