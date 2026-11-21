@@ -26,7 +26,7 @@
 </script>
 
 <label 
-    class={"flex items-center gap-2 cursor-pointer risu-check" + (className ? " " + className : "") + (grayText ? " text-textcolor2" : " text-textcolor")}
+    class={"flex items-center gap-2 cursor-pointer risu-check" + (!name && !children ? " risu-check-solo" : "") + (className ? " " + className : "") + (grayText ? " text-textcolor2" : " text-textcolor")}
     class:mr-2={margin}
     aria-describedby="{name} {check ? 'abled' : 'disabled'}"
     aria-labelledby="{name} {check ? 'abled' : 'disabled'}"

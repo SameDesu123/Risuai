@@ -1306,6 +1306,41 @@ html.risu-aurora .risu-check-box > svg {
   stroke: var(--risu-theme-bgcolor);
 }
 
+/* Sliders: a field-shaped track that fills with the accent */
+html.risu-aurora .risu-slider-track {
+  --risu-slider-fill: var(--aurora-accent-fill);
+  --risu-slider-rest: var(--aurora-fill);
+  border-color: var(--aurora-line-strong);
+  border-radius: 0.625rem;
+  transition: border-color 0.15s ease;
+}
+
+html.risu-aurora .risu-slider-track:hover {
+  border-color: color-mix(in oklab, var(--risu-theme-textcolor) 28%, transparent);
+}
+
+html.risu-aurora .risu-slider-track:focus-visible {
+  border-color: var(--aurora-accent);
+  outline: 2px solid var(--aurora-accent-fill);
+  outline-offset: 0;
+}
+
+html.risu-aurora .risu-slider-track.rounded-l-none {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+
+html.risu-aurora .risu-slider-toggle {
+  border-color: var(--aurora-line-strong);
+  border-radius: 0.625rem 0 0 0.625rem;
+  background-color: var(--aurora-fill);
+}
+
+html.risu-aurora .risu-slider-track > span {
+  left: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
 html.risu-aurora ::-webkit-scrollbar-thumb {
   border-radius: 999px;
   background: var(--aurora-line-strong);
@@ -1602,4 +1637,20 @@ html.risu-aurora .risu-lore-editor {
 
 html.risu-aurora .risu-lore-editor > span.text-textcolor:first-child {
   margin-top: 1rem;
+}
+
+/* Sidebar forms: room under sliders and under checkboxes that stand alone below their label */
+html.risu-aurora .setting-area > .risu-slider:not(.mb-4) {
+  margin-bottom: 1rem;
+}
+
+html.risu-aurora .setting-area > .risu-check-solo {
+  align-self: flex-start;
+  margin-top: 0.375rem;
+  margin-bottom: 1rem;
+}
+
+html.risu-aurora .setting-area > .risu-field:not(.mb-4) + span.text-textcolor,
+html.risu-aurora .setting-area > .risu-btn:not(.mb-4) + span.text-textcolor {
+  margin-top: 0.75rem;
 }
