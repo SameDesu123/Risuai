@@ -1282,6 +1282,30 @@ html.risu-aurora .risu-field:focus-within {
   outline-offset: 0;
 }
 
+/* Checkboxes: a hairline box that fills in, like the send button, when checked */
+html.risu-aurora .risu-check-box {
+  border-width: 1px;
+  border-color: var(--aurora-line-strong);
+  border-radius: 0.375rem;
+  background-color: var(--aurora-fill);
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+html.risu-aurora .risu-check:hover > .risu-check-box {
+  border-color: color-mix(in oklab, var(--risu-theme-textcolor) 28%, transparent);
+}
+
+html.risu-aurora .risu-check > input:checked + .risu-check-box {
+  border-color: var(--risu-theme-textcolor);
+  background-color: var(--risu-theme-textcolor);
+}
+
+html.risu-aurora .risu-check-box > svg {
+  stroke: var(--risu-theme-bgcolor);
+}
+
 html.risu-aurora ::-webkit-scrollbar-thumb {
   border-radius: 999px;
   background: var(--aurora-line-strong);
@@ -1296,4 +1320,95 @@ html.risu-aurora ::-webkit-scrollbar-track:vertical {
 html.risu-aurora ::-webkit-scrollbar-track:horizontal {
   margin-left: var(--aurora-radius);
   margin-right: var(--aurora-radius);
+}
+
+/* Character settings in the sidebar */
+html.risu-aurora .risu-charconfig-tabs {
+  flex-shrink: 0;
+  gap: 0.125rem;
+  margin-bottom: 1.25rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--aurora-line);
+}
+
+html.risu-aurora .risu-charconfig-tabs > button {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  height: 2.25rem;
+  border-radius: 0.625rem;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
+}
+
+html.risu-aurora .risu-charconfig-tabs > button:hover {
+  background-color: var(--aurora-fill);
+  color: var(--risu-theme-textcolor);
+}
+
+html.risu-aurora .risu-charconfig-tabs > button.text-textcolor {
+  background-color: var(--aurora-fill-strong);
+}
+
+html.risu-aurora .risu-charconfig-tabs svg {
+  width: 1.125rem;
+  height: 1.125rem;
+}
+
+/* Token counts sit under the right edge of their field */
+html.risu-aurora .risu-token-count {
+  align-self: flex-end;
+  font-size: 0.75rem;
+  line-height: 1rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Group members and their talkativeness meters */
+html.risu-aurora .risu-group-grid {
+  border: 1px solid var(--aurora-line);
+  border-radius: 0.75rem;
+  background-color: var(--aurora-fill);
+}
+
+html.risu-aurora .risu-talk-bar {
+  border: 0;
+  border-radius: 0.3125rem;
+  background-color: var(--aurora-fill-strong);
+}
+
+html.risu-aurora .risu-talk-bar + .risu-talk-bar {
+  margin-left: 0.1875rem;
+}
+
+html.risu-aurora .risu-talk-bar.bg-green-500 {
+  background-color: var(--aurora-accent);
+}
+
+/* Rows of bare icon buttons (add, export, import) under a list */
+html.risu-aurora .risu-icon-row {
+  gap: 0.25rem;
+}
+
+html.risu-aurora .risu-icon-row > button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.625rem;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
+}
+
+html.risu-aurora .risu-icon-row > button:hover {
+  background-color: var(--aurora-fill);
+  color: var(--risu-theme-textcolor);
+}
+
+html.risu-aurora .risu-icon-row svg {
+  width: 1.125rem;
+  height: 1.125rem;
 }

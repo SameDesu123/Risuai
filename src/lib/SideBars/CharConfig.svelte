@@ -247,7 +247,7 @@
 </script>
 
 {#if licensed !== 'private' && !$MobileGUI}
-    <div class="flex mb-2" class:gap-2={iconButtonSize === 24} class:gap-1={iconButtonSize < 24}>
+    <div class="flex mb-2 risu-charconfig-tabs" class:gap-2={iconButtonSize === 24} class:gap-1={iconButtonSize < 24}>
         <button class={$CharConfigSubMenu === 0 ? 'text-textcolor ' : 'text-textcolor2'} onclick={() => {$CharConfigSubMenu = 0}}>
             <UserIcon size={iconButtonSize} />
         </button>
@@ -282,15 +282,15 @@
         <TextInput size="xl" marginBottom placeholder="Character Name" bind:value={DBState.db.characters[$selectedCharID].name} />
         <span class="text-textcolor">{language.description} <Help key="charDesc"/></span>
         <TextAreaInput highlight margin="both" autocomplete="off" bind:value={(DBState.db.characters[$selectedCharID] as character).desc}></TextAreaInput>
-        <span class="text-textcolor2 mb-6 text-sm">{tokens.desc} {language.tokens}</span>
+        <span class="text-textcolor2 mb-6 text-sm risu-token-count">{tokens.desc} {language.tokens}</span>
         <span class="text-textcolor">{language.firstMessage} <Help key="charFirstMessage"/></span>
         <TextAreaInput highlight margin="both" autocomplete="off" bind:value={DBState.db.characters[$selectedCharID].firstMessage}></TextAreaInput>
-        <span class="text-textcolor2 mb-6 text-sm">{tokens.firstMsg} {language.tokens}</span>
+        <span class="text-textcolor2 mb-6 text-sm risu-token-count">{tokens.firstMsg} {language.tokens}</span>
 
     {:else if licensed !== 'private' && DBState.db.characters[$selectedCharID].type === 'group'}
         <TextInput size="xl" marginBottom placeholder="Group Name" bind:value={DBState.db.characters[$selectedCharID].name} />
         <span class="text-textcolor">{language.character}</span>
-        <div class="p-4 gap-2 bg-bgcolor rounded-lg char-grid">
+        <div class="p-4 gap-2 bg-bgcolor rounded-lg char-grid risu-group-grid">
             {#if (DBState.db.characters[$selectedCharID] as groupChat).characters.length === 0}
                 <span class="text-textcolor2">No Character</span>
             {:else}
@@ -311,7 +311,7 @@
                     {/await}
                     <div class="flex items-center px-2 py-3">
                         {#each [1,2,3,4,5,6] as barIndex}
-                            <button class="bg-selected h-full flex-1 border-r-bgcolor border-r" 
+                            <button class="bg-selected h-full flex-1 border-r-bgcolor border-r risu-talk-bar" 
                                 aria-labelledby="loading"
                                 class:bg-green-500={(DBState.db.characters[$selectedCharID] as groupChat).characterTalks[i] >= (1 / 6 * barIndex)}
                                 class:bg-selected={(DBState.db.characters[$selectedCharID] as groupChat).characterTalks[i] < (1 / 6 * barIndex)}
@@ -331,7 +331,7 @@
                 {/each}
             {/if}
         </div>
-        <div class="text-textcolor2 mt-1 flex mb-6">
+        <div class="text-textcolor2 mt-1 flex mb-6 risu-icon-row">
             <button onclick={addGroupChar} class="hover:text-textcolor cursor-pointer">
                 <PlusIcon />
             </button>
@@ -346,7 +346,7 @@
         highlight
         placeholder={getAuthorNoteDefaultText()}
     />
-    <span class="text-textcolor2 mb-6 text-sm">{tokens.localNote} {language.tokens}</span>
+    <span class="text-textcolor2 mb-6 text-sm risu-token-count">{tokens.localNote} {language.tokens}</span>
 
     {#if !$MobileGUI}
         <Toggles bind:chara={DBState.db.characters[$selectedCharID]} noContainer />
