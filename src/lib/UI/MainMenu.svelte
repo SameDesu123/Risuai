@@ -69,10 +69,14 @@
     let hasHomeBackground = $derived(homeBackgroundStyle !== "");
     let hasHomeWidgets = $derived(home.showRecent || home.showActivity || home.showStats);
 </script>
-<div class="h-full w-full flex flex-col overflow-y-auto items-center" style={homeBackgroundStyle}>
+<div class="h-full w-full flex flex-col overflow-y-auto items-center" class:home-has-background={hasHomeBackground} style={homeBackgroundStyle}>
     {#if !$OpenRealmStore}
       <Title />
-      <h3 class="text-textcolor2 mt-1">Version {getVersionString()}</h3>
+      {#if hasHomeBackground}
+        <h3 class="mt-2 rounded-full border border-darkborderc/60 bg-darkbg/80 px-3 py-0.5 text-sm text-textcolor2 backdrop-blur-md">Version {getVersionString()}</h3>
+      {:else}
+        <h3 class="text-textcolor2 mt-1">Version {getVersionString()}</h3>
+      {/if}
     {/if}
     <div class="w-full flex p-4 flex-col text-textcolor max-w-4xl">
       {#if !$OpenRealmStore}
@@ -82,7 +86,7 @@
         </div>
       {/if}
       <div class="mt-4 mb-4 w-full border-t border-t-selected"></div>
-      <h1 class="text-2xl font-bold">Recently Uploaded<button class="text-base font-medium float-right p-1 bg-darkbg rounded-md hover:ring-3" onclick={() => {
+      <h1 class="text-2xl font-bold">Recently Uploaded<button class="text-base font-medium float-right hover:ring-3 {hasHomeBackground ? 'rounded-full border border-darkborderc/60 bg-darkbg/80 px-3 py-1 backdrop-blur-md' : 'p-1 bg-darkbg rounded-md'}" onclick={() => {
         $OpenRealmStore = true
       }}>Get More</button></h1>
           {#if !DBState.db.hideRealm}
@@ -93,10 +97,10 @@
                   sort: 'recommended'
               }) then charas}
             {#if charas.length > 0}
-              {@html hubAdditionalHTML}
+              <div class="hub-notice">{@html hubAdditionalHTML}</div>
               <div class="w-full flex gap-4 p-2 flex-wrap justify-center">
                   {#each charas as chara}
-                      <RisuHubIcon onClick={() => {
+                      <RisuHubIcon translucent={hasHomeBackground} onClick={() => {
                         $OpenRealmStore = true
                         if(DBState.db.realmDirectOpen){
                             $RealmInitialOpenChar = chara
@@ -154,3 +158,18 @@
       {/if}
   </div>
 </div>
+
+<style>
+    /* Keep headings readable over a busy home background */
+    .home-has-background > :global(h2),
+    .home-has-background :global(h1) {
+        text-shadow: 0 0 6px var(--risu-theme-bgcolor), 0 0 18px var(--risu-theme-bgcolor);
+    }
+
+    /* The hub notice is server HTML painted with an inline darkbg background */
+    .home-has-background .hub-notice :global([style*="--risu-theme-darkbg"]) {
+        background-color: color-mix(in oklab, var(--risu-theme-darkbg) 80%, transparent) !important;
+        border: 1px solid color-mix(in oklab, var(--risu-theme-darkborderc) 60%, transparent);
+        backdrop-filter: blur(12px);
+    }
+</style>

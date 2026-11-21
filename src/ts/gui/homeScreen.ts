@@ -46,16 +46,20 @@ export function isHomeBackgroundPreset(value: string): value is HomeBackgroundPr
     return Object.prototype.hasOwnProperty.call(homeBackgroundPresets, value)
 }
 
-const presetStops = [8, 16, 24, 30, 38]
+const presetStops = [0, 25, 50, 75, 100]
 
-/** A band running from the upper left down to the right, kept in the upper part of the screen */
+/** A diagonal sweep across the whole home screen, from the upper right to the lower left */
 export function getPresetGradient(colors: readonly string[]): string {
-    const stops = colors.map((color, i) => `${color} ${presetStops[i] ?? 38}%`).join(', ')
-    return `linear-gradient(205deg, transparent 0%, ${stops}, transparent 50%)`
+    const stops = colors.map((color, i) => `${color} ${presetStops[i] ?? 100}%`).join(', ')
+    return `linear-gradient(205deg, ${stops})`
 }
 
 /** Small dots of the background show through a mask painted in the theme color */
 export const homeDitherLayer = 'radial-gradient(circle, transparent 0 0.9px, var(--risu-theme-bgcolor) 1.4px) 0 0 / 4px 4px'
+
+/** Tones a full-screen preset down toward the theme color when the dot pattern is off */
+const presetVeil = 'color-mix(in oklab, var(--risu-theme-bgcolor) 55%, transparent)'
+export const homePresetVeilLayer = `linear-gradient(${presetVeil}, ${presetVeil})`
 
 /**
  * Builds the inline style for the home screen background.
@@ -75,7 +79,13 @@ export function getHomeBackgroundStyle(settings: HomeScreenSettings, imageUrl: s
     else {
         return ''
     }
-    const layers = settings.dither ? [homeDitherLayer, base] : [base]
+    let layers = [base]
+    if (settings.dither) {
+        layers = [homeDitherLayer, base]
+    }
+    else if (settings.background !== 'image') {
+        layers = [homePresetVeilLayer, base]
+    }
     return `background: ${layers.join(', ')}; background-color: var(--risu-theme-bgcolor);`
 }
 

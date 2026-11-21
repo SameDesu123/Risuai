@@ -8,14 +8,16 @@
     interface Props {
         onClick?: any;
         chara: hubType;
+        /** Glass style used over a home screen background */
+        translucent?: boolean;
     }
 
-    let { onClick = () => {}, chara }: Props = $props();
+    let { onClick = () => {}, chara, translucent = false }: Props = $props();
 
 </script>
 
 
-<button class="bg-darkbg rounded-lg p-4 flex flex-col hover:bg-selected transition-colors relative lg:w-96 w-full items-start" onclick={onClick}>
+<button class="p-4 flex flex-col transition-colors relative lg:w-96 w-full items-start {translucent ? 'rounded-2xl border border-darkborderc/60 bg-darkbg/80 backdrop-blur-md hover:bg-selected/80' : 'bg-darkbg rounded-lg hover:bg-selected'}" onclick={onClick}>
     <div class="flex gap-2 w-full">
     {#if DBState.db.hideAllImages}
         <div class="w-20 min-w-20 h-20 sm:h-28 sm:w-28 rounded-md bg-darkbutton flex items-center justify-center text-textcolor2">
