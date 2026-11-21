@@ -625,10 +625,6 @@ html.risu-aurora .setting-area {
   box-shadow: none;
 }
 
-html.risu-aurora .setting-area {
-  border-right: 1px solid var(--aurora-line);
-}
-
 /* Stage: everything right of the sidebars is one inset, rounded window */
 html.risu-aurora .risu-main-stage {
   isolation: isolate;
