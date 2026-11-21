@@ -77,11 +77,11 @@
                   {/each}
               </div>
             {:else}
-              <div class="text-textcolor2">Failed to load {language.hub}...</div>
+              <div class="text-textcolor2 risu-home-note">Failed to load {language.hub}...</div>
             {/if}
           {/await}
         {:else}
-          <div class="text-textcolor2">{language.hideRealm}</div>
+          <div class="text-textcolor2 risu-home-note">{language.hideRealm}</div>
         {/if}
       {#if !DBState.db.hideRelatedLinks}
       <div class="mt-4 mb-4 w-full border-t border-t-selected"></div>

@@ -947,8 +947,7 @@ html.risu-aurora .risu-home h1 {
 }
 
 html.risu-aurora .risu-home .border-t-selected {
-  border-top-width: 2px;
-  border-color: var(--aurora-line-strong);
+  border-color: var(--aurora-line);
 }
 
 /* Section titles get the same pill as the Get More chip beside them */
@@ -968,6 +967,17 @@ html.risu-aurora .risu-home-heading {
   line-height: 1.75rem;
   letter-spacing: -0.01em;
   box-shadow: 0 1px 2px rgb(0 0 0 / 0.12);
+}
+
+/* Plain status lines under a section title (Realm hidden, hub failed) */
+html.risu-aurora .risu-home-note {
+  margin-top: 1rem;
+  padding: 0.75rem 1.125rem;
+  border: 1px solid var(--aurora-line);
+  border-radius: var(--aurora-radius);
+  background-color: var(--aurora-raised);
+  font-size: 0.9375rem;
+  line-height: 1.5rem;
 }
 
 /* The hub notice is server HTML painted with an inline darkbg background */
