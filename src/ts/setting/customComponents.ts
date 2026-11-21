@@ -25,7 +25,6 @@ import ColorSchemeSelect from 'src/lib/Setting/Pages/Display/ColorSchemeSelect.s
 import CustomColorSchemeEditor from 'src/lib/Setting/Pages/Display/CustomColorSchemeEditor.svelte';
 import CustomTextThemeEditor from 'src/lib/Setting/Pages/Display/CustomTextThemeEditor.svelte';
 import CustomBackgroundToggle from 'src/lib/Setting/Pages/Display/CustomBackgroundToggle.svelte';
-import HomeBackgroundSelect from 'src/lib/Setting/Pages/Display/HomeBackgroundSelect.svelte';
 import NullableTextColorToggle from 'src/lib/Setting/Pages/Display/NullableTextColorToggle.svelte';
 import NotificationToggle from 'src/lib/Setting/Pages/Display/NotificationToggle.svelte';
 
@@ -44,7 +43,6 @@ export const customComponents: Record<string, Component<any>> = {
     'CustomColorSchemeEditor': CustomColorSchemeEditor,
     'CustomTextThemeEditor': CustomTextThemeEditor,
     'CustomBackgroundToggle': CustomBackgroundToggle,
-    'HomeBackgroundSelect': HomeBackgroundSelect,
     'NullableTextColorToggle': NullableTextColorToggle,
     'NotificationToggle': NotificationToggle,
     // Add more as we migrate complex settings

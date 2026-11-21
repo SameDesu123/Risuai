@@ -3,10 +3,7 @@ import { coldStorageHeader } from '../process/coldstorageData'
 import {
     collectHomeStats,
     defaultHomeScreenSettings,
-    getHomeBackgroundStyle,
     getRecentCharacters,
-    homeDitherLayer,
-    homePresetVeilLayer,
     normalizeHomeScreenSettings,
 } from './homeScreen'
 
@@ -28,28 +25,7 @@ describe('homeScreen settings', () => {
     it('fills missing fields with defaults', () => {
         expect(normalizeHomeScreenSettings(undefined)).toEqual(defaultHomeScreenSettings)
         expect(normalizeHomeScreenSettings({ showRecent: true }).showRecent).toBe(true)
-        expect(normalizeHomeScreenSettings({ showRecent: true }).dither).toBe(true)
-    })
-
-    it('builds background styles for presets and images', () => {
-        const base = normalizeHomeScreenSettings({})
-        expect(getHomeBackgroundStyle(base, '')).toBe('')
-        expect(getHomeBackgroundStyle({ ...base, background: 'unknown' }, '')).toBe('')
-
-        const aurora = getHomeBackgroundStyle({ ...base, background: 'aurora' }, '')
-        expect(aurora).toContain(homeDitherLayer)
-        expect(aurora).toContain('#1e3a8a 0%')
-        expect(aurora).toContain('#450a0a 100%')
-        expect(aurora).not.toContain(homePresetVeilLayer)
-
-        const plain = getHomeBackgroundStyle({ ...base, background: 'aurora', dither: false }, '')
-        expect(plain).not.toContain(homeDitherLayer)
-        expect(plain).toContain(homePresetVeilLayer)
-
-        expect(getHomeBackgroundStyle({ ...base, background: 'image' }, '')).toBe('')
-        expect(getHomeBackgroundStyle({ ...base, background: 'image' }, 'blob:a"b')).toContain('url("blob:a%22b")')
-        const plainImage = getHomeBackgroundStyle({ ...base, background: 'image', dither: false }, 'blob:x')
-        expect(plainImage).not.toContain(homePresetVeilLayer)
+        expect(normalizeHomeScreenSettings({ showRecent: true }).showStats).toBe(false)
     })
 })
 

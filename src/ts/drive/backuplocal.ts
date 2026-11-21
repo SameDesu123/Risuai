@@ -77,9 +77,6 @@ export async function SaveLocalBackup(){
     if (db.customBackground) {
         assetMap.set(db.customBackground, { charName: 'User Settings', assetName: 'Custom Background' })
     }
-    if (db.homeScreen?.image) {
-        assetMap.set(db.homeScreen.image, { charName: 'User Settings', assetName: 'Home Background' })
-    }
     const missingAssets: string[] = []
 
     if(isTauri){
@@ -268,9 +265,6 @@ export async function SavePartialLocalBackup(){
     // Custom background
     if (db.customBackground) {
         assetMap.set(db.customBackground, { charName: 'User Settings', assetName: 'Custom Background' })
-    }
-    if (db.homeScreen?.image) {
-        assetMap.set(db.homeScreen.image, { charName: 'User Settings', assetName: 'Home Background' })
     }
     
     // Folder images in characterOrder

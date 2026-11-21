@@ -1109,7 +1109,6 @@ export function getUncleanablesSync(db: Database, uptype: 'basename' | 'pure' = 
     }
 
     addUncleanable(db.customBackground);
-    addUncleanable(db.homeScreen?.image);
     addUncleanable(db.userIcon);
     const chars = options?.chars ?? db.characters
 
@@ -1208,9 +1207,6 @@ export function replaceDbResources(db: Database, replacer: { [key: string]: stri
     }
 
     db.customBackground = replaceData(db.customBackground);
-    if (db.homeScreen?.image) {
-        db.homeScreen.image = replaceData(db.homeScreen.image);
-    }
     db.userIcon = replaceData(db.userIcon);
 
     for (const cha of db.characters) {

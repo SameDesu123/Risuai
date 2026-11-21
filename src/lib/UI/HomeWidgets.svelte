@@ -19,7 +19,7 @@
     const weekCount = 20;
     const levelClasses = ['bg-textcolor/10', 'bg-borderc/35', 'bg-borderc/60', 'bg-borderc/80', 'bg-borderc'];
     const cardClass =
-        'flex min-w-0 flex-col rounded-2xl border border-darkborderc/60 bg-darkbg/80 p-4 text-left backdrop-blur-md';
+        'flex min-w-0 flex-col rounded-2xl border border-darkborderc/60 bg-darkbg p-4 text-left risu-card';
     const numberFormatter = new Intl.NumberFormat(navigator.languages);
     const dateFormatter = new Intl.DateTimeFormat(navigator.languages, { dateStyle: 'medium' });
     const agoFormatter = new Intl.RelativeTimeFormat(navigator.languages, { style: 'short' });

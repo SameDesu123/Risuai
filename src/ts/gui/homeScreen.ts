@@ -2,12 +2,6 @@ import type { character, groupChat } from '../storage/database.svelte'
 import { coldStorageHeader } from '../process/coldstorageData'
 
 export interface HomeScreenSettings {
-    /** '' (none), a key of homeBackgroundPresets, or 'image' */
-    background: string
-    /** Saved asset path used when background is 'image' */
-    image: string
-    /** Overlay a dot-matrix pattern on top of the background */
-    dither: boolean
     showRecent: boolean
     showActivity: boolean
     showStats: boolean
@@ -15,9 +9,6 @@ export interface HomeScreenSettings {
 }
 
 export const defaultHomeScreenSettings: HomeScreenSettings = {
-    background: '',
-    image: '',
-    dither: true,
     showRecent: false,
     showActivity: false,
     showStats: false,
@@ -26,67 +17,6 @@ export const defaultHomeScreenSettings: HomeScreenSettings = {
 
 export function normalizeHomeScreenSettings(settings: Partial<HomeScreenSettings> | undefined | null): HomeScreenSettings {
     return { ...defaultHomeScreenSettings, ...(settings ?? {}) }
-}
-
-/** Five color stops each, drawn as a diagonal band across the home screen */
-export const homeBackgroundPresets = {
-    aurora: ['#1e3a8a', '#38bdf8', '#fb923c', '#dc2626', '#450a0a'],
-    sunset: ['#7c2d12', '#f97316', '#fbbf24', '#f472b6', '#4c1d95'],
-    ocean: ['#082f49', '#0369a1', '#22d3ee', '#a7f3d0', '#064e3b'],
-    forest: ['#14532d', '#16a34a', '#bef264', '#facc15', '#713f12'],
-    nebula: ['#312e81', '#7c3aed', '#e879f9', '#f43f5e', '#4c0519'],
-    mono: ['#262626', '#737373', '#e5e5e5', '#737373', '#262626'],
-} as const satisfies Record<string, readonly string[]>
-
-export type HomeBackgroundPreset = keyof typeof homeBackgroundPresets
-
-export const homeBackgroundPresetList = Object.keys(homeBackgroundPresets) as HomeBackgroundPreset[]
-
-export function isHomeBackgroundPreset(value: string): value is HomeBackgroundPreset {
-    return Object.prototype.hasOwnProperty.call(homeBackgroundPresets, value)
-}
-
-const presetStops = [0, 25, 50, 75, 100]
-
-/** A diagonal sweep across the whole home screen, from the upper right to the lower left */
-export function getPresetGradient(colors: readonly string[]): string {
-    const stops = colors.map((color, i) => `${color} ${presetStops[i] ?? 100}%`).join(', ')
-    return `linear-gradient(205deg, ${stops})`
-}
-
-/** Small dots of the background show through a mask painted in the theme color */
-export const homeDitherLayer = 'radial-gradient(circle, transparent 0 0.9px, var(--risu-theme-bgcolor) 1.4px) 0 0 / 4px 4px'
-
-/** Tones a full-screen preset down toward the theme color when the dot pattern is off */
-const presetVeil = 'color-mix(in oklab, var(--risu-theme-bgcolor) 55%, transparent)'
-export const homePresetVeilLayer = `linear-gradient(${presetVeil}, ${presetVeil})`
-
-/**
- * Builds the inline style for the home screen background.
- * Returns an empty string when no home background should be drawn.
- */
-export function getHomeBackgroundStyle(settings: HomeScreenSettings, imageUrl: string): string {
-    let base = ''
-    if (settings.background === 'image') {
-        if (!imageUrl) {
-            return ''
-        }
-        base = `url("${imageUrl.replace(/"/g, '%22')}") center / cover no-repeat`
-    }
-    else if (isHomeBackgroundPreset(settings.background)) {
-        base = getPresetGradient(homeBackgroundPresets[settings.background])
-    }
-    else {
-        return ''
-    }
-    let layers = [base]
-    if (settings.dither) {
-        layers = [homeDitherLayer, base]
-    }
-    else if (settings.background !== 'image') {
-        layers = [homePresetVeilLayer, base]
-    }
-    return `background: ${layers.join(', ')}; background-color: var(--risu-theme-bgcolor);`
 }
 
 type AnyCharacter = character | groupChat

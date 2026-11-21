@@ -24,6 +24,7 @@ export const displayThemeSettingsItems: SettingItem[] = [
                 { value: 'waifu', label: 'Waifulike' },
                 { value: 'mobilechat', label: 'Mobile Chat' },
                 { value: 'cardboard', label: 'CardBoard' },
+                { value: 'aurora', label: 'Aurora' },
                 { value: 'customHTML', label: 'Custom HTML' },
             ],
         },
@@ -373,26 +374,11 @@ export const displayOtherSettingsItems: SettingItem[] = [
 
 export const displayHomeSettingsItems: SettingItem[] = [
     {
-        id: 'display.homeBackground',
-        type: 'custom',
-        componentId: 'HomeBackgroundSelect',
-        keywords: ['home', 'main', 'background', 'wallpaper', 'gradient'],
-    },
-    {
-        id: 'display.homeDither',
-        type: 'check',
-        labelKey: 'homeDither',
-        bindPath: 'homeScreen.dither',
-        classes: 'mt-4',
-        condition: (ctx) => !!ctx.db.homeScreen?.background,
-        keywords: ['home', 'dither', 'dot', 'pattern', 'pixel'],
-    },
-    {
         id: 'display.homeWidgets',
         type: 'header',
         labelKey: 'homeWidgets',
         options: { level: 'span' },
-        classes: '!mt-6',
+        classes: 'mt-4',
     },
     { id: 'display.homeShowRecent', type: 'check', labelKey: 'homeShowRecent', bindPath: 'homeScreen.showRecent', keywords: ['home', 'recent', 'chat', 'widget'] },
     { id: 'display.homeShowActivity', type: 'check', labelKey: 'homeShowActivity', bindPath: 'homeScreen.showActivity', keywords: ['home', 'activity', 'heatmap', 'widget'] },
