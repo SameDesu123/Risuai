@@ -742,7 +742,7 @@
             if(await alertTOS()){
                 $ShowRealmFrameStore = 'character'
             }
-        }} className="mt-2">
+        }} className="mt-2 risu-share-main">
             {#if DBState.db.characters[$selectedCharID].realmId}
                 {language.updateRealm}
             {:else}
@@ -758,12 +758,12 @@
         }
         <Button size="sm" onclick={async () => {
             const res = await exportChar($selectedCharID)
-        }} className="mt-2">{language.exportCharacter}</Button>
+        }} className="mt-2 risu-share-btn">{language.exportCharacter}</Button>
     {/if}
 
     <Button onclick={async () => {
         removeChar($selectedCharID, DBState.db.characters[$selectedCharID].name)
-    }} className="mt-2" size="sm">{ DBState.db.characters[$selectedCharID].type === 'group' ? language.removeGroup : language.removeCharacter}</Button>
+    }} className="mt-2 risu-share-btn risu-share-remove" size="sm">{ DBState.db.characters[$selectedCharID].type === 'group' ? language.removeGroup : language.removeCharacter}</Button>
     
 {:else if $CharConfigSubMenu === 5}
     {#if DBState.db.characters[$selectedCharID].type === 'character'}
@@ -1073,7 +1073,7 @@
     {/if}
         {#if DBState.db.characters[$selectedCharID].type !== 'group'}
         <span class="text-textcolor mt-2">Bias <Help key="bias"/></span>
-        <div class="w-full max-w-full border border-selected rounded-md p-2 mb-2">
+        <div class="w-full max-w-full border border-selected rounded-md p-2 mb-2 risu-panel">
 
         <table class="w-full max-w-full tabler mt-2">
             <tbody>
@@ -1161,13 +1161,13 @@
         <TextInput size="sm" bind:value={DBState.db.characters[$selectedCharID].nickname}/>
 
         <span class="text-textcolor">{language.depthPrompt}</span>
-        <div class="flex justify-center items-center">
+        <div class="flex justify-center items-center risu-field-row">
             <NumberInput size="sm" bind:value={DBState.db.characters[$selectedCharID].depth_prompt.depth} className="w-12"/>
             <TextInput size="sm" bind:value={DBState.db.characters[$selectedCharID].depth_prompt.prompt} className="flex-1"/>
         </div>
 
         <span class="text-textcolor mt-2">{language.altGreet}</span>
-        <div class="w-full max-w-full border border-selected rounded-md p-2">
+        <div class="w-full max-w-full border border-selected rounded-md p-2 risu-panel">
             <table class="contain w-full max-w-full tabler mt-2">
                 <tbody>
                 <tr>
