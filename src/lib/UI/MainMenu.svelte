@@ -8,6 +8,9 @@
     import { getRisuHub, hubAdditionalHTML } from "src/ts/characterCards";
     import RisuHubIcon from "./Realm/RealmHubIcon.svelte";
     import Title from "./Title.svelte";
+    import HomeWidgets from "./HomeWidgets.svelte";
+    import { getCharImage } from "src/ts/characters";
+    import { getHomeBackgroundStyle, normalizeHomeScreenSettings } from "src/ts/gui/homeScreen";
 
     type RelatedLink = {
       title: string;
@@ -45,14 +48,39 @@
         logoIcon: "mail"
       }
     ];
+
+    let home = $derived(normalizeHomeScreenSettings(DBState.db.homeScreen));
+    let homeImageUrl = $state("");
+
+    $effect(() => {
+      const image = home.background === "image" ? home.image : "";
+      if (!image) {
+        homeImageUrl = "";
+        return;
+      }
+      getCharImage(image, "plain").then((url) => {
+        if (home.image === image) {
+          homeImageUrl = url ?? "";
+        }
+      });
+    });
+
+    let homeBackgroundStyle = $derived($OpenRealmStore ? "" : getHomeBackgroundStyle(home, homeImageUrl));
+    let hasHomeBackground = $derived(homeBackgroundStyle !== "");
+    let hasHomeWidgets = $derived(home.showRecent || home.showActivity || home.showStats);
 </script>
-<div class="h-full w-full flex flex-col overflow-y-auto items-center">
+<div class="h-full w-full flex flex-col overflow-y-auto items-center" style={homeBackgroundStyle}>
     {#if !$OpenRealmStore}
       <Title />
       <h3 class="text-textcolor2 mt-1">Version {getVersionString()}</h3>
     {/if}
     <div class="w-full flex p-4 flex-col text-textcolor max-w-4xl">
       {#if !$OpenRealmStore}
+      {#if hasHomeWidgets}
+        <div class="mt-4 w-full">
+          <HomeWidgets settings={home} />
+        </div>
+      {/if}
       <div class="mt-4 mb-4 w-full border-t border-t-selected"></div>
       <h1 class="text-2xl font-bold">Recently Uploaded<button class="text-base font-medium float-right p-1 bg-darkbg rounded-md hover:ring-3" onclick={() => {
         $OpenRealmStore = true
@@ -83,13 +111,14 @@
         {:else}
           <div class="text-textcolor2">{language.hideRealm}</div>
         {/if}
+      {#if !home.hideLinks}
       <div class="mt-4 mb-4 w-full border-t border-t-selected"></div>
       <h1 class="text-2xl font-bold mb-4">
         Related Links
       </h1>
         <div class="grid w-full grid-cols-1 gap-4 p-2 md:grid-cols-2">
           {#each relatedLinks as relatedLink}
-            <button class="group relative flex min-h-[140px] flex-col justify-center overflow-hidden rounded-2xl border border-borderc/10 bg-darkbg p-6 text-left transition-all duration-300 hover:-translate-y-1 hover:border-borderc/30 hover:bg-selected/50 hover:shadow-xl hover:shadow-darkbg/50" onclick={() => {
+            <button class="group relative flex min-h-[140px] flex-col justify-center overflow-hidden rounded-2xl border border-borderc/10 p-6 text-left transition-all duration-300 hover:-translate-y-1 hover:border-borderc/30 hover:bg-selected/50 hover:shadow-xl hover:shadow-darkbg/50 {hasHomeBackground ? 'bg-darkbg/80 backdrop-blur-md' : 'bg-darkbg'}" onclick={() => {
               openURL(relatedLink.href)
             }}>
               <div class="relative z-10 w-[68%] sm:w-[70%]">
@@ -113,6 +142,7 @@
             </button>
           {/each}
       </div>
+      {/if}
 
       {:else}
         <div class="flex items-center mt-4">

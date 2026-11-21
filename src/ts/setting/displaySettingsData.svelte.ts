@@ -371,8 +371,38 @@ export const displayOtherSettingsItems: SettingItem[] = [
     },
 ];
 
+export const displayHomeSettingsItems: SettingItem[] = [
+    {
+        id: 'display.homeBackground',
+        type: 'custom',
+        componentId: 'HomeBackgroundSelect',
+        keywords: ['home', 'main', 'background', 'wallpaper', 'gradient'],
+    },
+    {
+        id: 'display.homeDither',
+        type: 'check',
+        labelKey: 'homeDither',
+        bindPath: 'homeScreen.dither',
+        classes: 'mt-4',
+        condition: (ctx) => !!ctx.db.homeScreen?.background,
+        keywords: ['home', 'dither', 'dot', 'pattern', 'pixel'],
+    },
+    {
+        id: 'display.homeWidgets',
+        type: 'header',
+        labelKey: 'homeWidgets',
+        options: { level: 'span' },
+        classes: '!mt-6',
+    },
+    { id: 'display.homeShowRecent', type: 'check', labelKey: 'homeShowRecent', bindPath: 'homeScreen.showRecent', keywords: ['home', 'recent', 'chat', 'widget'] },
+    { id: 'display.homeShowActivity', type: 'check', labelKey: 'homeShowActivity', bindPath: 'homeScreen.showActivity', keywords: ['home', 'activity', 'heatmap', 'widget'] },
+    { id: 'display.homeShowStats', type: 'check', labelKey: 'homeShowStats', bindPath: 'homeScreen.showStats', keywords: ['home', 'stats', 'statistics', 'usage', 'widget'] },
+    { id: 'display.homeHideLinks', type: 'check', labelKey: 'homeHideLinks', bindPath: 'homeScreen.hideLinks', keywords: ['home', 'links', 'hide'] },
+];
+
 export const displaySettingsItems: SettingItem[] = [
     ...displayThemeSettingsItems,
     ...displaySizeSettingsItems,
+    ...displayHomeSettingsItems,
     ...displayOtherSettingsItems,
 ];

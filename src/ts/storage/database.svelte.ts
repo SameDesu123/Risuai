@@ -9,6 +9,7 @@ import { alertNormal } from '../alert';
 import type { NAISettings } from '../process/models/nai';
 import { prebuiltNAIpresets, prebuiltPresets } from '../process/templates/templates';
 import { defaultColorScheme, type ColorScheme } from '../gui/colorscheme';
+import { normalizeHomeScreenSettings, type HomeScreenSettings } from '../gui/homeScreen';
 import type { PromptItem, PromptSettings } from '../process/prompt';
 import type { OobaChatCompletionRequestParams } from '../model/ooba';
 import { type HypaV3Settings, type HypaV3Preset, createHypaV3Preset } from '../process/memory/hypav3'
@@ -553,6 +554,7 @@ export function setDatabase(data:Database){
     data.falModel ??= 'fal-ai/flux/dev'
     data.falLoraScale ??= 1
     data.customCSS ??= ''
+    data.homeScreen = normalizeHomeScreenSettings(data.homeScreen)
     data.strictJsonSchema ??= true
     data.statics ??= {
         messages: 0,
@@ -965,6 +967,7 @@ export interface Database{
     botSettingAtStart:false
     NAIsettings:NAISettings
     hideRealm:boolean
+    homeScreen:HomeScreenSettings
     blockedRealmCreators:BlockedRealmCreator[]
     colorScheme:ColorScheme
     colorSchemeName:string
