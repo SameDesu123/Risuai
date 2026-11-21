@@ -8,8 +8,6 @@
     import { getRisuHub, hubAdditionalHTML } from "src/ts/characterCards";
     import RisuHubIcon from "./Realm/RealmHubIcon.svelte";
     import Title from "./Title.svelte";
-    import HomeWidgets from "./HomeWidgets.svelte";
-    import { normalizeHomeScreenSettings } from "src/ts/gui/homeScreen";
 
     type RelatedLink = {
       title: string;
@@ -47,9 +45,6 @@
         logoIcon: "mail"
       }
     ];
-
-    let home = $derived(normalizeHomeScreenSettings(DBState.db.homeScreen));
-    let hasHomeWidgets = $derived(home.showRecent || home.showActivity || home.showStats);
 </script>
 <div class="h-full w-full flex flex-col overflow-y-auto items-center risu-home">
     {#if !$OpenRealmStore}
@@ -58,11 +53,6 @@
     {/if}
     <div class="w-full flex p-4 flex-col text-textcolor max-w-4xl">
       {#if !$OpenRealmStore}
-      {#if hasHomeWidgets}
-        <div class="mt-4 w-full">
-          <HomeWidgets settings={home} />
-        </div>
-      {/if}
       <div class="mt-4 mb-4 w-full border-t border-t-selected"></div>
       <h1 class="text-2xl font-bold risu-home-section"><span class="risu-home-heading">Recently Uploaded</span><button class="text-base font-medium float-right hover:ring-3 p-1 bg-darkbg rounded-md risu-home-chip" onclick={() => {
         $OpenRealmStore = true
@@ -93,7 +83,7 @@
         {:else}
           <div class="text-textcolor2">{language.hideRealm}</div>
         {/if}
-      {#if !home.hideLinks}
+      {#if !DBState.db.hideRelatedLinks}
       <div class="mt-4 mb-4 w-full border-t border-t-selected"></div>
       <h1 class="text-2xl font-bold mb-4 risu-home-section">
         <span class="risu-home-heading">Related Links</span>
@@ -136,4 +126,3 @@
       {/if}
   </div>
 </div>
-

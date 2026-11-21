@@ -3,7 +3,6 @@
     import { DBState } from "src/ts/stores.svelte";
     import SettingRenderer from "../SettingRenderer.svelte";
     import {
-        displayHomeSettingsItems,
         displayOtherSettingsItems,
         displaySizeSettingsItems,
         displayThemeSettingsItems,
@@ -36,15 +35,6 @@
         </button>
         <button
             onclick={() => {
-                submenu = 3;
-            }}
-            class="p-2 flex-1 border-r border-darkborderc"
-            class:bg-darkbutton={submenu === 3}
-        >
-            <span>{language.homeScreen}</span>
-        </button>
-        <button
-            onclick={() => {
                 submenu = 2;
             }}
             class="p-2 flex-1 border-r border-darkborderc"
@@ -61,10 +51,6 @@
 
 {#if submenu === 1 || submenu === -1}
     <SettingRenderer items={displaySizeSettingsItems} />
-{/if}
-
-{#if submenu === 3 || submenu === -1}
-    <SettingRenderer items={displayHomeSettingsItems} />
 {/if}
 
 {#if submenu === 2 || submenu === -1}

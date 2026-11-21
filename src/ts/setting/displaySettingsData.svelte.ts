@@ -260,6 +260,7 @@ export const displayOtherSettingsItems: SettingItem[] = [
     { id: 'display.showMemoryLimit', type: 'check', labelKey: 'showMemoryLimit', bindKey: 'showMemoryLimit', keywords: ['memory', 'limit'] },
     { id: 'display.showFirstMessagePages', type: 'check', labelKey: 'showFirstMessagePages', bindKey: 'showFirstMessagePages', keywords: ['first', 'message', 'pages'] },
     { id: 'display.hideRealm', type: 'check', labelKey: 'hideRealm', bindKey: 'hideRealm', keywords: ['realm', 'hide'] },
+    { id: 'display.hideRelatedLinks', type: 'check', labelKey: 'hideRelatedLinks', bindKey: 'hideRelatedLinks', keywords: ['home', 'related', 'links', 'hide'] },
     { id: 'display.hideAllImages', type: 'check', labelKey: 'hideAllImages', helpKey: 'hideAllImagesDesc', bindKey: 'hideAllImages', keywords: ['images', 'hide'] },
     { id: 'display.showFolderName', type: 'check', labelKey: 'showFolderNameInIcon', bindKey: 'showFolderName', keywords: ['folder', 'name', 'icon'] },
     { id: 'display.customBackground', type: 'custom', componentId: 'CustomBackgroundToggle', keywords: ['custom', 'background'] },
@@ -372,23 +373,8 @@ export const displayOtherSettingsItems: SettingItem[] = [
     },
 ];
 
-export const displayHomeSettingsItems: SettingItem[] = [
-    {
-        id: 'display.homeWidgets',
-        type: 'header',
-        labelKey: 'homeWidgets',
-        options: { level: 'span' },
-        classes: 'mt-4',
-    },
-    { id: 'display.homeShowRecent', type: 'check', labelKey: 'homeShowRecent', bindPath: 'homeScreen.showRecent', keywords: ['home', 'recent', 'chat', 'widget'] },
-    { id: 'display.homeShowActivity', type: 'check', labelKey: 'homeShowActivity', bindPath: 'homeScreen.showActivity', keywords: ['home', 'activity', 'heatmap', 'widget'] },
-    { id: 'display.homeShowStats', type: 'check', labelKey: 'homeShowStats', bindPath: 'homeScreen.showStats', keywords: ['home', 'stats', 'statistics', 'usage', 'widget'] },
-    { id: 'display.homeHideLinks', type: 'check', labelKey: 'homeHideLinks', bindPath: 'homeScreen.hideLinks', keywords: ['home', 'links', 'hide'] },
-];
-
 export const displaySettingsItems: SettingItem[] = [
     ...displayThemeSettingsItems,
     ...displaySizeSettingsItems,
-    ...displayHomeSettingsItems,
     ...displayOtherSettingsItems,
 ];
