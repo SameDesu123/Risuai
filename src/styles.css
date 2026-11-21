@@ -947,7 +947,27 @@ html.risu-aurora .risu-home h1 {
 }
 
 html.risu-aurora .risu-home .border-t-selected {
-  border-color: var(--aurora-line);
+  border-top-width: 2px;
+  border-color: var(--aurora-line-strong);
+}
+
+/* Section titles get the same pill as the Get More chip beside them */
+html.risu-aurora .risu-home-section {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+html.risu-aurora .risu-home-heading {
+  padding: 0.25rem 1.125rem;
+  border: 1px solid var(--aurora-line-strong);
+  border-radius: 999px;
+  background-color: var(--aurora-raised);
+  font-size: 1.25rem;
+  line-height: 1.75rem;
+  letter-spacing: -0.01em;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.12);
 }
 
 /* The hub notice is server HTML painted with an inline darkbg background */

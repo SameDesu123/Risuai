@@ -64,7 +64,7 @@
         </div>
       {/if}
       <div class="mt-4 mb-4 w-full border-t border-t-selected"></div>
-      <h1 class="text-2xl font-bold">Recently Uploaded<button class="text-base font-medium float-right hover:ring-3 p-1 bg-darkbg rounded-md risu-home-chip" onclick={() => {
+      <h1 class="text-2xl font-bold risu-home-section"><span class="risu-home-heading">Recently Uploaded</span><button class="text-base font-medium float-right hover:ring-3 p-1 bg-darkbg rounded-md risu-home-chip" onclick={() => {
         $OpenRealmStore = true
       }}>Get More</button></h1>
           {#if !DBState.db.hideRealm}
@@ -95,8 +95,8 @@
         {/if}
       {#if !home.hideLinks}
       <div class="mt-4 mb-4 w-full border-t border-t-selected"></div>
-      <h1 class="text-2xl font-bold mb-4">
-        Related Links
+      <h1 class="text-2xl font-bold mb-4 risu-home-section">
+        <span class="risu-home-heading">Related Links</span>
       </h1>
         <div class="grid w-full grid-cols-1 gap-4 p-2 md:grid-cols-2">
           {#each relatedLinks as relatedLink}
