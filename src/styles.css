@@ -381,7 +381,7 @@ body {
 }
 
 .loadmove {
-  animation: spin 1s linear infinite;
+  @apply animate-spin;
   border-radius: 50%;
   border: 0.4rem solid rgba(0, 0, 0, 0);
   width: 1rem;

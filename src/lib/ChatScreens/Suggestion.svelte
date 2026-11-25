@@ -160,7 +160,7 @@
 <div class="ml-4 flex flex-wrap">
     {#if progress}
         <div class="flex bg-textcolor2 p-2 rounded-lg items-center">
-            <div class="loadmove mx-2"></div>
+            <div class="loadmove suggest-loader mx-2"></div>
             <div>{language.creatingSuggestions}</div>
         </div>        
     {:else if !$doingChat}
@@ -215,20 +215,9 @@
 </div>
 
 <style>
-    
-    .loadmove {
-        animation: spin 1s linear infinite;
-        border-radius: 50%;
-        border: 0.4rem solid rgba(0,0,0,0);
-        width: 1rem;
-        height: 1rem;
-        border-top: 0.4rem solid var(--risu-theme-textcolor);
-        border-left: 0.4rem solid var(--risu-theme-textcolor);
-    }
-
-    @keyframes spin {
-        0% { transform: rotate(0deg); }
-        100% { transform: rotate(360deg); }
+    .suggest-loader {
+        border-top-color: var(--risu-theme-textcolor);
+        border-left-color: var(--risu-theme-textcolor);
     }
 </style>
 
